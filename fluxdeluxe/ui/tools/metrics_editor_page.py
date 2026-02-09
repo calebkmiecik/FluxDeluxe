@@ -9,7 +9,7 @@ from typing import Optional
 from pathlib import Path
 
 import requests
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from ... import config
 
@@ -309,7 +309,7 @@ class MetricsEditorPage(QtWidgets.QWidget):
         self._open_in_browser(url)
 
     def _open_in_browser(self, url: str | None = None) -> None:
-        QtCore.QDesktopServices.openUrl(QtCore.QUrl(url or self._endpoint.url))
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(url or self._endpoint.url))
 
     def _show_placeholder(self, text: str) -> None:
         self._content.setCurrentWidget(self._placeholder)

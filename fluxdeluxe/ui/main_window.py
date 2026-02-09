@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,8 @@ from .tools.web_tool_page import WebToolPage
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    _update_found_signal = QtCore.Signal(str, str, str, str)
+
     def __init__(self) -> None:
         super().__init__()
         self._logger = logging.getLogger(__name__)
@@ -81,8 +84,24 @@ class MainWindow(QtWidgets.QMainWindow):
         # Start reading backend logs (and mark backend ready when detected)
         self._setup_backend_log_reader()
 
+        # Update banner (hidden until an update is found)
+        self._update_info = None  # type: Optional[object]
+        self.btn_update = QtWidgets.QPushButton()
+        self.btn_update.setStyleSheet(
+            "QPushButton { background: #2E7D32; color: white; border: none;"
+            " border-radius: 4px; padding: 3px 10px; font-weight: bold; }"
+            "QPushButton:hover { background: #388E3C; }"
+        )
+        self.btn_update.setVisible(False)
+        self.btn_update.clicked.connect(self._apply_update)
+        self.statusBar().addPermanentWidget(self.btn_update)
+
         # Always start at Home (tool grid)
         self.show_home()
+
+        # Check for updates in background (non-blocking)
+        self._update_found_signal.connect(self._on_update_found)
+        self._check_for_update_async()
 
     def show_home(self) -> None:
         try:
@@ -153,42 +172,51 @@ class MainWindow(QtWidgets.QMainWindow):
         return page
 
     def open_tool(self, tool_id: str) -> None:
-        # Avoid UI-triggered races: do not open tools until backend is detected.
-        if not self._backend_ready and str(tool_id or "").strip() != "metrics_editor":
-            try:
-                self.status_label.setText("Starting backend…")
-            except Exception:
-                pass
-            return
-
         tool_id = str(tool_id or "").strip()
         spec = self._tool_by_id.get(tool_id)
         if spec is None:
             return
 
-        if spec.kind == "qt" and spec.tool_id == "fluxlite":
+        # Qt tools (FluxLite) switch to a dedicated page
+        if spec.kind == "qt":
+            # Block until backend is ready
+            if not self._backend_ready:
+                try:
+                    self.status_label.setText("Starting backend...")
+                except Exception:
+                    pass
+                return
             page = self._ensure_fluxlite_page()
             self.tool_stack.setCurrentWidget(page)
             self.tool_title.setText(spec.name)
             return
 
-        if spec.kind == "qt" and spec.tool_id == "metrics_editor":
+        # Streamlit tools: start the process if needed, then open browser
+        if spec.kind == "streamlit":
             page = self._ensure_metrics_editor_page()
             try:
                 page.ensure_started()
             except Exception:
                 pass
-            self.tool_stack.setCurrentWidget(page)
-            self.tool_title.setText(spec.name)
+            # Open browser and stay on launcher
+            url = str(spec.url or "")
+            if url:
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
+                try:
+                    self.status_label.setText(f"{spec.name} opened in browser")
+                except Exception:
+                    pass
             return
 
+        # Web tools: just open browser
         if spec.kind == "web":
-            self.tool_stack.setCurrentWidget(self.web_tool_page)
-            self.tool_title.setText(spec.name)
-            try:
-                self.web_tool_page.set_tool(title=spec.name, url=str(spec.url or ""))
-            except Exception:
-                pass
+            url = str(spec.url or "")
+            if url:
+                QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
+                try:
+                    self.status_label.setText(f"{spec.name} opened in browser")
+                except Exception:
+                    pass
             return
 
     def _setup_backend_log_reader(self) -> None:
@@ -232,7 +260,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return mod
 
         # Otherwise (or after our aliasing), this should work.
-        import FluxDeluxe.main as main_module  # type: ignore
+        import fluxdeluxe.main as main_module  # type: ignore
 
         return main_module
 
@@ -245,6 +273,84 @@ class MainWindow(QtWidgets.QMainWindow):
             dialog.activateWindow()
         except Exception:
             pass
+
+    # ── Auto-updater ───────────────────────────────────────────────────────
+
+    def _check_for_update_async(self) -> None:
+        """Run the update check on a background thread."""
+        def _worker() -> None:
+            try:
+                from ..updater import check_for_update
+                info = check_for_update()
+                if info is not None:
+                    self._update_found_signal.emit(
+                        info.version, info.download_url,
+                        info.changelog, info.asset_name,
+                    )
+            except Exception as exc:
+                self._logger.debug("Update check thread error: %s", exc)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+    @QtCore.Slot(str, str, str, str)
+    def _on_update_found(self, version: str, download_url: str,
+                         changelog: str, asset_name: str) -> None:
+        from ..updater import UpdateInfo
+        self._update_info = UpdateInfo(
+            version=version,
+            download_url=download_url,
+            changelog=changelog,
+            asset_name=asset_name,
+        )
+        self.btn_update.setText(f"Update available: v{version}")
+        self.btn_update.setVisible(True)
+        self._logger.info("Update available: v%s", version)
+
+    def _apply_update(self) -> None:
+        """Download and apply the update."""
+        from ..updater import download_update, apply_update
+        from ..runtime import is_frozen
+
+        info = self._update_info
+        if info is None:
+            return
+
+        if not is_frozen():
+            QtWidgets.QMessageBox.information(
+                self, "Update",
+                f"Version {info.version} is available.\n\n"
+                "Auto-update only works in the installed app.\n"
+                "Pull the latest changes from git to update in dev mode.",
+            )
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "Update FluxDeluxe",
+            f"Download and install v{info.version}?\n\n"
+            "The app will restart automatically.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        self.btn_update.setText("Downloading...")
+        self.btn_update.setEnabled(False)
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            import tempfile
+            dest = Path(tempfile.gettempdir()) / "fluxdeluxe_update"
+            zip_path = download_update(info, dest)
+            apply_update(zip_path)
+        except Exception as exc:
+            self._logger.exception("Update failed")
+            self.btn_update.setText(f"Update failed")
+            self.btn_update.setEnabled(True)
+            QtWidgets.QMessageBox.warning(
+                self, "Update Failed",
+                f"Could not install the update:\n\n{exc}",
+            )
 
     def closeEvent(self, event) -> None:
         # Stop backend log reader

@@ -34,8 +34,9 @@ def default_tools() -> List[ToolSpec]:
         ToolSpec(
             tool_id="metrics_editor",
             name="Metrics Editor",
-            kind="qt",
-            description="Compile/edit metrics truth store (Streamlit).",
+            kind="streamlit",
+            description="Compile and edit metrics truth store.",
+            url="http://127.0.0.1:8503",
         ),
         ToolSpec(
             tool_id=str(axiodash_spec.TOOL_ID),

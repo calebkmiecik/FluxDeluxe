@@ -9,3 +9,9 @@ live_test_logs/
 .serena/
 .cursor/
 .claude/
+/dist/
+/build/
+*.spec
+!FluxDeluxe.spec
+nul
+/CLAUDE.md
