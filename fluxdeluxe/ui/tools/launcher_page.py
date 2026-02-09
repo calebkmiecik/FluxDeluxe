@@ -9,6 +9,88 @@ from PySide6 import QtCore, QtGui, QtWidgets
 from .tool_registry import ToolSpec
 
 
+class _ToolRow(QtWidgets.QFrame):
+    """A single clickable row in the tool list."""
+
+    clicked = QtCore.Signal()
+
+    def __init__(self, tool: ToolSpec, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setObjectName("toolRow")
+        self.setStyleSheet(
+            "#toolRow {"
+            "  background: #1A1A1A;"
+            "  border: 1px solid rgba(224, 224, 224, 25);"
+            "  border-radius: 8px;"
+            "  padding: 12px 16px;"
+            "}"
+            "#toolRow:hover {"
+            "  border: 1px solid rgba(224, 224, 224, 60);"
+            "  background: #1E1E1E;"
+            "}"
+        )
+
+        row = QtWidgets.QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
+
+        # Left: text block (name + description)
+        text_col = QtWidgets.QVBoxLayout()
+        text_col.setSpacing(2)
+
+        name_lbl = QtWidgets.QLabel(tool.name)
+        f = name_lbl.font()
+        f.setPointSize(12)
+        f.setBold(True)
+        name_lbl.setFont(f)
+        name_lbl.setStyleSheet("color: #E0E0E0; background: transparent; border: none;")
+        text_col.addWidget(name_lbl)
+
+        if tool.description:
+            desc_lbl = QtWidgets.QLabel(tool.description)
+            desc_lbl.setStyleSheet("color: #888; background: transparent; border: none;")
+            desc_lbl.setWordWrap(True)
+            text_col.addWidget(desc_lbl)
+
+        row.addLayout(text_col, 1)
+
+        # Right: browser icon for web / streamlit tools
+        if tool.kind in ("web", "streamlit"):
+            icon_lbl = QtWidgets.QLabel()
+            icon_lbl.setFixedSize(22, 22)
+            icon_lbl.setStyleSheet("background: transparent; border: none;")
+            icon_lbl.setToolTip("Opens in browser")
+            # Draw a simple globe icon via SVG
+            svg_data = (
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
+                'fill="none" stroke="#888" stroke-width="1.8" '
+                'stroke-linecap="round" stroke-linejoin="round">'
+                '<circle cx="12" cy="12" r="10"/>'
+                '<ellipse cx="12" cy="12" rx="4" ry="10"/>'
+                '<line x1="2" y1="12" x2="22" y2="12"/>'
+                '</svg>'
+            )
+            pm = QtGui.QPixmap(22, 22)
+            pm.fill(QtCore.Qt.transparent)
+            try:
+                from PySide6 import QtSvg
+                renderer = QtSvg.QSvgRenderer(QtCore.QByteArray(svg_data.encode()))
+                if renderer.isValid():
+                    painter = QtGui.QPainter(pm)
+                    renderer.render(painter)
+                    painter.end()
+                    icon_lbl.setPixmap(pm)
+            except Exception:
+                pass
+            row.addWidget(icon_lbl, 0, QtCore.Qt.AlignVCenter)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class ToolLauncherPage(QtWidgets.QWidget):
     tool_selected = QtCore.Signal(str)  # tool_id
 
@@ -18,75 +100,40 @@ class ToolLauncherPage(QtWidgets.QWidget):
         self._setup_ui()
 
     def _setup_ui(self) -> None:
-        outer = QtWidgets.QVBoxLayout(self)
-        outer.setContentsMargins(18, 18, 18, 18)
-        outer.setSpacing(12)
+        page = QtWidgets.QVBoxLayout(self)
+        page.setContentsMargins(18, 18, 18, 18)
+        page.setSpacing(0)
 
-        # Optional logo. Render to a pixmap to preserve aspect ratio and
-        # avoid any widget sizing "stretch" behavior.
+        # Logo pinned to top-left
         logo_path = self._resolve_logo_path()
         if logo_path is not None:
             logo = self._build_logo_widget(logo_path)
             if logo is not None:
-                outer.addWidget(logo)
+                page.addWidget(logo)
+                page.addSpacing(12)
 
-        self._grid = QtWidgets.QGridLayout()
-        self._grid.setHorizontalSpacing(10)
-        self._grid.setVerticalSpacing(10)
+        # Vertically center the tool list
+        page.addStretch(15)
 
-        grid_wrap = QtWidgets.QWidget()
-        grid_wrap.setLayout(self._grid)
-        outer.addWidget(grid_wrap, 1)
+        h_row = QtWidgets.QHBoxLayout()
+        h_row.addStretch(25)
 
-        # Simple "chip grid" made of flat toolbuttons.
-        cols = 3
-        for i, tool in enumerate(self._tools):
-            r, c = divmod(i, cols)
-            btn = QtWidgets.QToolButton()
-            btn.setText(tool.name)
-            btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
-            btn.setAutoRaise(False)
-            btn.setCheckable(False)
-            # Square tool tiles
-            btn.setMinimumSize(150, 150)
-            btn.setMaximumSize(150, 150)
-            btn.setCursor(QtCore.Qt.PointingHandCursor)
-            btn.clicked.connect(lambda _=False, tid=tool.tool_id: self.tool_selected.emit(tid))
-            # Bigger text + white tile background
-            f = btn.font()
-            f.setPointSize(12)
-            f.setBold(True)
-            btn.setFont(f)
-            btn.setStyleSheet(
-                "QToolButton {"
-                "  background: #1A1A1A;"
-                "  color: #E0E0E0;"
-                "  border: 1px solid rgba(224, 224, 224, 35);"
-                "  border-radius: 12px;"
-                "  padding: 10px;"
-                "}"
-                "QToolButton:hover {"
-                "  border: 1px solid rgba(224, 224, 224, 70);"
-                "}"
-                "QToolButton:pressed {"
-                "  background: #202020;"
-                "}"
-            )
+        # Narrow centered tool list
+        center = QtWidgets.QVBoxLayout()
+        center.setSpacing(10)
 
-            # Use tooltip for extra info, keep the grid clean.
-            tip = tool.description.strip()
-            if tool.kind == "web" and tool.url:
-                tip = (tip + "\n\n" if tip else "") + tool.url
-            if tip:
-                btn.setToolTip(tip)
+        for tool in self._tools:
+            row = _ToolRow(tool)
+            row.clicked.connect(lambda tid=tool.tool_id: self.tool_selected.emit(tid))
+            center.addWidget(row)
 
-            self._grid.addWidget(btn, r, c)
+        h_row.addLayout(center, 50)
+        h_row.addStretch(25)
+
+        page.addLayout(h_row)
+        page.addStretch(20)
 
     def _build_logo_widget(self, path: Path) -> QtWidgets.QWidget | None:
-        """
-        Create a top-left logo widget that preserves aspect ratio and looks crisp.
-        """
-        # Target display size (~50% smaller)
         max_w = 210
         max_h = 55
 
@@ -107,10 +154,6 @@ class ToolLauncherPage(QtWidgets.QWidget):
         return wrap
 
     def _render_logo_pixmap(self, path: Path, *, max_w: int, max_h: int) -> QtGui.QPixmap | None:
-        """
-        Render SVG (or load raster) into a high-DPI pixmap, scaled to fit within max_w/max_h
-        while preserving aspect ratio.
-        """
         suffix = path.suffix.lower()
         dpr = 1.0
         try:
@@ -122,7 +165,6 @@ class ToolLauncherPage(QtWidgets.QWidget):
             pm = QtGui.QPixmap(str(path))
             if pm.isNull():
                 return None
-            # Scale in device pixels for crispness, then tag DPR for correct logical sizing.
             scaled = pm.scaled(
                 int(max_w * dpr),
                 int(max_h * dpr),
@@ -148,13 +190,10 @@ class ToolLauncherPage(QtWidgets.QWidget):
             if w0 <= 0 or h0 <= 0:
                 w0, h0 = max_w, max_h
 
-            # Fit into max_w/max_h preserving aspect ratio.
             scale = min(max_w / float(w0), max_h / float(h0), 1.0)
             w = max(1, int(w0 * scale))
             h = max(1, int(h0 * scale))
 
-            # Render at a higher pixel density than the screen DPR to avoid a "raster-y" look.
-            # QtSvg ultimately paints vectors, but the widget display is raster-backed.
             render_dpr = max(dpr, 3.0)
 
             img = QtGui.QImage(
@@ -180,7 +219,6 @@ class ToolLauncherPage(QtWidgets.QWidget):
         return None
 
     def _resolve_logo_path(self) -> Path | None:
-        # 1) Repo-local convention (preferred when you later commit the logo)
         ui_dir = Path(__file__).resolve().parents[1]
         candidate_logos = ui_dir / "assets" / "logos" / "FluxDeluxeLogo.png"
         if candidate_logos.exists():
@@ -195,7 +233,6 @@ class ToolLauncherPage(QtWidgets.QWidget):
         if candidate_icons.exists():
             return candidate_icons
 
-        # 2) Optional env override
         env_path = str(os.environ.get("FLUXDELUXE_LOGO_SVG", "") or "").strip()
         if env_path:
             p = Path(env_path)
@@ -203,4 +240,3 @@ class ToolLauncherPage(QtWidgets.QWidget):
                 return p
 
         return None
-
