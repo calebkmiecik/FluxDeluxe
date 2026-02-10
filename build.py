@@ -184,6 +184,28 @@ def assemble_dist(embedded_python: Path) -> None:
     print(f"  Copying embedded Python -> {dest_python}")
     shutil.copytree(embedded_python, dest_python)
 
+    # Strip runtime-unnecessary packages from embedded Python copy
+    site_packages = dest_python / "Lib" / "site-packages"
+    strip_dirs = ["pip", "setuptools", "pydeck", "pkg_resources", "pythonwin"]
+    for name in strip_dirs:
+        for match in site_packages.glob(f"{name}*"):
+            if match.is_dir():
+                shutil.rmtree(match)
+                print(f"  Stripped {match.name}")
+
+    # Strip __pycache__, test dirs, and .pyc files to save space
+    stripped_bytes = 0
+    for pattern in ("__pycache__", "test", "tests"):
+        for match in site_packages.rglob(pattern):
+            if match.is_dir() and match.name == pattern:
+                size = sum(f.stat().st_size for f in match.rglob("*") if f.is_file())
+                shutil.rmtree(match)
+                stripped_bytes += size
+    for pyc in site_packages.rglob("*.pyc"):
+        stripped_bytes += pyc.stat().st_size
+        pyc.unlink()
+    print(f"  Stripped cache/test dirs: {stripped_bytes / 1024 / 1024:.1f} MB")
+
     # Copy DynamoDeluxe source (submodule)
     src_dynamo = ROOT / "fluxdeluxe" / "DynamoDeluxe"
     dest_dynamo = DIST / "fluxdeluxe" / "DynamoDeluxe"

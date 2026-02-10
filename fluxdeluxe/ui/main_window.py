@@ -17,6 +17,8 @@ from .tools.web_tool_page import WebToolPage
 
 class MainWindow(QtWidgets.QMainWindow):
     _update_found_signal = QtCore.Signal(str, str, str, str)
+    _download_done_signal = QtCore.Signal(str)   # zip_path or empty on error
+    _download_error_signal = QtCore.Signal(str)  # error message
 
     def __init__(self) -> None:
         super().__init__()
@@ -101,6 +103,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Check for updates in background (non-blocking)
         self._update_found_signal.connect(self._on_update_found)
+        self._download_done_signal.connect(self._on_download_done)
+        self._download_error_signal.connect(self._on_download_error)
         self._check_for_update_async()
 
     def show_home(self) -> None:
@@ -308,8 +312,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._logger.info("Update available: v%s", version)
 
     def _apply_update(self) -> None:
-        """Download and apply the update."""
-        from ..updater import download_update, apply_update
+        """Prompt user, then download in a background thread."""
         from ..runtime import is_frozen
 
         info = self._update_info
@@ -336,21 +339,41 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.btn_update.setText("Downloading...")
         self.btn_update.setEnabled(False)
-        QtWidgets.QApplication.processEvents()
 
+        def _download_worker() -> None:
+            try:
+                from ..updater import download_update
+                import tempfile
+                dest = Path(tempfile.gettempdir()) / "fluxdeluxe_update"
+                zip_path = download_update(info, dest)
+                self._download_done_signal.emit(str(zip_path))
+            except Exception as exc:
+                self._download_error_signal.emit(str(exc))
+
+        t = threading.Thread(target=_download_worker, daemon=True)
+        t.start()
+
+    @QtCore.Slot(str)
+    def _on_download_done(self, zip_path_str: str) -> None:
+        """Called on the main thread when the download finishes."""
+        from ..updater import apply_update
+        self.btn_update.setText("Installing...")
+        QtWidgets.QApplication.processEvents()
         try:
-            import tempfile
-            dest = Path(tempfile.gettempdir()) / "fluxdeluxe_update"
-            zip_path = download_update(info, dest)
-            apply_update(zip_path)
+            apply_update(Path(zip_path_str))
         except Exception as exc:
-            self._logger.exception("Update failed")
-            self.btn_update.setText(f"Update failed")
-            self.btn_update.setEnabled(True)
-            QtWidgets.QMessageBox.warning(
-                self, "Update Failed",
-                f"Could not install the update:\n\n{exc}",
-            )
+            self._on_download_error(str(exc))
+
+    @QtCore.Slot(str)
+    def _on_download_error(self, error_msg: str) -> None:
+        """Called on the main thread when the download fails."""
+        self._logger.error("Update download failed: %s", error_msg)
+        self.btn_update.setText("Update failed")
+        self.btn_update.setEnabled(True)
+        QtWidgets.QMessageBox.warning(
+            self, "Update Failed",
+            f"Could not install the update:\n\n{error_msg}",
+        )
 
     def closeEvent(self, event) -> None:
         # Stop backend log reader
