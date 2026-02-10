@@ -150,7 +150,7 @@ def apply_update(zip_path: Path) -> None:
         f'@echo off\r\n'
         f'echo Updating FluxDeluxe — please wait...\r\n'
         f'timeout /t 3 /nobreak >nul\r\n'
-        f'xcopy /E /Y /I "{source_dir}\\*" "{install_dir}\\"\r\n'
+        f'xcopy /E /Y /I /Q "{source_dir}\\*" "{install_dir}\\"\r\n'
         f'echo Update complete. Restarting...\r\n'
         f'start "" "{install_dir}\\{exe_name}"\r\n'
         f'del "{zip_path}" 2>nul\r\n'

@@ -27,27 +27,6 @@ datas = [
 # ── Hidden imports ────────────────────────────────────────────────────────
 # Packages that PyInstaller's analysis misses.
 hiddenimports = [
-    # PySide6 web engine (used by WebToolPage)
-    "PySide6.QtWebEngineWidgets",
-    "PySide6.QtWebEngineCore",
-    "PySide6.QtWebChannel",
-    # Google / Firebase (dynamic imports)
-    "firebase_admin",
-    "firebase_admin.credentials",
-    "firebase_admin.firestore",
-    "google.cloud.firestore",
-    "google.cloud.firestore_v1",
-    "google.cloud.storage",
-    "google.auth",
-    "google.auth.transport.requests",
-    # Networking
-    "socketio",
-    "engineio",
-    "websocket",
-    # Data
-    "msgpack",
-    "numpy",
-    "pandas",
     # Our own sub-packages
     "fluxdeluxe",
     "fluxdeluxe.runtime",
@@ -65,9 +44,33 @@ hiddenimports = [
 
 # ── Excludes (reduce bundle size) ─────────────────────────────────────────
 excludes = [
+    # Qt WebEngine (Chromium) — not used, saves ~340 MB
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebChannel",
+    # Unused Qt modules
+    "PySide6.QtQuick",
+    "PySide6.QtQuickWidgets",
+    "PySide6.QtQml",
+    "PySide6.Qt3DCore",
+    "PySide6.Qt3DRender",
+    "PySide6.QtPositioning",
+    # Heavy libs not needed in frozen Qt app (backend has its own Python)
+    "numpy",
+    "pandas",
+    "scipy",
+    "pyarrow",
+    "PIL",
+    "openpyxl",
+    "pyqtgraph",
+    "firebase_admin",
+    "google",
+    "grpc",
+    "cryptography",
+    "setuptools",
+    # Never needed
     "tkinter",
     "matplotlib",
-    "scipy",
     "IPython",
     "jupyter",
     "notebook",

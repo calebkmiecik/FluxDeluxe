@@ -33,7 +33,7 @@ protobuf==5.29.3
 # --- Streamlit (Metrics Editor, AxioDash) ---
 streamlit==1.53.1
 altair>=6.0.0
-pydeck>=0.9.0
+# pydeck removed — not used, saves ~15 MB
 
 # --- Document processing (Metrics Editor) ---
 python-docx==1.2.0
