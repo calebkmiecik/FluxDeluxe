@@ -7,21 +7,42 @@ class DeviceListDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate to render green checkmark for active devices."""
 
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:  # noqa: N802
+        # Paint base item first
         super().paint(painter, option, index)
+
+        # Check if device is active (UserRole + 1 should be True/False)
         is_active = index.data(QtCore.Qt.UserRole + 1)
-        if is_active:
+        text = str(index.data(QtCore.Qt.DisplayRole) or "")
+
+        print(f"[DeviceListDelegate] Painting '{text}': is_active={is_active} (type: {type(is_active)})")
+
+        # Only paint checkmark if explicitly True
+        if is_active is True:
+            print(f"[DeviceListDelegate] Drawing green check for '{text}'")
             painter.save()
-            rect = option.rect
-            text = index.data(QtCore.Qt.DisplayRole)
-            check_text = " ✓"
-            painter.setFont(option.font)
-            fm = painter.fontMetrics()
-            text_width = fm.horizontalAdvance(text)
-            x = rect.left() + text_width + 5
-            y = rect.center().y() + fm.ascent() // 2
-            painter.setPen(QtGui.QColor(100, 200, 100))
-            painter.drawText(x, y, check_text)
-            painter.restore()
+            try:
+                rect = option.rect
+
+                # Use a larger, more visible checkmark
+                check_text = " ✓"
+
+                painter.setFont(option.font)
+                fm = painter.fontMetrics()
+                text_width = fm.horizontalAdvance(text)
+
+                # Position checkmark after the text
+                x = rect.left() + text_width + 10
+                y = rect.top() + (rect.height() + fm.ascent()) // 2 - fm.descent() // 2
+
+                # Bright green color for visibility
+                painter.setPen(QtGui.QColor(100, 255, 100))
+                painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+                # Draw the checkmark
+                painter.drawText(x, y, check_text)
+                print(f"[DeviceListDelegate] Check drawn at x={x}, y={y}")
+            finally:
+                painter.restore()
 
 
 class DiscreteTestDelegate(QtWidgets.QStyledItemDelegate):

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import threading
-from typing import TYPE_CHECKING
-
 from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtWidgets import (
     QDialog,
@@ -14,9 +11,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QFont, QTextCursor
 
-if TYPE_CHECKING:
-    import subprocess
-
 
 class LogSignals(QObject):
     """Signals for thread-safe log updates."""
@@ -24,13 +18,17 @@ class LogSignals(QObject):
 
 
 class BackendLogDialog(QDialog):
-    """Dialog that displays DynamoDeluxe backend logs in real-time."""
+    """Dialog that displays DynamoPy backend logs in real-time.
+
+    Uses the callback system in fluxdeluxe.main to receive log lines from the
+    backend drain threads, so it works automatically across backend restarts.
+    """
 
     _instance: "BackendLogDialog | None" = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("DynamoDeluxe Backend Logs")
+        self.setWindowTitle("DynamoPy Backend Logs")
         self.setMinimumSize(800, 500)
         self.resize(900, 600)
 
@@ -40,8 +38,7 @@ class BackendLogDialog(QDialog):
         self._setup_ui()
         self._signals = LogSignals()
         self._signals.log_received.connect(self._append_log)
-        self._reader_threads: list[threading.Thread] = []
-        self._stop_event = threading.Event()
+        self._subscribed = False
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -81,46 +78,39 @@ class BackendLogDialog(QDialog):
         if self._auto_scroll_cb.isChecked():
             self._log_view.moveCursor(QTextCursor.MoveOperation.End)
 
-    def start_reading(self, process: "subprocess.Popen"):
-        """Start background threads to read stdout/stderr from the process."""
-        self._stop_event.clear()
+    def _on_backend_log_line(self, text: str) -> None:
+        """Callback invoked by the drain threads in fluxdeluxe.main (any thread)."""
+        self._signals.log_received.emit(text)
 
-        if process.stdout:
-            t = threading.Thread(
-                target=self._read_stream,
-                args=(process.stdout, "[stdout]"),
-                daemon=True,
-            )
-            t.start()
-            self._reader_threads.append(t)
+    def start_reading(self, _process=None) -> None:
+        """Subscribe to backend log output via the drain-thread callback system.
 
-        if process.stderr:
-            t = threading.Thread(
-                target=self._read_stream,
-                args=(process.stderr, "[stderr]"),
-                daemon=True,
-            )
-            t.start()
-            self._reader_threads.append(t)
-
-    def _read_stream(self, stream, prefix: str):
-        """Read lines from a stream and emit signals."""
+        The *_process* parameter is accepted for backward compatibility but is
+        ignored -- pipe reading is now handled by the drain threads in
+        ``fluxdeluxe.main``.
+        """
+        if self._subscribed:
+            return
         try:
-            for line in iter(stream.readline, b""):
-                if self._stop_event.is_set():
-                    break
-                try:
-                    text = line.decode("utf-8", errors="replace")
-                    self._signals.log_received.emit(text)
-                except Exception:
-                    pass
+            from fluxdeluxe.main import register_backend_log_callback, get_backend_log_buffer
+            register_backend_log_callback(self._on_backend_log_line)
+            self._subscribed = True
+            # Replay buffered lines so the dialog shows history
+            for line in get_backend_log_buffer():
+                self._signals.log_received.emit(line)
         except Exception:
             pass
 
-    def stop_reading(self):
-        """Stop the reader threads."""
-        self._stop_event.set()
-        self._reader_threads.clear()
+    def stop_reading(self) -> None:
+        """Unsubscribe from backend log output."""
+        if not self._subscribed:
+            return
+        try:
+            from fluxdeluxe.main import unregister_backend_log_callback
+            unregister_backend_log_callback(self._on_backend_log_line)
+        except Exception:
+            pass
+        self._subscribed = False
 
     def closeEvent(self, event):
         """Hide instead of close so we can reopen."""

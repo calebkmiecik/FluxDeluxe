@@ -17,8 +17,6 @@ from .panels.control_panel import ControlPanel
 from .state import ViewState
 from .widgets.force_plot import ForcePlotWidget
 from .widgets.moments_view import MomentsViewWidget
-from .widgets.temp_coef_widget import TempCoefWidget
-from .widgets.temp_plot_widget import TempPlotWidget
 from .widgets.world_canvas import WorldCanvas
 from .widgets.live_cell_details import LiveCellDetailsPanel
 from .dialogs.stage_switch_prompt import StageSwitchPromptDialog
@@ -313,6 +311,32 @@ class FluxLitePage(QtWidgets.QWidget):
             pass
         self._set_live_status_bar_state(mode="idle", text="", pct=None)
 
+    def _on_backend_restart_countdown(self, seconds: int) -> None:
+        """Handle backend restart countdown updates."""
+        if seconds < 0:
+            # Backend is stopping
+            self._set_live_status_bar_state(
+                mode="measuring",
+                text="Stopping backend...",
+                pct=None
+            )
+        elif seconds > 0:
+            # Show countdown
+            self._set_live_status_bar_state(
+                mode="measuring",
+                text=f"Restarting backend in {seconds}...",
+                pct=None
+            )
+        else:
+            # Show "restarting..." while backend initializes
+            self._set_live_status_bar_state(
+                mode="measuring",
+                text="Backend restarting...",
+                pct=None
+            )
+            # Clear after 7 seconds (5s backend init + 2s buffer)
+            QtCore.QTimer.singleShot(7000, lambda: self._set_live_status_bar_state(mode="idle", text="", pct=None))
+
     def _setup_ui(self) -> None:
         outer = QtWidgets.QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
@@ -406,16 +430,11 @@ class FluxLitePage(QtWidgets.QWidget):
         sll.setContentsMargins(0, 0, 0, 0)
         self.sensor_plot_left = ForcePlotWidget()
         sll.addWidget(self.sensor_plot_left)
-        self.top_tabs_left.addTab(sensor_left, "Sensor View")
+        self.top_tabs_left.addTab(sensor_left, "Force View")
 
         moments_left = MomentsViewWidget()
         self.moments_view_left = moments_left
         self.top_tabs_left.addTab(moments_left, "Moments View")
-
-        # Discrete Temp: Temp-vs-Force plot tab
-        self.temp_plot_tab = TempPlotWidget(hardware_service=self.controller.hardware)
-        self.top_tabs_left.addTab(self.temp_plot_tab, "Temp Plot")
-        self.pane_switcher.register_tab(self.top_tabs_left, self.temp_plot_tab, "temp_plot")
 
         # Right Tabs
         self.top_tabs_right.addTab(plate_right, "Plate View")
@@ -426,16 +445,11 @@ class FluxLitePage(QtWidgets.QWidget):
         srl.setContentsMargins(0, 0, 0, 0)
         self.sensor_plot_right = ForcePlotWidget()
         srl.addWidget(self.sensor_plot_right)
-        self.top_tabs_right.addTab(sensor_right, "Sensor View")
+        self.top_tabs_right.addTab(sensor_right, "Force View")
 
         moments_right = MomentsViewWidget()
         self.moments_view_right = moments_right
         self.top_tabs_right.addTab(moments_right, "Moments View")
-
-        # Discrete Temp: coefficient metrics tab (no slope logic)
-        self.temp_coef_tab = TempCoefWidget()
-        self.top_tabs_right.addTab(self.temp_coef_tab, "Temp Coefs")
-        self.pane_switcher.register_tab(self.top_tabs_right, self.temp_coef_tab, "temp_coefs")
 
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self.splitter.addWidget(self.top_tabs_left)
@@ -472,7 +486,7 @@ class FluxLitePage(QtWidgets.QWidget):
         status_layout.addStretch(1)
         outer.addWidget(status_wrap, 0)
 
-        outer.addWidget(self.controls)
+        outer.addWidget(self.controls, 1)
 
         # Initial sizing
         self.splitter.setSizes([800, 800])
@@ -503,25 +517,18 @@ class FluxLitePage(QtWidgets.QWidget):
         self.controller.hardware.data_received.connect(self._on_live_data)
 
         # Connect Control Panel signals to Controller
-        self.controls.connect_requested.connect(self.controller.hardware.connect)
-        self.controls.disconnect_requested.connect(self.controller.hardware.disconnect)
-        self.controls.start_capture_requested.connect(self.controller.hardware.start_capture)
-        self.controls.stop_capture_requested.connect(self.controller.hardware.stop_capture)
-        self.controls.tare_requested.connect(self.controller.hardware.tare)
         self.controls.refresh_devices_requested.connect(self.controller.hardware.fetch_discovery)
 
         # Backend Config Signals
-        self.controls.backend_model_bypass_changed.connect(self.controller.models.set_bypass)
-        self.controls.backend_temperature_apply_requested.connect(
-            lambda p: self.controller.hardware.configure_temperature_correction(
-                p.get("slopes", {}),
-                p.get("use_temperature_correction", False),
-                p.get("room_temperature_f", 72.0),
-            )
+        self.controls.backend_config_update.connect(
+            lambda p: self.controller.hardware.configure_backend(p)
         )
-
-        # Data Sync
-        self.controls.data_sync_requested.connect(self.controller.data_sync.sync_all)
+        self.controls.backend_restart_requested.connect(
+            lambda: self.controller.restart_backend()
+        )
+        self.controller.restart_countdown.connect(self._on_backend_restart_countdown)
+        # Load backend config into UI when received
+        self.controller.hardware.config_status_received.connect(self.controls.load_backend_config)
 
         # Hardware -> UI Signals
         self.controller.hardware.device_list_updated.connect(self.controls.set_available_devices)
@@ -599,16 +606,9 @@ class FluxLitePage(QtWidgets.QWidget):
         except Exception:
             pass
 
-        # Discrete Temp: wire test selection to Temp Plot/Slopes
+        # Discrete Temp: wire test selection
         live_panel = self.controls.live_testing_panel
-        live_panel.discrete_test_selected.connect(self.temp_plot_tab.set_test_path)
         live_panel.discrete_test_selected.connect(self._on_discrete_test_selected)  # Switch tabs on selection
-
-        # Link Temp Plot <-> Coef metrics widget (toggle controls + computed values)
-        try:
-            self.temp_plot_tab.set_coef_widget(self.temp_coef_tab)
-        except Exception:
-            pass
 
         # Temp Testing Signals
         self._temp_analysis_payload: Optional[Dict] = None
@@ -634,7 +634,6 @@ class FluxLitePage(QtWidgets.QWidget):
         temp_panel.post_correction_changed.connect(self._on_temp_post_correction_changed)
         # Plot button - goes through controller, then back to main thread for matplotlib
         temp_panel.plot_stages_requested.connect(temp_ctrl.plot_stage_detection)
-        temp_ctrl.plot_ready.connect(self._on_temp_plot_ready)
 
         # Populate the temperature testing device list on startup (no auto-selection).
         try:
@@ -752,7 +751,7 @@ class FluxLitePage(QtWidgets.QWidget):
             ):
                 return
 
-            # Sensor View: enable dual-series legend in mound mode
+            # Force View: enable dual-series legend in mound mode
             try:
                 is_mound = (self.state.display_mode == "mound")
                 if self.sensor_plot_left:
@@ -912,7 +911,7 @@ class FluxLitePage(QtWidgets.QWidget):
                 self.canvas_left.set_snapshots(snapshots)
                 self.canvas_right.set_snapshots(snapshots)
 
-            # Sensor View (dual-series): Launch vs best landing (Upper or Lower) to avoid flicker.
+            # Force View (dual-series): Launch vs best landing (Upper or Lower) to avoid flicker.
             if self.state.display_mode == "mound":
                 try:
                     if mound_virtual:
@@ -989,7 +988,7 @@ class FluxLitePage(QtWidgets.QWidget):
                     save_dir = ""
                 if capture_enabled:
                     try:
-                        gid_fallback = str(self.controls.group_edit.text() or "").strip()
+                        gid_fallback = ""
                     except Exception:
                         gid_fallback = ""
                     self._temp_live_capture_ctx = self._temp_live_capture.start(
@@ -1547,16 +1546,16 @@ class FluxLitePage(QtWidgets.QWidget):
                 self._render_live_stage_grid(int(stage_idx), stage)
             except Exception:
                 pass
-        else:
-            # If they reset a non-current stage (possible via other modes later), still refresh tracker.
-            try:
-                self.controls.live_testing_panel.set_stage_summary(
-                    getattr(sess, "stages", []) or [],
-                    grid_total_cells=int(getattr(sess, "grid_rows", 0) or 0) * int(getattr(sess, "grid_cols", 0) or 0) or None,
-                    current_stage_index=int(cur),
-                )
-            except Exception:
-                pass
+
+        # Always refresh the testing-guide summary so counters reflect the reset
+        try:
+            self.controls.live_testing_panel.set_stage_summary(
+                getattr(sess, "stages", []) or [],
+                grid_total_cells=int(getattr(sess, "grid_rows", 0) or 0) * int(getattr(sess, "grid_cols", 0) or 0) or None,
+                current_stage_index=int(cur),
+            )
+        except Exception:
+            pass
 
         # Update the inspector with the cleared state
         self._hide_cell_details("reset_clicked")
@@ -1627,20 +1626,29 @@ class FluxLitePage(QtWidgets.QWidget):
                 self._render_live_stage_grid(int(stage_idx), stage)
             except Exception:
                 pass
-        self._hide_cell_details("reset_all_fail_clicked")
 
-    def _on_discrete_test_selected(self, path: str) -> None:
-        """Switch to Temp Plot tab when a discrete test is selected."""
-        if not path:
-            return
+        # Refresh the testing-guide summary so counters reflect the reset
         try:
-            self.pane_switcher.switch_many("temp_plot", "temp_coefs")
+            self.controls.live_testing_panel.set_stage_summary(
+                getattr(sess, "stages", []) or [],
+                grid_total_cells=int(getattr(sess, "grid_rows", 0) or 0) * int(getattr(sess, "grid_cols", 0) or 0) or None,
+                current_stage_index=int(cur),
+            )
         except Exception:
             pass
 
+        self._hide_cell_details("reset_all_fail_clicked")
+
+    def _on_discrete_test_selected(self, path: str) -> None:
+        """Callback when a discrete test is selected."""
+        if not path:
+            return
+        # Temp tabs removed - no action needed
+        pass
+
     def _auto_select_active_device(self, active_device_ids: set) -> None:
         """
-        When a device is actively streaming, auto-select it so Plate View + Sensor View show data.
+        When a device is actively streaming, auto-select it so Plate View + Force View show data.
         Only auto-select when transitioning from 0 streaming devices to 1+ streaming devices.
         Once a device is selected, stick with it until it stops streaming entirely.
         """
@@ -2054,23 +2062,6 @@ class FluxLitePage(QtWidgets.QWidget):
 
             canvas.set_live_cell_color(row, col, color)
             canvas.set_live_cell_text(row, col, text)
-
-    def _on_temp_plot_ready(self, data: dict) -> None:
-        """Launch matplotlib plot on main thread."""
-        try:
-            from .widgets.temp_stage_plotter import plot_stage_comparison
-
-            plot_stage_comparison(
-                data.get("baseline_path", ""),
-                data.get("selected_path", ""),
-                data.get("body_weight_n", 800.0),
-                baseline_windows=data.get("baseline_windows"),
-                baseline_segments=data.get("baseline_segments"),
-                selected_windows=data.get("selected_windows"),
-                selected_segments=data.get("selected_segments"),
-            )
-        except Exception as e:
-            print(f"[FluxLitePage] Plot error: {e}")
 
     # --- Model Management Handlers ---
 

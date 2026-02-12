@@ -1,10 +1,10 @@
 """Build script for FluxDeluxe.
 
 Automates the full build pipeline:
-  1. Sync the DynamoDeluxe git submodule
+  1. Sync the DynamoPy git submodule
   2. Download / prepare an embedded Python (for backend subprocesses)
   3. Run PyInstaller to freeze the Qt app
-  4. Assemble the final dist folder (copy DynamoDeluxe, tools, embedded Python)
+  4. Assemble the final dist folder (copy DynamoPy, tools, embedded Python)
   5. (Optional) Run Inno Setup to create an installer exe
 
 Usage:
@@ -54,13 +54,13 @@ def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess[str]:
 # ── Step 1: Git submodule ─────────────────────────────────────────────────
 
 def sync_submodule() -> None:
-    _log("Step 1: Syncing DynamoDeluxe submodule")
-    dynamo_dir = ROOT / "fluxdeluxe" / "DynamoDeluxe"
+    _log("Step 1: Syncing DynamoPy submodule")
+    dynamo_dir = ROOT / "fluxdeluxe" / "DynamoPy"
     dynamo_main = dynamo_dir / "app" / "main.py"
 
-    # If DynamoDeluxe already has content, just update it
+    # If DynamoPy already has content, just update it
     if dynamo_main.exists():
-        print("  DynamoDeluxe already present, updating...")
+        print("  DynamoPy already present, updating...")
     else:
         # Try normal submodule init first
         try:
@@ -87,11 +87,11 @@ def sync_submodule() -> None:
             _run(["git", "fetch", "origin", "dev"], cwd=str(dynamo_dir))
             _run(["git", "checkout", "dev"], cwd=str(dynamo_dir))
             _run(["git", "pull", "origin", "dev"], cwd=str(dynamo_dir))
-            print("  DynamoDeluxe is on latest dev.")
+            print("  DynamoPy is on latest dev.")
         except subprocess.CalledProcessError as exc:
-            print(f"  WARNING: Could not update DynamoDeluxe to latest dev: {exc}")
+            print(f"  WARNING: Could not update DynamoPy to latest dev: {exc}")
     else:
-        print("  WARNING: DynamoDeluxe app/main.py not found after sync.")
+        print("  WARNING: DynamoPy app/main.py not found after sync.")
 
 
 # ── Step 2: Embedded Python ──────────────────────────────────────────────
@@ -142,9 +142,9 @@ def prepare_embedded_python() -> Path:
         "-r", str(BACKEND_REQS),
     ])
 
-    # Install tflite-runtime from local wheel in DynamoDeluxe
+    # Install tflite-runtime from local wheel in DynamoPy
     tflite_wheel = (
-        ROOT / "fluxdeluxe" / "DynamoDeluxe" / "tflite-runtime"
+        ROOT / "fluxdeluxe" / "DynamoPy" / "tflite-runtime"
         / "win_amd64" / "tflite_runtime-2.13.0-cp311-cp311-win_amd64.whl"
     )
     if tflite_wheel.exists():
@@ -206,19 +206,31 @@ def assemble_dist(embedded_python: Path) -> None:
         pyc.unlink()
     print(f"  Stripped cache/test dirs: {stripped_bytes / 1024 / 1024:.1f} MB")
 
-    # Copy DynamoDeluxe source (submodule)
-    src_dynamo = ROOT / "fluxdeluxe" / "DynamoDeluxe"
-    dest_dynamo = DIST / "fluxdeluxe" / "DynamoDeluxe"
+    # Add sitecustomize.py so the embedded Python respects PYTHONPATH.
+    # The ._pth file disables PYTHONPATH by default in embeddable distributions.
+    sitecustomize = dest_python / "sitecustomize.py"
+    sitecustomize.write_text(
+        "import os, sys\n"
+        "for p in os.environ.get('PYTHONPATH', '').split(os.pathsep):\n"
+        "    if p and p not in sys.path:\n"
+        "        sys.path.insert(0, p)\n",
+        encoding="utf-8",
+    )
+    print("  Added sitecustomize.py for PYTHONPATH support")
+
+    # Copy DynamoPy source (submodule)
+    src_dynamo = ROOT / "fluxdeluxe" / "DynamoPy"
+    dest_dynamo = DIST / "fluxdeluxe" / "DynamoPy"
     if src_dynamo.exists():
         if dest_dynamo.exists():
             shutil.rmtree(dest_dynamo)
-        print(f"  Copying DynamoDeluxe -> {dest_dynamo}")
+        print(f"  Copying DynamoPy -> {dest_dynamo}")
         shutil.copytree(
             src_dynamo, dest_dynamo,
             ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
         )
     else:
-        print("  WARNING: DynamoDeluxe submodule not found — skipping")
+        print("  WARNING: DynamoPy submodule not found — skipping")
 
     # Copy tools/
     src_tools = ROOT / "tools"

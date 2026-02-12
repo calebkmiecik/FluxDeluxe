@@ -137,7 +137,7 @@ class HardwareService(QtCore.QObject):
         if self.client:
             self.client.on("connect", self._on_connect)
             self.client.on("disconnect", self._on_disconnect)
-            # Live stream control (DynamoDeluxe-style backends require this)
+            # Live stream control (DynamoPy-style backends require this)
             self.client.on("startDataReceptionStatus", lambda d: print(f"[hardware] startDataReceptionStatus: {d}"))
             self.client.on("getDeviceSettingsStatus", self._on_device_settings)
             self.client.on("getDeviceTypesStatus", self._on_device_types)
@@ -200,7 +200,7 @@ class HardwareService(QtCore.QObject):
         self.connection_status_changed.emit("Connected")
         if self.client:
             try:
-                # IMPORTANT: Many DynamoDeluxe-style backends do not emit `jsonData`
+                # IMPORTANT: Many DynamoPy-style backends do not emit `jsonData`
                 # until a client explicitly starts data reception.
                 try:
                     self.client.emit("startDataReception", {})
@@ -494,16 +494,74 @@ class HardwareService(QtCore.QObject):
         """
         if not self.client:
             return
-            
+
         # Update slopes
         # slopes dict expected: { 'x': float, 'y': float, 'z': float }
         self.update_dynamo_config("temperatureCorrectionSlopes", slopes)
-        
+
         # Update room temp
         self.client.emit("setDeviceConfig", {"roomTemperatureF": float(room_temp_f)})
-        
+
         # Update enabled state
         self.update_dynamo_config("applyTemperatureCorrection", bool(enabled))
+
+    def configure_backend(self, config: dict) -> None:
+        """
+        Configure all backend settings from the UI.
+
+        Expected config dict keys (snake_case):
+        - capture_detail: str
+        - emission_rate: int
+        - moving_average_window: int
+        - moving_average_type: str
+        - bypass_models: bool
+        - use_temperature_correction: bool
+        - room_temperature_f: float
+        - temperature_correction_06: dict {x, y, z}
+        - temperature_correction_07: dict {x, y, z}
+        - temperature_correction_08: dict {x, y, z}
+        - temperature_correction_10: dict {x, y, z}
+        - temperature_correction_11: dict {x, y, z}
+        - temperature_correction_12: dict {x, y, z}
+        """
+        if not self.client:
+            return
+
+        try:
+            # Data processing settings (using camelCase for backend)
+            if "capture_detail" in config:
+                self.update_dynamo_config("captureDetail", config["capture_detail"])
+
+            if "emission_rate" in config:
+                self.update_dynamo_config("emissionRate", config["emission_rate"])
+
+            if "moving_average_window" in config:
+                self.update_dynamo_config("movingAverageWindow", config["moving_average_window"])
+
+            if "moving_average_type" in config:
+                self.update_dynamo_config("movingAverageType", config["moving_average_type"])
+
+            if "bypass_models" in config:
+                self.update_dynamo_config("bypassModels", config["bypass_models"])
+
+            # Temperature correction settings
+            if "use_temperature_correction" in config:
+                self.update_dynamo_config("useTemperatureCorrection", config["use_temperature_correction"])
+
+            if "room_temperature_f" in config:
+                self.update_dynamo_config("roomTemperatureF", config["room_temperature_f"])
+
+            # Device-specific temperature scalars
+            for device_type in ["06", "07", "08", "10", "11", "12"]:
+                key = f"temperature_correction_{device_type}"
+                if key in config:
+                    # Send as camelCase, backend will convert back to snake_case
+                    camel_key = f"temperatureCorrection{device_type}"
+                    self.update_dynamo_config(camel_key, config[key])
+
+            print(f"[Hardware] Backend config updated: {list(config.keys())}")
+        except Exception as e:
+            print(f"[Hardware] Error updating backend config: {e}")
 
     # --- Mound Group Management ---
 
@@ -603,7 +661,7 @@ class HardwareService(QtCore.QObject):
         def _request_reinitialize_device_groups() -> None:
             """
             Legacy backends persist the group but won't "activate" it (build runtime multi-device groups / virtual devices)
-            until devices are regrouped. DynamoDeluxe exposes `reinitializeDeviceGroups`; some older backends expose
+            until devices are regrouped. DynamoPy exposes `reinitializeDeviceGroups`; some older backends expose
             `reinitializeConnectedDevices`.
             """
             try:
@@ -724,11 +782,11 @@ class HardwareService(QtCore.QObject):
         self.client.on("createDeviceGroupStatus", on_create_status)
         self.client.on("groupUpdateStatus", on_create_status)
 
-        # Build the creation payload to match DynamoDeluxe schema:
+        # Build the creation payload to match DynamoPy schema:
         # DeviceGroupCreationData + DeviceGroupMapping (snake_case keys).
         #
         # IMPORTANT: mapping_index values must match the group definition.
-        # For PitchingMound, DynamoDeluxe reports:
+        # For PitchingMound, DynamoPy reports:
         # - Launch Zone: mapping_index 0, rotation -90
         # - Upper Landing Zone: mapping_index 1, rotation 0
         # - Lower Landing Zone: mapping_index 2, rotation 0
@@ -830,7 +888,7 @@ class HardwareService(QtCore.QObject):
                 if not self.client or not bool(getattr(self.client.status, "connected", False)):
                     return
                 # Fallback retry order:
-                # - createDeviceGroup (newer DynamoDeluxe)
+                # - createDeviceGroup (newer DynamoPy)
                 # - saveGroup (older DynamoPy)
                 print("[hardware] createTemporaryGroup: no status received; retrying once via createDeviceGroup")
                 try:
@@ -892,7 +950,7 @@ class HardwareService(QtCore.QObject):
             self._groups = []
 
         # Also emit a flattened "available devices" list for UI pickers.
-        # DynamoDeluxe sends connected devices as groups via getConnectedGroupsStatus (no connectedDeviceList).
+        # DynamoPy sends connected devices as groups via getConnectedGroupsStatus (no connectedDeviceList).
         try:
             self._on_connected_device_list(self._groups)
         except Exception:

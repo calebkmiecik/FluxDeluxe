@@ -160,7 +160,15 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         btn_row_wrap = QtWidgets.QWidget()
         btn_row_wrap.setLayout(btn_row)
         left_col.addWidget(btn_row_wrap)
-        left_col.addWidget(self.btn_add_tests)
+        self.btn_bulk_upload = QtWidgets.QPushButton("Upload to Supabase")
+        self.btn_bulk_upload.setToolTip("Select a folder of test sessions to bulk-upload to Supabase")
+        add_upload_row = QtWidgets.QHBoxLayout()
+        add_upload_row.setSpacing(6)
+        add_upload_row.addWidget(self.btn_add_tests, 1)
+        add_upload_row.addWidget(self.btn_bulk_upload, 1)
+        add_upload_wrap = QtWidgets.QWidget()
+        add_upload_wrap.setLayout(add_upload_row)
+        left_col.addWidget(add_upload_wrap)
         left_wrap = QtWidgets.QWidget()
         left_wrap.setLayout(left_col)
 
@@ -221,6 +229,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         self.btn_run.clicked.connect(self._on_run_clicked)
         self.btn_run_plate_type.clicked.connect(self._on_run_plate_type_clicked)
         self.btn_add_tests.clicked.connect(self._on_add_tests_clicked)
+        self.btn_bulk_upload.clicked.connect(self._on_bulk_upload_clicked)
         self.test_list.currentItemChanged.connect(self._emit_test_changed)
         self.processed_list.currentItemChanged.connect(self._emit_processed_changed)
         self.stage_combo.currentTextChanged.connect(lambda s: self.stage_changed.emit(str(s)))
@@ -713,6 +722,19 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             return
         self.metrics_widget.set_big_picture_status(f"Importing {len(files)} file(s)…")
         self.controller.import_temperature_tests(files)
+
+    def _on_bulk_upload_clicked(self) -> None:
+        if not self.controller:
+            return
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select folder containing test sessions",
+            "",
+        )
+        if not folder:
+            return
+        self.metrics_widget.set_big_picture_status(f"Bulk uploading from {folder}…")
+        self.controller.bulk_upload_to_supabase(folder)
 
     def _on_import_ready(self, payload: dict) -> None:
         payload = payload or {}

@@ -195,21 +195,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tool_title.setText(spec.name)
             return
 
-        # Streamlit tools: start the process if needed, then open browser
+        # Streamlit tools: start the process if needed; _poll_ready opens
+        # the browser once Streamlit is actually serving.
         if spec.kind == "streamlit":
             page = self._ensure_metrics_editor_page()
             try:
                 page.ensure_started()
+                self.status_label.setText(f"Starting {spec.name}...")
             except Exception:
                 pass
-            # Open browser and stay on launcher
-            url = str(spec.url or "")
-            if url:
-                QtGui.QDesktopServices.openUrl(QtCore.QUrl(url))
-                try:
-                    self.status_label.setText(f"{spec.name} opened in browser")
-                except Exception:
-                    pass
             return
 
         # Web tools: just open browser
@@ -224,14 +218,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
     def _setup_backend_log_reader(self) -> None:
-        """Set up the backend log dialog to read from the DynamoDeluxe process."""
+        """Set up the backend log dialog to read from the DynamoPy process."""
         try:
             main_module = self._resolve_main_module()
             process = getattr(main_module, "get_dynamo_process", lambda: None)()
 
             if process is not None:
                 dialog = BackendLogDialog.get_instance(self)
-                dialog.start_reading(process)
+                dialog.start_reading()  # subscribes to drain-thread callbacks
                 self._backend_ready = True
                 try:
                     self.status_label.setText("Backend ready")
@@ -243,7 +237,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._backend_probe_attempts += 1
             if self._backend_probe_attempts <= 25:
                 try:
-                    self.status_label.setText("Starting backend…")
+                    self.status_label.setText("Starting backend\u2026")
                 except Exception:
                     pass
                 QtCore.QTimer.singleShot(200, self._setup_backend_log_reader)

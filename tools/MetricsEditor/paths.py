@@ -11,11 +11,11 @@ def _repo_root() -> Path:
 
 def dynamo_root() -> Path:
     """
-    Path to the DynamoDeluxe repo folder that owns `app/` and `file_system/`.
+    Path to the DynamoPy repo folder that owns `app/` and `file_system/`.
 
     This keeps the Metrics Editor behaving the same way it did when it lived
-    inside DynamoDeluxe: snapshots/truth live in DynamoDeluxe/file_system and
-    `app.*` imports resolve against DynamoDeluxe.
+    inside DynamoPy: snapshots/truth live in DynamoPy/file_system and
+    `app.*` imports resolve against DynamoPy.
     """
     env = (os.environ.get("METRICS_EDITOR_DYNAMO_ROOT") or "").strip()
     if env:
@@ -23,7 +23,7 @@ def dynamo_root() -> Path:
         if p.exists():
             return p
 
-    candidate = _repo_root() / "FluxDeluxe" / "DynamoDeluxe"
+    candidate = _repo_root() / "FluxDeluxe" / "DynamoPy"
     if candidate.exists():
         return candidate
 
@@ -32,7 +32,7 @@ def dynamo_root() -> Path:
 
 
 def repo_root() -> Path:
-    # Back-compat name: historically this returned the DynamoDeluxe repo root.
+    # Back-compat name: historically this returned the DynamoPy repo root.
     return dynamo_root()
 
 

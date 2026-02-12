@@ -18,7 +18,7 @@ PKG = ROOT / "fluxdeluxe"
 
 # ── Data files (bundled into _MEIPASS) ────────────────────────────────────
 # Only assets that the *frozen Qt process itself* needs go here.
-# DynamoDeluxe source and tools/ are copied alongside the exe by build.py.
+# DynamoPy source and tools/ are copied alongside the exe by build.py.
 datas = [
     (str(PKG / "ui" / "assets"), "ui/assets"),
     (str(PKG / "ui" / "theme.qss"), "ui"),

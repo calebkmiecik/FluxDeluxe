@@ -6,7 +6,7 @@ These steps are for running the desktop app on another machine.
    `git clone --recurse-submodules <repo-url>`
 
 2) Create the backend environment (recommended):
-   `conda env create -f FluxDeluxe/DynamoDeluxe/Dynamo3.11.yml`
+   `conda env create -f FluxDeluxe/DynamoPy/Dynamo3.11.yml`
 
 3) Install UI deps:
    `pip install -r requirements.txt`

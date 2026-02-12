@@ -70,7 +70,7 @@ class IoClient:
 
     def _on_simple_json_data(self, payload) -> None:
         """
-        DynamoDeluxe can emit msgpack frames on `simpleJsonData`.
+        DynamoPy can emit msgpack frames on `simpleJsonData`.
         Decode them and forward through the same json callback path so the UI behaves identically.
         """
         if self._on_json is None:

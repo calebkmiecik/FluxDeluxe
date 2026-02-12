@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Dict, Optional, List, Tuple
 
 from PySide6 import QtCore
@@ -676,5 +677,76 @@ class PlateTypeStageSplitMAEWorker(QtCore.QThread):
             self.result_ready.emit(payload)
         except Exception as exc:
             self.result_ready.emit({"ok": False, "message": str(exc), "errors": [str(exc)], "best": None})
+
+
+class SupabaseUploadWorker(QtCore.QThread):
+    """Fire-and-forget worker that syncs a temperature test session to Supabase."""
+
+    def __init__(self, meta_path: str):
+        super().__init__()
+        self.meta_path = str(meta_path or "")
+
+    def run(self) -> None:
+        try:
+            from ...infra.supabase_temp_repo import SupabaseTempRepository
+
+            repo = SupabaseTempRepository()
+            repo.sync_session_from_meta(self.meta_path)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "SupabaseUploadWorker failed: %s", exc
+            )
+
+
+class SupabaseBulkUploadWorker(QtCore.QThread):
+    """Background worker that uploads all temperature test sessions from a folder to Supabase."""
+
+    progress = QtCore.Signal(int, int)  # current, total
+    finished_with_result = QtCore.Signal(dict)  # {ok, uploaded, skipped, errors}
+
+    def __init__(self, folder: str):
+        super().__init__()
+        self.folder = str(folder or "")
+
+    def run(self) -> None:
+        import glob
+        import logging
+
+        _log = logging.getLogger(__name__)
+        meta_files = sorted(glob.glob(os.path.join(self.folder, "**", "*.meta.json"), recursive=True))
+        total = len(meta_files)
+        uploaded = 0
+        skipped = 0
+        errors: List[str] = []
+
+        if total == 0:
+            self.finished_with_result.emit({"ok": True, "uploaded": 0, "skipped": 0, "errors": ["No *.meta.json files found in folder."]})
+            return
+
+        try:
+            from ...infra.supabase_temp_repo import SupabaseTempRepository
+            repo = SupabaseTempRepository()
+        except Exception as exc:
+            self.finished_with_result.emit({"ok": False, "uploaded": 0, "skipped": 0, "errors": [f"Failed to initialise Supabase client: {exc}"]})
+            return
+
+        for i, meta_path in enumerate(meta_files):
+            self.progress.emit(i, total)
+            try:
+                repo.sync_session_from_meta(meta_path)
+                uploaded += 1
+            except Exception as exc:
+                _log.warning("Bulk upload failed for %s: %s", meta_path, exc)
+                errors.append(f"{os.path.basename(meta_path)}: {exc}")
+                skipped += 1
+
+        self.progress.emit(total, total)
+        self.finished_with_result.emit({
+            "ok": not errors,
+            "uploaded": uploaded,
+            "skipped": skipped,
+            "errors": errors,
+        })
 
 

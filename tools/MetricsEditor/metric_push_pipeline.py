@@ -76,7 +76,7 @@ def _run_dynamo_inline(
         out = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
         return proc.returncode, out.strip()
     except subprocess.TimeoutExpired:
-        return 124, f"Timed out after {timeout_s}s running DynamoDeluxe subprocess."
+        return 124, f"Timed out after {timeout_s}s running DynamoPy subprocess."
 
 
 def _read_last_update_time_for_path_key(*, path_key: str, cred: Path | None) -> int:

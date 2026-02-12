@@ -17,6 +17,8 @@ from .temp_test_workers import (
     PlateTypeStageSplitMAEWorker,
     PlateTypeRollupWorker,
     ProcessingWorker,
+    SupabaseBulkUploadWorker,
+    SupabaseUploadWorker,
     TemperatureAnalysisWorker,
     TemperatureAutoUpdateWorker,
     TemperatureImportWorker,
@@ -91,6 +93,8 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self.testing.processing_status.connect(self._on_processing_status)
         
         self._worker = None # Keep reference to prevent GC
+        self._supabase_worker = None
+        self._bulk_upload_worker = None
 
     def import_temperature_tests(self, file_paths: list[str]) -> None:
         """
@@ -282,6 +286,50 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         if self._pending_bias_recompute and self._last_processing_device_id:
             self._pending_bias_recompute = False
             self._start_bias_compute(self._last_processing_device_id)
+
+        # Fire-and-forget Supabase upload
+        self._trigger_supabase_upload(self._current_test_csv)
+
+    def _trigger_supabase_upload(self, csv_path: str) -> None:
+        """Start a background Supabase upload for the current session. Never blocks."""
+        try:
+            meta_path = self.testing.repo._temp._meta_path_for_csv(csv_path)
+            if not meta_path or not os.path.isfile(meta_path):
+                return
+            self._supabase_worker = SupabaseUploadWorker(meta_path)
+            self._supabase_worker.finished.connect(
+                lambda: setattr(self, "_supabase_worker", None)
+            )
+            self._supabase_worker.start()
+        except Exception:
+            pass
+
+    def bulk_upload_to_supabase(self, folder: str) -> None:
+        """Upload all sessions in *folder* to Supabase (background thread)."""
+        if self._bulk_upload_worker and self._bulk_upload_worker.isRunning():
+            self.processing_status.emit({"status": "error", "message": "Bulk upload already in progress"})
+            return
+
+        worker = SupabaseBulkUploadWorker(folder)
+        self._bulk_upload_worker = worker
+
+        def _on_progress(current: int, total: int) -> None:
+            self.processing_status.emit({"status": "running", "message": f"Uploading to Supabase: {current}/{total}…"})
+
+        def _on_done(result: dict) -> None:
+            self._bulk_upload_worker = None
+            uploaded = int((result or {}).get("uploaded", 0))
+            skipped = int((result or {}).get("skipped", 0))
+            errs = list((result or {}).get("errors") or [])
+            if errs:
+                msg = f"Bulk upload done: {uploaded} uploaded, {skipped} failed."
+            else:
+                msg = f"Bulk upload complete: {uploaded} session(s) uploaded."
+            self.processing_status.emit({"status": "completed", "message": msg})
+
+        worker.progress.connect(_on_progress)
+        worker.finished_with_result.connect(_on_done)
+        worker.start()
 
     def _start_bias_compute(self, device_id: str) -> None:
         if self._bias_worker and self._bias_worker.isRunning():
