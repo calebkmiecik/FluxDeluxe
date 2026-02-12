@@ -56,7 +56,7 @@ QMainWindow::separator {
   height: 1px;
 }
 
-/* Sensor View: let the tab surface show around the plot widget */
+/* Force View: let the tab surface show around the plot widget */
 ForcePlotWidget {
   background: transparent;
 }
@@ -303,9 +303,26 @@ QComboBox::drop-down {
 
 QComboBox QAbstractItemView {
   background-color: #1A1A1A;
-  border: none;
+  border: 1px solid #333333;
+  border-radius: 6px;
   selection-background-color: #3D7EFF;
   selection-color: #121212;
+  outline: none;
+}
+
+/* Ensure dropdown items have solid backgrounds */
+QComboBox QAbstractItemView::item {
+  background-color: #1A1A1A;
+  padding: 4px 6px;
+}
+
+QComboBox QAbstractItemView::item:hover {
+  background-color: #202020;
+}
+
+QComboBox QAbstractItemView::item:selected {
+  background-color: #3D7EFF;
+  color: #121212;
 }
 
 /* Controls should be one surface higher than the panel they sit on (BG->S1, S1->S2). */
@@ -335,14 +352,15 @@ QAbstractItemView {
 QAbstractItemView::item {
   padding: 4px 6px;
   border: none;
+  background-color: transparent;  /* Let delegate handle painting */
 }
 
 QAbstractItemView::item:hover {
-  background: #202020;
+  background-color: #202020;
 }
 
 QAbstractItemView::item:selected {
-  background: #3D7EFF;
+  background-color: #3D7EFF;
   color: #121212;
 }
 

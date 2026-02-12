@@ -41,14 +41,14 @@ def _run_dynamo_inline(
     extra_env: dict[str, str] | None = None,
 ) -> tuple[int, str]:
     """
-    Run a small DynamoDeluxe `app.*` snippet in a separate process.
+    Run a small DynamoPy `app.*` snippet in a separate process.
 
     We do this to avoid any Firebase Admin singleton conflicts inside Streamlit
     and to control which credential/project is used for the operation.
     """
     env = os.environ.copy()
     env.setdefault("APP_ENV", "development")
-    # Make `import app.*` work when cwd is DynamoDeluxe/app.
+    # Make `import app.*` work when cwd is DynamoPy/app.
     env["PYTHONPATH"] = str(Path(".."))
     if dev_cred is not None:
         env["AXF_FIREBASE_CRED"] = str(dev_cred)

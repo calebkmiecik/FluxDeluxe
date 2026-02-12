@@ -26,9 +26,9 @@ def refresh_analytics_and_capture_configs() -> list[RefreshStatus]:
     # Safety: allow users to run the editor with AXF_FIREBASE_CRED pointing at dev, while keeping
     # the "Pull from Firebase" button reading from production snapshots (most up-to-date).
     _saved_override = os.environ.pop("AXF_FIREBASE_CRED", None)
-    # Ensure DynamoDeluxe config loads in dev layout:
+    # Ensure DynamoPy config loads in dev layout:
     # - APP_ENV=development => base_path resolves to ../file_system
-    # - cwd=.../DynamoDeluxe/app => ../file_system points at the repo file_system/
+    # - cwd=.../DynamoPy/app => ../file_system points at the repo file_system/
     os.environ.setdefault("APP_ENV", "development")
     try:
         app_cwd = paths.dynamo_root() / "app"
@@ -39,7 +39,7 @@ def refresh_analytics_and_capture_configs() -> list[RefreshStatus]:
 
     try:
         # Import lazily so the editor can still run in "offline snapshot" mode
-        # even when DynamoDeluxe-only dependencies are not installed.
+        # even when DynamoPy-only dependencies are not installed.
         from app.data_maintenance.data_maintenance import (  # type: ignore
             retrieve_analytics_from_db,
             retrieve_capture_configurations_from_db,
@@ -48,15 +48,15 @@ def refresh_analytics_and_capture_configs() -> list[RefreshStatus]:
         hint = ""
         if "dynamo_config" in str(e):
             hint = (
-                " Hint: DynamoDeluxe expects APP_ENV=development + cwd at DynamoDeluxe/app so it uses the repo "
+                " Hint: DynamoPy expects APP_ENV=development + cwd at DynamoPy/app so it uses the repo "
                 "`file_system/` (otherwise it looks for an `_internal/file_system` bundle)."
             )
         statuses.append(
             RefreshStatus(
                 ok=False,
                 message=(
-                    "Failed to import DynamoDeluxe data maintenance module. "
-                    "Install DynamoDeluxe dependencies (or run in offline snapshot mode). "
+                    "Failed to import DynamoPy data maintenance module. "
+                    "Install DynamoPy dependencies (or run in offline snapshot mode). "
                     f"Error: {e}.{hint}"
                 ),
             )

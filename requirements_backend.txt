@@ -1,6 +1,6 @@
 # Dependencies for the embedded Python (backend subprocesses).
 # These are installed into the bundled python/ directory by build.py.
-# Includes everything DynamoDeluxe, Streamlit tools, and shared libs need.
+# Includes everything DynamoPy, Streamlit tools, and shared libs need.
 #
 # Pinned to match the Dynamo3.11 conda env where possible.
 
@@ -44,7 +44,7 @@ pyserial==3.5
 pyserial-asyncio==0.6
 
 # --- ML (tflite-runtime only, NOT full TensorFlow) ---
-# tflite-runtime is installed separately from a local wheel in DynamoDeluxe.
+# tflite-runtime is installed separately from a local wheel in DynamoPy.
 # See build.py step 2 for the wheel install.
 numba>=0.62.0
 

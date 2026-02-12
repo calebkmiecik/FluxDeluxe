@@ -14,13 +14,13 @@ def main() -> None:
       python -m streamlit run tools/MetricsEditor/metrics_editor_app.py
 
     This launcher also sets up the runtime environment so the tool behaves
-    as if it lived inside DynamoDeluxe:
-    - Adds repo root + DynamoDeluxe root to PYTHONPATH
-    - Uses DynamoDeluxe/app as cwd so data_maintenance.py relative paths work
+    as if it lived inside DynamoPy:
+    - Adds repo root + DynamoPy root to PYTHONPATH
+    - Uses DynamoPy/app as cwd so data_maintenance.py relative paths work
     """
     repo_root = Path(__file__).resolve().parents[2]
     entrypoint = (repo_root / "tools" / "MetricsEditor" / "metrics_editor_app.py").resolve()
-    dynamo_root = (repo_root / "FluxDeluxe" / "DynamoDeluxe").resolve()
+    dynamo_root = (repo_root / "FluxDeluxe" / "DynamoPy").resolve()
 
     env = os.environ.copy()
     env.setdefault("APP_ENV", "development")

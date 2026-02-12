@@ -113,6 +113,9 @@ class MetricsEditorPage(QtWidgets.QWidget):
         self._show_placeholder(text)
 
     def _repo_root(self) -> Path:
+        from ...runtime import is_frozen, get_app_dir
+        if is_frozen():
+            return get_app_dir()
         # FluxDeluxe/ui/tools/metrics_editor_page.py -> repo root
         return Path(__file__).resolve().parents[3]
 
@@ -128,7 +131,7 @@ class MetricsEditorPage(QtWidgets.QWidget):
             if p.exists():
                 return p
         # Repo-local default
-        return (self._repo_root() / "FluxDeluxe" / "DynamoDeluxe").resolve()
+        return (self._repo_root() / "fluxdeluxe" / "DynamoPy").resolve()
 
     def _resolve_entrypoint(self) -> str:
         ep = (os.environ.get("METRICS_EDITOR_STREAMLIT_ENTRYPOINT") or self._entrypoint or "").strip()
@@ -159,17 +162,23 @@ class MetricsEditorPage(QtWidgets.QWidget):
             )
             return
 
-        if self._proc is None or self._proc.poll() is not None:
+        already_running = self._proc is not None and self._proc.poll() is None
+
+        if not already_running:
             ok = self._start_streamlit()
             if not ok:
                 return
 
-        # Try to load once it's ready (poll timer handles readiness)
-        self.status.setText(f"Starting Streamlit… {self._endpoint.url}")
+        # If already running and ready, just open in browser directly
+        if already_running and self._is_streamlit_ready():
+            self._open_in_browser()
+            return
+
+        # Otherwise wait for it to boot up
+        self.status.setText(f"Starting Streamlit... {self._endpoint.url}")
         self._set_loading(
-            "Starting Streamlit…\n\n"
-            "If you see a browser error briefly, it usually means Streamlit is still booting.\n"
-            "This page should switch to the editor automatically once it’s ready."
+            "Starting Streamlit...\n\n"
+            "The editor will open in your browser once it's ready."
         )
         self._poll_timer.start()
 
@@ -207,12 +216,15 @@ class MetricsEditorPage(QtWidgets.QWidget):
 
         # Ensure both packages are importable:
         # - repo root => `tools.*`
-        # - dynamo root => `app.*` (DynamoDeluxe)
+        # - dynamo root => `app.*` (DynamoPy)
         env = os.environ.copy()
-        # Ensure DynamoDeluxe runs in "dev" layout (uses ../file_system relative to cwd)
+        # Ensure DynamoPy runs in "dev" layout (uses ../file_system relative to cwd)
         # so importing app.config.dynamo_config can find file_system/paths.cfg.
         env.setdefault("APP_ENV", "development")
         env.setdefault("PYTHONUNBUFFERED", "1")
+        # Force headless so Streamlit doesn't auto-open a browser tab
+        env["STREAMLIT_SERVER_HEADLESS"] = "true"
+        env["STREAMLIT_BROWSER_GATHER_USAGE_STATS"] = "false"
         pythonpath_parts = [str(repo_root)]
         if dynamo_root.exists():
             pythonpath_parts.append(str(dynamo_root))
@@ -221,12 +233,13 @@ class MetricsEditorPage(QtWidgets.QWidget):
             pythonpath_parts.append(env["PYTHONPATH"])
         env["PYTHONPATH"] = os.pathsep.join(pythonpath_parts)
 
-        # data_maintenance.py uses ../file_system relative to DynamoDeluxe/app
+        # data_maintenance.py uses ../file_system relative to DynamoPy/app
         cwd = (dynamo_root / "app") if (dynamo_root / "app").exists() else Path(entrypoint).resolve().parent
 
         # Start: python -m streamlit run <entrypoint> --server.address ... --server.port ...
+        from ...runtime import get_python_executable
         cmd = [
-            sys.executable,
+            get_python_executable(),
             "-m",
             "streamlit",
             "run",
@@ -242,14 +255,16 @@ class MetricsEditorPage(QtWidgets.QWidget):
         ]
 
         try:
-            self._proc = subprocess.Popen(  # noqa: S603
-                cmd,
+            kwargs = dict(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 cwd=str(cwd),
                 env=env,
                 text=True,
             )
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            self._proc = subprocess.Popen(cmd, **kwargs)  # noqa: S603
         except Exception as exc:
             self.status.setText(f"Failed to launch Streamlit: {exc}")
             self._set_idle_placeholder(

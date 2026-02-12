@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import collections
 import configparser
 import logging
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 if __name__ == "__main__" and __package__ is None:
@@ -31,20 +33,68 @@ _logger = logging.getLogger(__name__)
 
 
 _dynamo_process: "subprocess.Popen[bytes] | None" = None
+_backend_log_callbacks: list = []
+_backend_log_buffer: collections.deque = collections.deque(maxlen=5000)
+_drain_threads: list[threading.Thread] = []
 
 
 def get_dynamo_process() -> "subprocess.Popen[bytes] | None":
-    """Get the DynamoDeluxe backend subprocess (for log viewing, etc.)."""
+    """Get the DynamoPy backend subprocess (for log viewing, etc.)."""
     return _dynamo_process
 
 
+def register_backend_log_callback(cb) -> None:
+    """Register a callback to receive backend log lines (str)."""
+    _backend_log_callbacks.append(cb)
+
+
+def unregister_backend_log_callback(cb) -> None:
+    """Unregister a previously registered log callback."""
+    try:
+        _backend_log_callbacks.remove(cb)
+    except ValueError:
+        pass
+
+
+def get_backend_log_buffer() -> collections.deque:
+    """Get the buffer of recent backend log lines."""
+    return _backend_log_buffer
+
+
+def _drain_pipe(pipe, label: str) -> None:
+    """Read from a subprocess pipe, dispatch to callbacks and buffer."""
+    try:
+        for line in iter(pipe.readline, b""):
+            text = line.decode("utf-8", errors="replace")
+            _backend_log_buffer.append(text)
+            for cb in _backend_log_callbacks[:]:
+                try:
+                    cb(text)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    finally:
+        try:
+            pipe.close()
+        except Exception:
+            pass
+
+
 def _get_dynamo_path() -> Path:
-    """Return the path to the DynamoDeluxe submodule."""
-    base = Path(__file__).resolve().parent / "DynamoDeluxe"
+    """Return the path to the DynamoPy submodule."""
+    from .runtime import is_frozen, get_app_dir
+
+    if is_frozen():
+        # In the frozen app, DynamoPy is at <install_dir>/fluxdeluxe/DynamoPy
+        base = get_app_dir() / "fluxdeluxe" / "DynamoPy"
+    else:
+        base = Path(__file__).resolve().parent / "DynamoPy"
+
     if (base / "app" / "main.py").exists():
         return base
 
-    # Handle nested submodule layouts like DynamoDeluxe/AxioforceDynamoPy/...
+    # Handle nested submodule layouts like DynamoPy/AxioforceDynamoPy/...
     if base.exists():
         for child in base.iterdir():
             if child.is_dir() and (child / "app" / "main.py").exists():
@@ -54,7 +104,7 @@ def _get_dynamo_path() -> Path:
 
 
 def _get_dynamo_tracking_branch() -> str:
-    """Return the configured tracking branch for the DynamoDeluxe submodule.
+    """Return the configured tracking branch for the DynamoPy submodule.
 
     Falls back to "main" if configuration can't be determined.
     """
@@ -68,7 +118,7 @@ def _get_dynamo_tracking_branch() -> str:
         cfg.read(gitmodules_path, encoding="utf-8")
         for section in cfg.sections():
             sub_path = cfg.get(section, "path", fallback="")
-            if sub_path.replace("\\", "/").lower().endswith("dynamodeluxe"):
+            if sub_path.replace("\\", "/").lower().endswith("dynamopy"):
                 branch = cfg.get(section, "branch", fallback="main").strip()
                 return branch or "main"
     except Exception:
@@ -89,10 +139,10 @@ def _git_run(args: list[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def _update_dynamo_deluxe() -> None:
-    """Check for and pull the latest DynamoDeluxe submodule if updates are available."""
+    """Check for and pull the latest DynamoPy submodule if updates are available."""
     submodule_path = _get_dynamo_path()
     if not submodule_path.exists():
-        _logger.warning("DynamoDeluxe submodule not found at %s", submodule_path)
+        _logger.warning("DynamoPy submodule not found at %s", submodule_path)
         return
 
     try:
@@ -100,7 +150,7 @@ def _update_dynamo_deluxe() -> None:
 
         status = _git_run(["status", "--porcelain"], cwd=submodule_path)
         if status.stdout.strip():
-            _logger.warning("DynamoDeluxe has local changes; skipping auto-update (branch=%s).", branch)
+            _logger.warning("DynamoPy has local changes; skipping auto-update (branch=%s).", branch)
             return
 
         # Fetch latest from remote
@@ -119,38 +169,42 @@ def _update_dynamo_deluxe() -> None:
         commits_behind = int(result.stdout.strip() or "0")
 
         if commits_behind > 0:
-            _logger.info("DynamoDeluxe is %d commit(s) behind. Pulling updates...", commits_behind)
+            _logger.info("DynamoPy is %d commit(s) behind. Pulling updates...", commits_behind)
             _git_run(["pull", "origin", branch], cwd=submodule_path)
-            _logger.info("DynamoDeluxe updated successfully.")
+            _logger.info("DynamoPy updated successfully.")
         else:
-            _logger.info("DynamoDeluxe is up to date.")
+            _logger.info("DynamoPy is up to date.")
 
     except subprocess.CalledProcessError as exc:
-        _logger.warning("Failed to update DynamoDeluxe: %s", exc)
+        _logger.warning("Failed to update DynamoPy: %s", exc)
     except Exception as exc:
-        _logger.warning("Unexpected error updating DynamoDeluxe: %s", exc)
+        _logger.warning("Unexpected error updating DynamoPy: %s", exc)
 
 
 def _start_dynamo_backend() -> None:
-    """Start the DynamoDeluxe backend as a subprocess."""
+    """Start the DynamoPy backend as a subprocess."""
+    from .runtime import get_python_executable
+
     global _dynamo_process
 
     dynamo_path = _get_dynamo_path()
     if not dynamo_path.exists():
-        _logger.warning("DynamoDeluxe not found, skipping backend startup")
+        _logger.warning("DynamoPy not found, skipping backend startup")
         return
 
     main_script = dynamo_path / "app" / "main.py"
     if not main_script.exists():
-        _logger.warning("DynamoDeluxe main.py not found at %s", main_script)
+        _logger.warning("DynamoPy main.py not found at %s", main_script)
         return
+
+    python_exe = get_python_executable()
 
     # Set up environment matching the PyCharm run configuration
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     env["APP_ENV"] = "development"
 
-    # Add DynamoDeluxe root to PYTHONPATH so "app.main" imports work
+    # Add DynamoPy root to PYTHONPATH so "app.main" imports work
     pythonpath_parts = [str(dynamo_path)]
     if env.get("PYTHONPATH"):
         pythonpath_parts.append(env["PYTHONPATH"])
@@ -161,26 +215,30 @@ def _start_dynamo_backend() -> None:
     working_dir = dynamo_path / "app"
 
     try:
-        _logger.info("Starting DynamoDeluxe backend...")
-        _logger.info("  Python: %s", sys.executable)
+        _logger.info("Starting DynamoPy backend...")
+        _logger.info("  Python: %s", python_exe)
         _logger.info("  Script: %s", main_script)
         _logger.info("  Working directory: %s", working_dir)
         _logger.info("  PYTHONPATH: %s", env["PYTHONPATH"])
-        _dynamo_process = subprocess.Popen(
-            [sys.executable, str(main_script)],
+        popen_kwargs = dict(
             cwd=working_dir,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        _logger.info("DynamoDeluxe backend started (PID: %d)", _dynamo_process.pid)
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        _dynamo_process = subprocess.Popen(
+            [python_exe, str(main_script)], **popen_kwargs
+        )
+        _logger.info("DynamoPy backend started (PID: %d)", _dynamo_process.pid)
 
         # Check if process died immediately
         import time
         time.sleep(0.5)
         poll_result = _dynamo_process.poll()
         if poll_result is not None:
-            _logger.error("DynamoDeluxe backend exited immediately with code: %d", poll_result)
+            _logger.error("DynamoPy backend exited immediately with code: %d", poll_result)
             # Try to read any error output
             stdout_data, stderr_data = _dynamo_process.communicate(timeout=2)
             if stdout_data:
@@ -189,36 +247,86 @@ def _start_dynamo_backend() -> None:
                 _logger.error("stderr: %s", stderr_data.decode("utf-8", errors="replace")[:2000])
             _dynamo_process = None
         else:
-            _logger.info("DynamoDeluxe backend is running")
+            _logger.info("DynamoPy backend is running")
+            # Start drain threads to read stdout/stderr and prevent pipe deadlock
+            global _drain_threads
+            _drain_threads = []
+            if _dynamo_process.stdout:
+                t = threading.Thread(
+                    target=_drain_pipe,
+                    args=(_dynamo_process.stdout, "stdout"),
+                    daemon=True,
+                )
+                t.start()
+                _drain_threads.append(t)
+            if _dynamo_process.stderr:
+                t = threading.Thread(
+                    target=_drain_pipe,
+                    args=(_dynamo_process.stderr, "stderr"),
+                    daemon=True,
+                )
+                t.start()
+                _drain_threads.append(t)
     except Exception as exc:
-        _logger.error("Failed to start DynamoDeluxe backend: %s", exc)
+        _logger.error("Failed to start DynamoPy backend: %s", exc)
         import traceback
         _logger.error(traceback.format_exc())
 
 
 def _stop_dynamo_backend() -> None:
-    """Stop the DynamoDeluxe backend subprocess."""
+    """Stop the DynamoPy backend subprocess gracefully."""
     global _dynamo_process
 
     if _dynamo_process is None:
         return
 
     try:
-        _logger.info("Stopping DynamoDeluxe backend (PID: %d)...", _dynamo_process.pid)
+        _logger.info("Stopping DynamoPy backend (PID: %d)...", _dynamo_process.pid)
+
+        # Try graceful shutdown via API first
+        try:
+            import requests
+            _logger.info("Attempting graceful shutdown via API...")
+            requests.post("http://localhost:3001/api/shutdown", timeout=5)
+            _dynamo_process.wait(timeout=10)
+            _logger.info("DynamoPy backend stopped gracefully.")
+            return
+        except Exception as api_exc:
+            _logger.warning("Graceful shutdown failed (%s), terminating process...", api_exc)
+
+        # Fallback to terminate
         _dynamo_process.terminate()
         _dynamo_process.wait(timeout=10)
-        _logger.info("DynamoDeluxe backend stopped.")
+        _logger.info("DynamoPy backend stopped.")
     except subprocess.TimeoutExpired:
-        _logger.warning("DynamoDeluxe backend did not stop gracefully, killing...")
+        _logger.warning("DynamoPy backend did not stop gracefully, killing...")
         _dynamo_process.kill()
         _dynamo_process.wait()
     except Exception as exc:
-        _logger.error("Error stopping DynamoDeluxe backend: %s", exc)
+        _logger.error("Error stopping DynamoPy backend: %s", exc)
     finally:
         _dynamo_process = None
 
 
+def stop_dynamo_backend() -> None:
+    """Public wrapper to stop the DynamoPy backend."""
+    _stop_dynamo_backend()
+
+
+def start_dynamo_backend() -> None:
+    """Public wrapper to start the DynamoPy backend."""
+    _start_dynamo_backend()
+
+
 def run_qt() -> int:
+    from .runtime import is_frozen, get_app_dir, resource_path
+
+    # In frozen mode, add the install dir to sys.path so tools/ is importable
+    if is_frozen():
+        app_dir = str(get_app_dir())
+        if app_dir not in sys.path:
+            sys.path.insert(0, app_dir)
+
     # Windows taskbar icon grouping is tied to an AppUserModelID.
     try:
         if sys.platform.startswith("win"):
@@ -238,7 +346,7 @@ def run_qt() -> int:
 
     # App/window icon
     try:
-        icon_path = Path(__file__).resolve().parent / "ui" / "assets" / "icons" / "fluxliteicon.svg"
+        icon_path = resource_path("ui", "assets", "icons", "fluxliteicon.svg")
         icon = QtGui.QIcon(str(icon_path))
         if not icon.isNull():
             app.setWindowIcon(icon)
@@ -248,7 +356,7 @@ def run_qt() -> int:
     # Splash screen while app + backend come up.
     splash = None
     try:
-        icon_path = Path(__file__).resolve().parent / "ui" / "assets" / "icons" / "fluxliteicon.svg"
+        icon_path = resource_path("ui", "assets", "icons", "fluxliteicon.svg")
         pix = QtGui.QIcon(str(icon_path)).pixmap(256, 256)
         if not pix.isNull():
             splash = QtWidgets.QSplashScreen(pix)
@@ -263,7 +371,7 @@ def run_qt() -> int:
     try:
         import re
 
-        qss_path = Path(__file__).resolve().parent / "ui" / "theme.qss"
+        qss_path = resource_path("ui", "theme.qss")
         qss_text = qss_path.read_text(encoding="utf-8")
         ui_dir = qss_path.parent
 
@@ -318,10 +426,10 @@ def run_qt() -> int:
 
 
 def main() -> int:
-    # Check for DynamoDeluxe updates before starting the app
+    # Check for DynamoPy updates before starting the app
     _update_dynamo_deluxe()
 
-    # Start the DynamoDeluxe backend
+    # Start the DynamoPy backend
     _start_dynamo_backend()
 
     # Qt is required; raise a clear error if unavailable
