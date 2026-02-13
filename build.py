@@ -19,8 +19,10 @@ Requires:
 from __future__ import annotations
 
 import argparse
+import ast
 import io
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -157,7 +159,134 @@ def prepare_embedded_python() -> Path:
     else:
         print(f"  WARNING: tflite-runtime wheel not found at {tflite_wheel}")
 
+    # Verify DynamoPy imports are all available
+    verify_backend_imports(python_exe)
+
     return target
+
+
+# ── Step 2b: Verify imports ─────────────────────────────────────────────
+
+# Standard library module names (Python 3.11) — used to skip stdlib imports
+_STDLIB = {
+    "abc", "aifc", "argparse", "array", "ast", "asynchat", "asyncio",
+    "asyncore", "atexit", "audioop", "base64", "bdb", "binascii", "binhex",
+    "bisect", "builtins", "bz2", "calendar", "cgi", "cgitb", "chunk",
+    "cmath", "cmd", "code", "codecs", "codeop", "collections", "colorsys",
+    "compileall", "concurrent", "configparser", "contextlib", "contextvars",
+    "copy", "copyreg", "cProfile", "crypt", "csv", "ctypes", "curses",
+    "dataclasses", "datetime", "dbm", "decimal", "difflib", "dis",
+    "distutils", "doctest", "email", "encodings", "enum", "errno",
+    "faulthandler", "fcntl", "filecmp", "fileinput", "fnmatch", "fractions",
+    "ftplib", "functools", "gc", "getopt", "getpass", "gettext", "glob",
+    "grp", "gzip", "hashlib", "heapq", "hmac", "html", "http", "idlelib",
+    "imaplib", "imghdr", "imp", "importlib", "inspect", "io", "ipaddress",
+    "itertools", "json", "keyword", "lib2to3", "linecache", "locale",
+    "logging", "lzma", "mailbox", "mailcap", "marshal", "math", "mimetypes",
+    "mmap", "modulefinder", "msvcrt", "multiprocessing", "netrc", "nis",
+    "nntplib", "numbers", "operator", "optparse", "os", "ossaudiodev",
+    "pathlib", "pdb", "pickle", "pickletools", "pipes", "pkgutil",
+    "platform", "plistlib", "poplib", "posix", "posixpath", "pprint",
+    "profile", "pstats", "pty", "pwd", "py_compile", "pyclbr",
+    "pydoc", "queue", "quopri", "random", "re", "readline", "reprlib",
+    "resource", "rlcompleter", "runpy", "sched", "secrets", "select",
+    "selectors", "shelve", "shlex", "shutil", "signal", "site", "smtpd",
+    "smtplib", "sndhdr", "socket", "socketserver", "spwd", "sqlite3",
+    "sre_compile", "sre_constants", "sre_parse", "ssl", "stat",
+    "statistics", "string", "stringprep", "struct", "subprocess",
+    "sunau", "symtable", "sys", "sysconfig", "syslog", "tabnanny",
+    "tarfile", "telnetlib", "tempfile", "termios", "test", "textwrap",
+    "threading", "time", "timeit", "tkinter", "token", "tokenize",
+    "tomllib", "trace", "traceback", "tracemalloc", "tty", "turtle",
+    "turtledemo", "types", "typing", "unicodedata", "unittest", "urllib",
+    "uu", "uuid", "venv", "warnings", "wave", "weakref", "webbrowser",
+    "winreg", "winsound", "wsgiref", "xdrlib", "xml", "xmlrpc",
+    "zipapp", "zipfile", "zipimport", "zlib",
+    # Private / internal
+    "_thread", "__future__", "_abc", "_io",
+}
+
+# Imports that are known to be OK even though they won't be in site-packages
+# (e.g. local DynamoPy imports, build-only deps, test-only deps)
+_IGNORE_IMPORTS = {
+    "app",              # DynamoPy local package
+    "PyInstaller",      # build-time only
+    "PyQt5",            # test scripts only
+    "pyqtgraph",        # test scripts only
+    "tensorflow",       # optional; tflite_runtime is used at runtime on Windows
+    "win32api",         # pywin32 — only used in legacy/optional paths
+    "win32com",         # pywin32
+    "category_editor",  # DynamoPy local tool
+    "script_editor",    # DynamoPy local tool
+}
+
+
+def _scan_imports(source_dir: Path) -> set[str]:
+    """Scan Python files for top-level import package names using AST."""
+    packages: set[str] = set()
+    for py_file in source_dir.rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    packages.add(alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                packages.add(node.module.split(".")[0])
+    return packages
+
+
+def verify_backend_imports(python_exe: Path) -> None:
+    """Check that every third-party import in DynamoPy is importable."""
+    _log("Step 2b: Verifying backend imports")
+    dynamo_dir = ROOT / "fluxdeluxe" / "DynamoPy"
+    if not dynamo_dir.exists():
+        print("  DynamoPy not found, skipping import check.")
+        return
+
+    all_imports = _scan_imports(dynamo_dir)
+    # Filter to third-party only
+    third_party = sorted(
+        pkg for pkg in all_imports
+        if pkg not in _STDLIB and pkg not in _IGNORE_IMPORTS
+    )
+
+    print(f"  Found {len(third_party)} third-party packages to verify:")
+    print(f"    {', '.join(third_party)}")
+
+    # Ask the embedded Python to try importing each one
+    check_script = "; ".join(
+        f"__import__('{pkg}') and None" for pkg in third_party
+    )
+    # Build a script that reports pass/fail per package
+    lines = [
+        "import importlib, sys",
+        "missing = []",
+    ]
+    for pkg in third_party:
+        lines.append(
+            f"try:\n importlib.import_module('{pkg}')\n"
+            f"except ImportError:\n missing.append('{pkg}')"
+        )
+    lines.append("if missing:")
+    lines.append(" print('MISSING: ' + ', '.join(missing), file=sys.stderr)")
+    lines.append(" sys.exit(1)")
+    lines.append("else:")
+    lines.append(f" print('  All {len(third_party)} packages verified OK')")
+
+    script = "\n".join(lines)
+    result = subprocess.run(
+        [str(python_exe), "-c", script],
+        capture_output=True, text=True,
+    )
+    print(result.stdout.strip())
+    if result.returncode != 0:
+        missing_str = result.stderr.strip()
+        print(f"\n  ERROR: {missing_str}")
+        print("  Add missing packages to requirements_backend.txt and re-run.")
+        sys.exit(1)
 
 
 # ── Step 3: PyInstaller ──────────────────────────────────────────────────

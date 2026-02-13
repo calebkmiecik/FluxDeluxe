@@ -117,19 +117,26 @@ def gh_release(version: str, zip_path: Path, installer_path: Path | None = None)
     # Push tag
     _run(["git", "push", "origin", tag], cwd=str(ROOT))
 
-    # Build asset list
-    assets = [str(zip_path)]
-    if installer_path and installer_path.exists():
-        assets.append(str(installer_path))
-
-    # Create release with assets
+    # Create release (without assets — uploading inline can timeout on large files)
     print(f"\n  Creating GitHub Release {tag} ...")
     _run([
         _gh_exe(), "release", "create", tag,
-        *assets,
         "--title", f"FluxDeluxe v{version}",
         "--generate-notes",
     ], cwd=str(ROOT))
+
+    # Upload assets one at a time
+    assets = [zip_path]
+    if installer_path and installer_path.exists():
+        assets.append(installer_path)
+
+    for asset in assets:
+        print(f"\n  Uploading {asset.name} ...")
+        _run([
+            _gh_exe(), "release", "upload", tag, str(asset),
+            "--clobber",
+        ], cwd=str(ROOT))
+        print(f"  Uploaded {asset.name}")
 
     print(f"\n  Release published: https://github.com/calebkmiecik/FluxDeluxe/releases/tag/{tag}")
 
