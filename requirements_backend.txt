@@ -53,6 +53,8 @@ numba>=0.62.0
 
 # --- Plotting ---
 matplotlib>=3.10.0
+# pyqtgraph is a FRONTEND dependency (FluxLite Qt app) — bundled by
+# PyInstaller from the system Python, NOT installed here.
 
 # --- Misc ---
 tzlocal==5.3.1

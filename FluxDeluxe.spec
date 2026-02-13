@@ -62,7 +62,6 @@ excludes = [
     "pyarrow",
     "PIL",
     "openpyxl",
-    "pyqtgraph",
     "firebase_admin",
     "google",
     "grpc",
@@ -107,9 +106,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # windowed app (no console window)
-    # NOTE: Windows exe icons require .ico format. To add a custom icon,
-    # convert fluxliteicon.svg to .ico and uncomment the line below:
-    # icon=str(PKG / "ui" / "assets" / "icons" / "fluxliteicon.ico"),
+    icon=str(PKG / "ui" / "assets" / "icons" / "fluxliteicon.ico"),
 )
 
 coll = COLLECT(
