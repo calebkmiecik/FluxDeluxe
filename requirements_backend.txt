@@ -20,6 +20,9 @@ pandas==2.2.3
 pyarrow>=23.0.0
 scipy>=1.16.0
 
+# --- Credentials ---
+keyring>=25.0.0
+
 # --- Firebase / Google Cloud ---
 firebase-admin==6.6.0
 google-cloud-firestore==2.20.1
