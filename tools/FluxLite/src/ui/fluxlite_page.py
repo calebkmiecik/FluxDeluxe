@@ -573,6 +573,9 @@ class FluxLitePage(QtWidgets.QWidget):
             self.controller.live_test.view_stage_changed.connect(lambda _i, _st: self._update_live_stage_nav("stage_changed"))
             self.controller.live_test.view_stage_changed.connect(lambda i, st: self._render_live_stage_grid(int(i), st))
             self.controller.live_test.view_session_ended.connect(lambda: self._update_live_stage_nav("session_ended"))
+            # Pause / Resume
+            self.controller.live_test.view_session_paused.connect(self._on_live_session_paused)
+            self.controller.live_test.view_session_resumed.connect(self._on_live_session_resumed)
         except Exception:
             pass
 
@@ -861,7 +864,7 @@ class FluxLitePage(QtWidgets.QWidget):
                             pass
 
                         # Live testing measurement engine (arming -> stability -> capture)
-                        if self._live_gate_ui.is_active():
+                        if self._live_gate_ui.is_active() and not getattr(self.controller.live_test, "is_paused", False):
                             try:
                                 self._live_measurement_ui.process_sample(
                                     self,
@@ -1045,6 +1048,15 @@ class FluxLitePage(QtWidgets.QWidget):
             self.controls.live_testing_panel.set_session_controls_locked(False)
         except Exception:
             pass
+
+    def _on_live_session_paused(self, _summary: object) -> None:
+        """Disable measurement engine while paused; close any stage switch dialog."""
+        self._reset_live_measurement_engine("session_paused")
+        self._close_stage_switch_dialog()
+
+    def _on_live_session_resumed(self) -> None:
+        """Session resumed — measurement re-arms naturally on next cell click."""
+        self._lt_log("session_resumed")
 
     # --- Periodic Auto-Tare (every 90 seconds) ---
     # (moved to ui/periodic_tare.py)
