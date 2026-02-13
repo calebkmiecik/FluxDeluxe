@@ -6,7 +6,7 @@
 ; Or let build.py invoke it automatically.
 
 #define MyAppName "FluxDeluxe"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "Axioforce"
 #define MyAppExeName "FluxDeluxe.exe"
 
@@ -24,8 +24,8 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
-; Uncomment the next line if you have an .ico file:
-; SetupIconFile=fluxdeluxe\ui\assets\icons\fluxliteicon.ico
+SetupIconFile=fluxdeluxe\ui\assets\icons\fluxliteicon.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -38,9 +38,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "dist\FluxDeluxe\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent

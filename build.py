@@ -212,7 +212,7 @@ _IGNORE_IMPORTS = {
     "app",              # DynamoPy local package
     "PyInstaller",      # build-time only
     "PyQt5",            # test scripts only
-    "pyqtgraph",        # test scripts only
+    "pyqtgraph",        # UI-side dependency; not required in embedded backend import check
     "tensorflow",       # optional; tflite_runtime is used at runtime on Windows
     "win32api",         # pywin32 — only used in legacy/optional paths
     "win32com",         # pywin32
