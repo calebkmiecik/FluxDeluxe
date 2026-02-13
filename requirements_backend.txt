@@ -48,6 +48,9 @@ pyserial-asyncio==0.6
 # See build.py step 2 for the wheel install.
 numba>=0.62.0
 
+# --- Plotting ---
+matplotlib>=3.10.0
+
 # --- Misc ---
 tzlocal==5.3.1
 psutil>=7.0.0
