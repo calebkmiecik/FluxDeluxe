@@ -8,6 +8,7 @@ from ..state import ViewState
 from .live_testing.session_controls_box import SessionControlsBox
 from .live_testing.testing_guide_box import TestingGuideBox
 from .live_testing.model_box import ModelBox
+from .live_testing.pause_summary_box import PauseSummaryBox
 from ...domain.testing import TestThresholds
 from ... import config
 
@@ -67,9 +68,6 @@ class LiveTestingPanel(QtWidgets.QWidget):
         self.lbl_progress_title = controls_box.lbl_progress_title
         self.progress_label = controls_box.progress_label
 
-        # Guide
-        self.guide_label = guide_box.guide_label
-
         # Session info/meta (now in controls_box)
         self.lbl_tester = controls_box.lbl_tester
         self.lbl_device = controls_box.lbl_device
@@ -90,7 +88,7 @@ class LiveTestingPanel(QtWidgets.QWidget):
         self.btn_deactivate = model_box.btn_deactivate
         self.btn_package_model = model_box.btn_package_model
 
-        # 5-column layout: [Session Controls] [Testing Guide] [empty] [empty] [Model]
+        # 5-column layout: [Session Controls] [Testing Guide] [Results] [empty] [Model]
 
         for w in (controls_box, guide_box):
             try:
@@ -99,8 +97,15 @@ class LiveTestingPanel(QtWidgets.QWidget):
                 pass
             root.addWidget(w, 1)
 
-        # Empty spacer columns 3 and 4
-        root.addStretch(1)
+        # Results box — column 3 (always visible; inner content shown on pause)
+        self._pause_summary_box = PauseSummaryBox(self)
+        try:
+            self._pause_summary_box.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        except Exception:
+            pass
+        root.addWidget(self._pause_summary_box, 1)
+
+        # Empty spacer column 4
         root.addStretch(1)
 
         # Model box in column 5
@@ -125,7 +130,10 @@ class LiveTestingPanel(QtWidgets.QWidget):
         self.btn_end.clicked.connect(self._on_end_clicked)
         self.btn_next.clicked.connect(self._on_next_clicked)
         self.btn_prev.clicked.connect(self._on_prev_clicked)
-        
+
+        self._pause_summary_box.resume_clicked.connect(self._on_resume_clicked)
+        self._pause_summary_box.finish_clicked.connect(self._on_finish_clicked)
+
         self.btn_package_model.clicked.connect(lambda: self.package_model_requested.emit())
         self.btn_activate.clicked.connect(self._emit_activate)
         self.btn_deactivate.clicked.connect(self._emit_deactivate)
@@ -138,6 +146,9 @@ class LiveTestingPanel(QtWidgets.QWidget):
             self.controller.view_grid_configured.connect(self.configure_grid)
             # Discrete temp test lists
             self.controller.discrete_tests_listed.connect(self.set_discrete_tests)
+            # Pause / Resume
+            self.controller.view_session_paused.connect(self._on_session_paused)
+            self.controller.view_session_resumed.connect(self._on_session_resumed)
 
         # Discrete temp testing hooks
         try:
@@ -480,7 +491,7 @@ class LiveTestingPanel(QtWidgets.QWidget):
 
     def _on_end_clicked(self):
         if self.controller:
-            self.controller.end_session()
+            self.controller.pause_session()
         else:
             self.end_session_requested.emit()
 
@@ -515,10 +526,30 @@ class LiveTestingPanel(QtWidgets.QWidget):
         self.btn_prev.setEnabled(False)
         self.stage_label.setText("—")
         self.progress_label.setText("0 / 0 cells")
+        self._pause_summary_box.hide_content()
         try:
             self.set_stage_summary([], grid_total_cells=None)
         except Exception:
             pass
+
+    def _on_session_paused(self, summary: dict) -> None:
+        """Show results content and disable stop button; keep nav enabled."""
+        self.btn_end.setEnabled(False)
+        self._pause_summary_box.update_summary(summary)
+        self._pause_summary_box.show_content()
+
+    def _on_session_resumed(self) -> None:
+        """Hide results content and re-enable stop button."""
+        self._pause_summary_box.hide_content()
+        self.btn_end.setEnabled(True)
+
+    def _on_resume_clicked(self) -> None:
+        if self.controller:
+            self.controller.resume_session()
+
+    def _on_finish_clicked(self) -> None:
+        if self.controller:
+            self.controller.end_session()
 
     def _on_stage_changed(self, index, stage):
         self.stage_label.setText(stage.name)

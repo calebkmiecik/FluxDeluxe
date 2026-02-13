@@ -17,6 +17,9 @@ class LiveTestController(QtCore.QObject):
     view_stage_changed = QtCore.Signal(int, object)  # index, stage
     view_cell_updated = QtCore.Signal(int, int, object)  # row, col, view_model (dict or object)
     view_grid_configured = QtCore.Signal(int, int)
+    # Pause / Resume
+    view_session_paused = QtCore.Signal(object)   # summary_data dict
+    view_session_resumed = QtCore.Signal()
     # Discrete temp testing: available tests + analyzed temps for a selected test
     discrete_tests_listed = QtCore.Signal(list)  # list of (label, date, test_path) - FILTERED
     discrete_filter_options = QtCore.Signal(list) # list of device_ids for filter combo
@@ -27,6 +30,8 @@ class LiveTestController(QtCore.QObject):
         self.service = testing_service
         self.presenter = GridPresenter()
         
+        self._paused = False
+
         # Filtering State
         self._all_discrete_tests = []
         self._current_type_filter = "All types"
@@ -73,8 +78,81 @@ class LiveTestController(QtCore.QObject):
         except Exception:
             pass
 
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def pause_session(self) -> None:
+        """Pause the current session and emit a summary."""
+        self._paused = True
+        summary = self.compute_session_summary()
+        self.view_session_paused.emit(summary)
+
+    def resume_session(self) -> None:
+        """Resume a paused session."""
+        self._paused = False
+        self.view_session_resumed.emit()
+
     def end_session(self):
+        self._paused = False
         self.service.end_session()
+
+    def compute_session_summary(self) -> dict:
+        """Build a summary dict from the current session's tested cells."""
+        session = self.service.current_session
+        if not session:
+            return {"stages": [], "overall_tested": 0, "overall_passed": 0, "overall_avg_error_pct": None}
+
+        stage_summaries = []
+        total_tested = 0
+        total_passed = 0
+        all_error_pcts: list[float] = []
+
+        for stage in session.stages:
+            tolerance = self.tolerance_for_stage(stage, session)
+            tested = 0
+            passed = 0
+            stage_errors_n: list[float] = []
+
+            for (_r, _c), result in stage.results.items():
+                if result.fz_mean_n is None:
+                    continue
+                tested += 1
+                error_n = abs(result.fz_mean_n - stage.target_n)
+                stage_errors_n.append(error_n)
+
+                if tolerance > 0:
+                    color = config.get_color_bin(error_n / tolerance)
+                else:
+                    color = "green"
+                if color in ("green", "light_green"):
+                    passed += 1
+
+            # Per-cell error as % of stage target, then average
+            if stage_errors_n and stage.target_n > 0:
+                avg_error_pct = sum(e / stage.target_n for e in stage_errors_n) / len(stage_errors_n) * 100.0
+            else:
+                avg_error_pct = None
+
+            stage_summaries.append({
+                "name": stage.name,
+                "tested": tested,
+                "passed": passed,
+                "avg_error_pct": avg_error_pct,
+            })
+            total_tested += tested
+            total_passed += passed
+            # Collect per-cell error percentages for overall average
+            if stage.target_n > 0:
+                all_error_pcts.extend(e / stage.target_n * 100.0 for e in stage_errors_n)
+
+        overall_avg_pct = (sum(all_error_pcts) / len(all_error_pcts)) if all_error_pcts else None
+        return {
+            "stages": stage_summaries,
+            "overall_tested": total_tested,
+            "overall_passed": total_passed,
+            "overall_avg_error_pct": overall_avg_pct,
+        }
 
     def next_stage(self):
         self.service.next_stage()
