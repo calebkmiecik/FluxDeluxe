@@ -76,7 +76,7 @@ def sync_submodule() -> None:
             dynamo_dir.mkdir(parents=True, exist_ok=True)
 
             _run([
-                "git", "clone", "--branch", "dev", "--single-branch",
+                "git", "clone", "--branch", "main", "--single-branch",
                 "https://github.com/Axioforce/AxioforceDynamoPy.git",
                 str(dynamo_dir),
             ])
@@ -84,9 +84,9 @@ def sync_submodule() -> None:
     # Regardless of how we got here, make sure we're on the latest dev
     if dynamo_main.exists():
         try:
-            _run(["git", "fetch", "origin", "dev"], cwd=str(dynamo_dir))
-            _run(["git", "checkout", "dev"], cwd=str(dynamo_dir))
-            _run(["git", "pull", "origin", "dev"], cwd=str(dynamo_dir))
+            _run(["git", "fetch", "origin", "main"], cwd=str(dynamo_dir))
+            _run(["git", "checkout", "main"], cwd=str(dynamo_dir))
+            _run(["git", "pull", "origin", "main"], cwd=str(dynamo_dir))
             print("  DynamoPy is on latest dev.")
         except subprocess.CalledProcessError as exc:
             print(f"  WARNING: Could not update DynamoPy to latest dev: {exc}")
