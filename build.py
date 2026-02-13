@@ -218,6 +218,8 @@ _IGNORE_IMPORTS = {
     "win32com",         # pywin32
     "category_editor",  # DynamoPy local tool
     "script_editor",    # DynamoPy local tool
+    "sklearn",          # standalone research script (copRegressionModel.py), not runtime
+    "_ctypes",          # CPython internal C extension
 }
 
 
@@ -238,6 +240,24 @@ def _scan_imports(source_dir: Path) -> set[str]:
     return packages
 
 
+def _find_local_packages(source_dir: Path) -> set[str]:
+    """Discover all package/module names local to a source tree.
+
+    Walks every directory that contains at least one .py file and collects
+    directory names and bare .py file stems at every level.  This catches
+    both ``from app.device import …`` and ``from device import …`` styles.
+    """
+    local: set[str] = set()
+    for path in source_dir.rglob("*.py"):
+        # The file's stem (e.g. loop.py → "loop")
+        local.add(path.stem)
+        # Every ancestor directory up to (but not including) source_dir
+        rel = path.relative_to(source_dir)
+        for part in rel.parts[:-1]:          # directories only
+            local.add(part)
+    return local
+
+
 def verify_backend_imports(python_exe: Path) -> None:
     """Check that every third-party import in DynamoPy is importable."""
     _log("Step 2b: Verifying backend imports")
@@ -247,10 +267,13 @@ def verify_backend_imports(python_exe: Path) -> None:
         return
 
     all_imports = _scan_imports(dynamo_dir)
+    local_packages = _find_local_packages(dynamo_dir)
+
     # Filter to third-party only
     third_party = sorted(
         pkg for pkg in all_imports
         if pkg not in _STDLIB and pkg not in _IGNORE_IMPORTS
+        and pkg not in local_packages
     )
 
     print(f"  Found {len(third_party)} third-party packages to verify:")
