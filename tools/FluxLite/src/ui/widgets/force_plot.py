@@ -68,6 +68,10 @@ class ForcePlotWidget(QtWidgets.QWidget):
             except Exception:
                 self._use_pg = False
                 self._pg = None
+        # In painter fallback mode, the temperature badge is drawn manually.
+        # Keep the QLabel hidden to avoid duplicate indicators.
+        if not self._use_pg:
+            self._temp_label.setVisible(False)
         # No header added to the layout to keep plot minimal
         self._samples: list[tuple[int, float, float, float]] = []  # (t_ms, fx, fy, fz) single-device mode
         self._samples_launch: list[tuple[int, float, float, float]] = []
@@ -317,22 +321,33 @@ class ForcePlotWidget(QtWidgets.QWidget):
             del self._pg_rz[:overflow]
 
     def _pg_set_view_last_ms(self, window_ms: int = 10_000) -> None:
-        # Clamp X range to show at most window_ms
+        # Clamp X range to show at most window_ms.
+        # If we have less than a full window of data, fit to available data so
+        # traces span the full plot width (matching painter-backend behavior).
         if self._plot_widget is None:
             return
         max_x = None
+        min_x = None
         if self._dual_enabled:
             if self._pg_x_launch:
+                min_x = self._pg_x_launch[0]
                 max_x = self._pg_x_launch[-1]
             if self._pg_x_land:
+                mn = self._pg_x_land[0]
                 mx = self._pg_x_land[-1]
+                min_x = mn if min_x is None else min(min_x, mn)
                 max_x = mx if max_x is None else max(max_x, mx)
         else:
             if self._pg_x_single:
+                min_x = self._pg_x_single[0]
                 max_x = self._pg_x_single[-1]
-        if max_x is None:
+        if max_x is None or min_x is None:
             return
-        left = max(0, int(max_x) - int(window_ms))
+        span = int(max_x) - int(min_x)
+        if span < int(window_ms):
+            left = int(min_x)
+        else:
+            left = int(max_x) - int(window_ms)
         right = int(max_x)
         try:
             self._plot_widget.setXRange(left, right)  # type: ignore[attr-defined]
