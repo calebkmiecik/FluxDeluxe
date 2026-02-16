@@ -98,6 +98,97 @@ def sync_submodule() -> None:
 
 # ── Step 2: Embedded Python ──────────────────────────────────────────────
 
+
+def _parse_required_packages() -> set[str]:
+    """Parse package names from requirements_backend.txt (normalised to lowercase)."""
+    required: set[str] = set()
+    for line in BACKEND_REQS.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip version specifiers: "foo>=1.0" -> "foo", "foo[extra]>=1" -> "foo"
+        name = re.split(r"[>=<!\[;]", line, maxsplit=1)[0].strip()
+        if name:
+            required.add(name.lower().replace("-", "_"))
+    return required
+
+
+# Packages that pip installs as infrastructure / build-time deps and should
+# never be uninstalled from the embedded Python.
+_PIP_INFRASTRUCTURE = {
+    "pip", "setuptools", "wheel", "pkg_resources",
+}
+
+
+def _clean_stale_packages(python_exe: Path) -> None:
+    """Remove installed packages that are NOT in requirements_backend.txt
+    and NOT depended on by any required package.
+
+    This catches leftover packages from a previously-removed requirement
+    (e.g. pyqtgraph pulling in jaraco.* dependencies).
+    """
+    required = _parse_required_packages()
+    # Also keep tflite-runtime (installed from local wheel, not in reqs file)
+    required.add("tflite_runtime")
+
+    # Get list of installed packages via pip freeze
+    result = subprocess.run(
+        [str(python_exe), "-m", "pip", "freeze"],
+        capture_output=True, text=True,
+    )
+    installed: dict[str, str] = {}  # normalised name -> original line
+    for line in result.stdout.strip().splitlines():
+        if "==" in line:
+            raw_name = line.split("==")[0]
+            normalised = raw_name.lower().replace("-", "_")
+            installed[normalised] = raw_name
+
+    # Find candidates: packages not in requirements and not pip infrastructure
+    candidates = []
+    for norm_name, raw_name in installed.items():
+        if norm_name in _PIP_INFRASTRUCTURE:
+            continue
+        if norm_name in required:
+            continue
+        # Check if it's a sub-package of a required package (e.g. google_*)
+        if any(norm_name.startswith(r + "_") or norm_name.startswith(r + ".")
+               for r in required):
+            continue
+        candidates.append((norm_name, raw_name))
+
+    if not candidates:
+        print("  No stale packages detected.")
+        return
+
+    # For each candidate, check if it's a dependency of a required package.
+    # Only remove truly orphaned packages.
+    stale = []
+    for norm_name, raw_name in candidates:
+        show = subprocess.run(
+            [str(python_exe), "-m", "pip", "show", raw_name],
+            capture_output=True, text=True,
+        )
+        required_by = ""
+        for show_line in show.stdout.splitlines():
+            if show_line.startswith("Required-by:"):
+                required_by = show_line.split(":", 1)[1].strip()
+                break
+        if not required_by:
+            # No package depends on this — it's truly orphaned
+            stale.append(raw_name)
+
+    if not stale:
+        print("  No stale packages to remove.")
+        return
+
+    print(f"  Removing {len(stale)} stale package(s) from embedded Python:")
+    for pkg in stale:
+        print(f"    - {pkg}")
+    _run([
+        str(python_exe), "-m", "pip", "uninstall", "-y", *stale,
+    ])
+
+
 def prepare_embedded_python() -> Path:
     _log("Step 2: Preparing embedded Python")
     target = EMBEDDED_PYTHON_DIR
@@ -135,6 +226,11 @@ def prepare_embedded_python() -> Path:
             urllib.request.urlretrieve(GET_PIP_URL, get_pip)
         print("  Installing pip into embedded Python ...")
         _run([str(python_exe), str(get_pip), "--no-warn-script-location"])
+
+    # Clean stale packages that are no longer in requirements_backend.txt.
+    # This prevents leftover packages (e.g. from a removed requirement)
+    # from contaminating the embedded Python across builds.
+    _clean_stale_packages(python_exe)
 
     # Install backend dependencies
     print("  Installing backend dependencies ...")
