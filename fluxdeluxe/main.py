@@ -426,8 +426,15 @@ def run_qt() -> int:
 
 
 def main() -> int:
-    # Check for DynamoPy updates before starting the app
-    _update_dynamo_deluxe()
+    from .runtime import is_frozen
+
+    # In packaged builds, skip submodule git operations at startup.
+    # Keep current auto-update behavior in development mode.
+    if is_frozen():
+        _logger.info("Frozen build detected; skipping DynamoPy git auto-update.")
+    else:
+        # Check for DynamoPy updates before starting the app
+        _update_dynamo_deluxe()
 
     # Start the DynamoPy backend
     _start_dynamo_backend()

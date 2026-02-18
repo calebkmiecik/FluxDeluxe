@@ -61,8 +61,12 @@ TYPE07_W_MM: float = 353.3
 TYPE07_H_MM: float = 607.3
 TYPE08_W_MM: float = 658.1
 TYPE08_H_MM: float = 607.3
-TYPE11_W_MM: float = 353.3  # Identical to TYPE07
-TYPE11_H_MM: float = 607.3  # Identical to TYPE07
+TYPE10_W_MM: float = 353.3
+TYPE10_H_MM: float = 607.3
+TYPE11_W_MM: float = 353.3
+TYPE11_H_MM: float = 607.3
+TYPE12_W_MM: float = 658.1
+TYPE12_H_MM: float = 607.3
 
 # Precompute half-extents
 TYPE06_HALF_W_MM: float = TYPE06_W_MM / 2.0

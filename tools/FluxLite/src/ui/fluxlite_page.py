@@ -12,6 +12,7 @@ from ..app_services.live_test_capture import CaptureContext, TemperatureLiveCapt
 from ..app_services.temperature_post_correction import apply_post_correction_to_run_data, compute_delta_t_f
 from .bridge import UiBridge  # Keep for compatibility if needed by other components
 from .controllers.main_controller import MainController
+from .controllers.temp_test_workers import PostCaptureAutoSyncWorker
 from .pane_switcher import PaneSwitcher
 from .panels.control_panel import ControlPanel
 from .state import ViewState
@@ -74,6 +75,7 @@ class FluxLitePage(QtWidgets.QWidget):
         # Temperature live-testing CSV/raw capture lifecycle (backend-driven)
         self._temp_live_capture = TemperatureLiveCaptureManager(self.controller.hardware)
         self._temp_live_capture_ctx: CaptureContext | None = None
+        self._post_capture_sync_worker: PostCaptureAutoSyncWorker | None = None
         # Temperature test stage switch dialog
         self._stage_switch_dialog: StageSwitchPromptDialog | None = None
         self._stage_switch_pending: bool = False
@@ -1031,6 +1033,8 @@ class FluxLitePage(QtWidgets.QWidget):
             ctx = self._temp_live_capture_ctx
             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
                 self._temp_live_capture.stop(group_id=str(ctx.group_id))
+                # Kick off background auto-sync (trim + upload) before clearing ctx.
+                self._start_post_capture_sync(ctx)
         except Exception:
             pass
         self._temp_live_capture_ctx = None
@@ -1046,6 +1050,25 @@ class FluxLitePage(QtWidgets.QWidget):
         # Unlock session controls
         try:
             self.controls.live_testing_panel.set_session_controls_locked(False)
+        except Exception:
+            pass
+
+    def _start_post_capture_sync(self, ctx: CaptureContext) -> None:
+        """Kick off background trim + Supabase upload for a just-finished capture."""
+        try:
+            csv_dir = str(getattr(ctx, "csv_dir", "") or "").strip()
+            capture_name = str(getattr(ctx, "capture_name", "") or "").strip()
+            if not csv_dir or not capture_name:
+                return
+            # Device ID is the last component of csv_dir (convention: temp_testing/{device_id}/).
+            import os
+            device_id = os.path.basename(csv_dir.rstrip("/\\"))
+            if not device_id:
+                return
+            worker = PostCaptureAutoSyncWorker(capture_name, csv_dir, device_id)
+            self._post_capture_sync_worker = worker
+            worker.finished.connect(lambda: setattr(self, "_post_capture_sync_worker", None))
+            worker.start()
         except Exception:
             pass
 
@@ -1832,6 +1855,9 @@ class FluxLitePage(QtWidgets.QWidget):
 
             # Update model label with device type (plate type)
             live_panel.lbl_model.setText(device_type or "—")
+
+            # Refresh the CSV save directory so it points to the new device
+            live_panel.update_save_dir_for_device()
 
             # Request model metadata for this device so we can populate the model list
             if device_id:

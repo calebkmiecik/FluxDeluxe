@@ -18,6 +18,7 @@ from .temp_test_workers import (
     PlateTypeRollupWorker,
     ProcessingWorker,
     SupabaseBulkUploadWorker,
+    SupabaseSyncDownWorker,
     SupabaseUploadWorker,
     TemperatureAnalysisWorker,
     TemperatureAutoUpdateWorker,
@@ -95,6 +96,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self._worker = None # Keep reference to prevent GC
         self._supabase_worker = None
         self._bulk_upload_worker = None
+        self._sync_down_worker = None
 
     def import_temperature_tests(self, file_paths: list[str]) -> None:
         """
@@ -140,6 +142,8 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self._current_device_id = str(device_id or "").strip()
         tests = self.testing.list_temperature_tests(device_id)
         self.tests_listed.emit(tests)
+        # Kick off background Supabase sync-down to fetch any remote-only sessions.
+        self._start_supabase_sync_down(self._current_device_id)
 
     def refresh_devices(self):
         """List available devices in temp_testing folder."""
@@ -330,6 +334,29 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         worker.progress.connect(_on_progress)
         worker.finished_with_result.connect(_on_done)
         worker.start()
+
+    def _start_supabase_sync_down(self, device_id: str) -> None:
+        """Start a background worker to download remote sessions not present locally."""
+        dev = str(device_id or "").strip()
+        if not dev:
+            return
+        if self._sync_down_worker and self._sync_down_worker.isRunning():
+            return
+        local_dir = os.path.join(data_dir("temp_testing"), dev)
+        worker = SupabaseSyncDownWorker(dev, local_dir)
+        self._sync_down_worker = worker
+        worker.finished.connect(lambda: setattr(self, "_sync_down_worker", None))
+        worker.finished_with_result.connect(
+            lambda result: self._on_sync_down_complete(result, dev)
+        )
+        worker.start()
+
+    def _on_sync_down_complete(self, result: dict, device_id: str) -> None:
+        """Re-list tests if new files were downloaded and we're still on the same device."""
+        downloaded = int((result or {}).get("downloaded", 0))
+        if downloaded > 0 and self._current_device_id == device_id:
+            tests = self.testing.list_temperature_tests(device_id)
+            self.tests_listed.emit(tests)
 
     def _start_bias_compute(self, device_id: str) -> None:
         if self._bias_worker and self._bias_worker.isRunning():

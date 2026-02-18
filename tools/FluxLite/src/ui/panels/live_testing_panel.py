@@ -313,6 +313,10 @@ class LiveTestingPanel(QtWidgets.QWidget):
         self.lbl_model.setText(model_id or "—")
         self._controls_box.set_body_weight_n(body_weight_n)
 
+    def update_save_dir_for_device(self) -> None:
+        """Refresh the CSV save directory after the selected device changes."""
+        self._controls_box.update_save_dir_for_device()
+
     def get_session_info(self) -> tuple[str, float]:
         """Get the current tester name and body weight from the editable fields."""
         return (

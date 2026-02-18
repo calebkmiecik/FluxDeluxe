@@ -29,7 +29,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Window icon (matches app icon set in fluxdeluxe/main.py)
         try:
-            icon_path = Path(__file__).resolve().parent / "assets" / "icons" / "fluxliteicon.svg"
+            from ..runtime import resource_path
+            icon_path = resource_path("ui", "assets", "icons", "fluxliteicon.svg")
             icon = QtGui.QIcon(str(icon_path))
             if not icon.isNull():
                 self.setWindowIcon(icon)

@@ -219,7 +219,8 @@ class ToolLauncherPage(QtWidgets.QWidget):
         return None
 
     def _resolve_logo_path(self) -> Path | None:
-        ui_dir = Path(__file__).resolve().parents[1]
+        from ...runtime import get_bundle_dir
+        ui_dir = get_bundle_dir() / "ui"
         candidate_logos = ui_dir / "assets" / "logos" / "FluxDeluxeLogo.png"
         if candidate_logos.exists():
             return candidate_logos
