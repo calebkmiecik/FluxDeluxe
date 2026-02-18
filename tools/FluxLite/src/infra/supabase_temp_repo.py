@@ -190,6 +190,64 @@ class SupabaseTempRepository:
             return None
 
     # ------------------------------------------------------------------
+    # Remote listing / querying
+    # ------------------------------------------------------------------
+
+    def list_sessions_for_device(self, device_id: str) -> List[dict]:
+        """Query ``temp_test_sessions`` filtered by *device_id*."""
+        if self._sb is None or not device_id:
+            return []
+        try:
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("*")
+                .eq("device_id", device_id)
+                .execute()
+            )
+            return list(resp.data or [])
+        except Exception as exc:
+            _logger.warning("list_sessions_for_device failed: %s", exc)
+            return []
+
+    def list_runs_for_sessions(self, session_ids: List[str]) -> List[dict]:
+        """Query ``temp_test_processing_runs`` for a list of session IDs."""
+        if self._sb is None or not session_ids:
+            return []
+        try:
+            resp = (
+                self._sb.table("temp_test_processing_runs")
+                .select("*")
+                .in_("session_id", list(session_ids))
+                .execute()
+            )
+            return list(resp.data or [])
+        except Exception as exc:
+            _logger.warning("list_runs_for_sessions failed: %s", exc)
+            return []
+
+    # ------------------------------------------------------------------
+    # Storage downloads
+    # ------------------------------------------------------------------
+
+    def download_csv_gunzipped(self, storage_path: str, local_path: str) -> bool:
+        """Download a gzipped file from storage, decompress, and write to *local_path*."""
+        if self._sb is None or not storage_path:
+            return False
+        try:
+            data = self._sb.storage.from_("temp-testing-csvs").download(storage_path)
+            if not data:
+                return False
+            decompressed = gzip.decompress(data)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            with open(local_path, "wb") as fh:
+                fh.write(decompressed)
+            _logger.debug("Downloaded + gunzipped %s → %s", storage_path, local_path)
+            return True
+        except Exception as exc:
+            _logger.warning("download_csv_gunzipped failed for %s: %s", storage_path, exc)
+            return False
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

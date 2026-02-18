@@ -679,6 +679,106 @@ class PlateTypeStageSplitMAEWorker(QtCore.QThread):
             self.result_ready.emit({"ok": False, "message": str(exc), "errors": [str(exc)], "best": None})
 
 
+class PostCaptureAutoSyncWorker(QtCore.QThread):
+    """Fire-and-forget worker that trims a just-captured raw CSV and uploads to Supabase.
+
+    Designed to run right after a live capture session ends.  All steps are
+    wrapped in try/except so failures are logged but never propagate.
+    """
+
+    def __init__(self, capture_name: str, csv_dir: str, device_id: str):
+        super().__init__()
+        self.capture_name = str(capture_name or "")
+        self.csv_dir = str(csv_dir or "")
+        self.device_id = str(device_id or "")
+
+    def run(self) -> None:
+        import json
+        import logging
+        import time as _time
+
+        _log = logging.getLogger(__name__)
+
+        try:
+            capture = self.capture_name
+            csv_dir = self.csv_dir
+            device_id = self.device_id
+            if not capture or not csv_dir or not device_id:
+                return
+
+            meta_path = os.path.join(csv_dir, f"{capture}.meta.json")
+            raw_csv = os.path.join(csv_dir, f"{capture}.csv")
+
+            # 1) Wait for meta JSON (backend writes it asynchronously).
+            deadline = _time.monotonic() + 30.0
+            while not os.path.isfile(meta_path):
+                if _time.monotonic() > deadline:
+                    _log.warning("PostCaptureAutoSync: meta never appeared for %s", capture)
+                    return
+                _time.sleep(0.5)
+
+            # 2) Wait briefly for the raw CSV.
+            deadline_csv = _time.monotonic() + 5.0
+            while not os.path.isfile(raw_csv):
+                if _time.monotonic() > deadline_csv:
+                    _log.warning("PostCaptureAutoSync: raw CSV never appeared for %s", capture)
+                    return
+                _time.sleep(0.5)
+
+            # Small stability delay.
+            _time.sleep(0.5)
+
+            # 3) Trim: downsample raw to 50 Hz.
+            trimmed_name = capture.replace("temp-raw-", "temp-trimmed-")
+            trimmed_csv = os.path.join(csv_dir, f"{trimmed_name}.csv")
+            try:
+                from ...app_services.repositories.csv_transform_repository import CsvTransformRepository
+                CsvTransformRepository().downsample_csv_to_50hz(raw_csv, trimmed_csv)
+            except Exception as exc:
+                _log.warning("PostCaptureAutoSync: trim failed: %s", exc)
+                return
+
+            # 4) Update meta with trimmed CSV info.
+            try:
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
+                baseline = meta.get("processed_baseline")
+                if not isinstance(baseline, dict):
+                    baseline = {}
+                baseline["trimmed_csv"] = f"{trimmed_name}.csv"
+                baseline["updated_at_ms"] = int(_time.time() * 1000)
+                meta["processed_baseline"] = baseline
+                with open(meta_path, "w", encoding="utf-8") as fh:
+                    json.dump(meta, fh, indent=2, sort_keys=True)
+            except Exception as exc:
+                _log.warning("PostCaptureAutoSync: meta update failed: %s", exc)
+
+            # 5) Upload to Supabase.
+            try:
+                from ...infra.supabase_temp_repo import SupabaseTempRepository
+
+                repo = SupabaseTempRepository()
+                session_id = repo.upsert_session(meta, meta_path)
+                if session_id:
+                    trimmed_storage = repo.upload_csv_gzipped(trimmed_csv, device_id)
+                    repo.upsert_processing_run(session_id, {
+                        "mode": "baseline",
+                        "slope_x": 0.0,
+                        "slope_y": 0.0,
+                        "slope_z": 0.0,
+                        "is_baseline": True,
+                        "trimmed_csv_storage_path": trimmed_storage,
+                        "processed_at_ms": int(_time.time() * 1000),
+                    })
+                    _log.info("PostCaptureAutoSync: uploaded session %s", session_id)
+            except Exception as exc:
+                _log.warning("PostCaptureAutoSync: Supabase upload failed: %s", exc)
+
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("PostCaptureAutoSyncWorker failed: %s", exc)
+
+
 class SupabaseUploadWorker(QtCore.QThread):
     """Fire-and-forget worker that syncs a temperature test session to Supabase."""
 
@@ -750,3 +850,154 @@ class SupabaseBulkUploadWorker(QtCore.QThread):
         })
 
 
+class SupabaseSyncDownWorker(QtCore.QThread):
+    """Background worker that downloads remote temperature test sessions not present locally."""
+
+    finished_with_result = QtCore.Signal(dict)  # {"downloaded": int, "errors": list}
+
+    def __init__(self, device_id: str, local_dir: str):
+        super().__init__()
+        self.device_id = str(device_id or "")
+        self.local_dir = str(local_dir or "")
+
+    def run(self) -> None:
+        import json
+        import logging
+
+        _log = logging.getLogger(__name__)
+        downloaded = 0
+        errors: List[str] = []
+
+        try:
+            from ...infra.supabase_temp_repo import SupabaseTempRepository
+
+            repo = SupabaseTempRepository()
+            if repo._sb is None:
+                self.finished_with_result.emit({"downloaded": 0, "errors": []})
+                return
+
+            local_dir = self.local_dir
+            device_id = self.device_id
+            os.makedirs(local_dir, exist_ok=True)
+
+            # 1) List remote sessions for this device.
+            sessions = repo.list_sessions_for_device(device_id)
+            if not sessions:
+                self.finished_with_result.emit({"downloaded": 0, "errors": []})
+                return
+
+            # 2) Fetch processing runs in one batch.
+            session_map: Dict[str, dict] = {}
+            session_ids: List[str] = []
+            for s in sessions:
+                sid = str(s.get("id") or "")
+                if sid:
+                    session_ids.append(sid)
+                    session_map[sid] = s
+
+            runs = repo.list_runs_for_sessions(session_ids)
+            runs_by_session: Dict[str, List[dict]] = {}
+            for r in runs:
+                sid = str(r.get("session_id") or "")
+                runs_by_session.setdefault(sid, []).append(r)
+
+            # 3) For each session, ensure local meta + CSV files exist.
+            for s in sessions:
+                sid = str(s.get("id") or "")
+                capture_name = str(s.get("capture_name") or "")
+                if not capture_name:
+                    continue
+
+                meta_filename = f"{capture_name}.meta.json"
+                local_meta = os.path.join(local_dir, meta_filename)
+
+                # Reconstruct meta JSON from DB data if not present locally.
+                if not os.path.isfile(local_meta):
+                    try:
+                        meta = {
+                            "device_id": device_id,
+                            "capture_name": capture_name,
+                            "model_id": s.get("model_id"),
+                            "tester_name": s.get("tester_name"),
+                            "body_weight_n": s.get("body_weight_n"),
+                            "avg_temp": s.get("avg_temp"),
+                            "short_label": s.get("short_label"),
+                            "date": s.get("date"),
+                            "started_at_ms": s.get("started_at_ms"),
+                        }
+                        meta = {k: v for k, v in meta.items() if v is not None}
+                        os.makedirs(os.path.dirname(local_meta), exist_ok=True)
+                        with open(local_meta, "w", encoding="utf-8") as fh:
+                            json.dump(meta, fh, indent=2, sort_keys=True)
+                        downloaded += 1
+                    except Exception as exc:
+                        errors.append(f"meta reconstruct {capture_name}: {exc}")
+                        continue
+
+                # Download CSVs from processing runs.
+                session_runs = runs_by_session.get(sid, [])
+                for run in session_runs:
+                    for key in ("trimmed_csv_storage_path", "processed_csv_storage_path"):
+                        storage_path = str(run.get(key) or "")
+                        if not storage_path:
+                            continue
+                        # Derive local filename by stripping .gz suffix.
+                        remote_basename = os.path.basename(storage_path)
+                        if remote_basename.endswith(".gz"):
+                            local_name = remote_basename[:-3]
+                        else:
+                            local_name = remote_basename
+                        local_csv = os.path.join(local_dir, local_name)
+                        if os.path.isfile(local_csv):
+                            continue
+                        try:
+                            if remote_basename.endswith(".gz"):
+                                ok = repo.download_csv_gunzipped(storage_path, local_csv)
+                            else:
+                                ok = repo.download_file(storage_path, local_csv)
+                            if ok:
+                                downloaded += 1
+                        except Exception as exc:
+                            errors.append(f"download {storage_path}: {exc}")
+
+                # Update local meta with processing run info if we downloaded new files.
+                if session_runs and os.path.isfile(local_meta):
+                    try:
+                        with open(local_meta, "r", encoding="utf-8") as fh:
+                            meta = json.load(fh) or {}
+                        changed = False
+                        for run in session_runs:
+                            if bool(run.get("is_baseline")):
+                                baseline = meta.get("processed_baseline")
+                                if not isinstance(baseline, dict):
+                                    baseline = {}
+                                trimmed_sp = str(run.get("trimmed_csv_storage_path") or "")
+                                processed_sp = str(run.get("processed_csv_storage_path") or "")
+                                if trimmed_sp:
+                                    name = os.path.basename(trimmed_sp)
+                                    if name.endswith(".gz"):
+                                        name = name[:-3]
+                                    if not baseline.get("trimmed_csv"):
+                                        baseline["trimmed_csv"] = name
+                                        changed = True
+                                if processed_sp:
+                                    name = os.path.basename(processed_sp)
+                                    if name.endswith(".gz"):
+                                        name = name[:-3]
+                                    if not baseline.get("processed_off"):
+                                        baseline["processed_off"] = name
+                                        changed = True
+                                if changed:
+                                    meta["processed_baseline"] = baseline
+                        if changed:
+                            with open(local_meta, "w", encoding="utf-8") as fh:
+                                json.dump(meta, fh, indent=2, sort_keys=True)
+                    except Exception:
+                        pass
+
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("SupabaseSyncDownWorker failed: %s", exc)
+            errors.append(str(exc))
+
+        self.finished_with_result.emit({"downloaded": downloaded, "errors": errors})

@@ -145,14 +145,63 @@ def apply_update(zip_path: Path) -> None:
         source_dir = staging_dir
 
     exe_name = Path(sys.executable).name
+    exe_path = install_dir / exe_name
+    our_pid = os.getpid()
+
+    # Stop the DynamoPy backend *before* exiting so the process shuts down
+    # quickly instead of spending 15+ seconds in the finally block.
+    try:
+        from .main import stop_dynamo_backend
+        _logger.info("Stopping backend before update…")
+        stop_dynamo_backend()
+    except Exception as exc:
+        _logger.warning("Could not pre-stop backend: %s", exc)
+
     updater_bat = staging_dir / "_updater.bat"
     updater_bat.write_text(
         f'@echo off\r\n'
-        f'echo Updating FluxDeluxe — please wait...\r\n'
-        f'timeout /t 3 /nobreak >nul\r\n'
-        f'xcopy /E /Y /I /Q "{source_dir}\\*" "{install_dir}\\"\r\n'
+        f'echo Updating FluxDeluxe - please wait...\r\n'
+        f'echo.\r\n'
+        #
+        # Wait for the old process to fully exit (up to 30 seconds).
+        # taskkill /F ensures it dies even if cleanup stalls.
+        #
+        f'echo Waiting for FluxDeluxe to exit...\r\n'
+        f'taskkill /F /PID {our_pid} >nul 2>&1\r\n'
+        f'set RETRIES=0\r\n'
+        f':WAIT_LOOP\r\n'
+        f'timeout /t 2 /nobreak >nul\r\n'
+        # Try to exclusively open the exe — if it succeeds the file is unlocked
+        f'copy /b "{exe_path}" + nul "{exe_path}" >nul 2>&1\r\n'
+        f'if not errorlevel 1 goto :DO_COPY\r\n'
+        f'set /a RETRIES+=1\r\n'
+        f'if %RETRIES% GEQ 15 (\r\n'
+        f'    echo ERROR: FluxDeluxe did not release files after 30 seconds.\r\n'
+        f'    echo Please close FluxDeluxe manually and try again.\r\n'
+        f'    pause\r\n'
+        f'    goto :CLEANUP\r\n'
+        f')\r\n'
+        f'echo   Still waiting... (attempt %RETRIES%/15)\r\n'
+        f'goto :WAIT_LOOP\r\n'
+        #
+        # Copy new files over the install directory.
+        #
+        f':DO_COPY\r\n'
+        f'echo Copying new files...\r\n'
+        f'xcopy /E /Y /I /Q "{source_dir}\\*" "{install_dir}\\" >nul\r\n'
+        f'if errorlevel 1 (\r\n'
+        f'    echo ERROR: Failed to copy update files.\r\n'
+        f'    pause\r\n'
+        f'    goto :CLEANUP\r\n'
+        f')\r\n'
         f'echo Update complete. Restarting...\r\n'
         f'start "" "{install_dir}\\{exe_name}"\r\n'
+        #
+        # Cleanup: delete zip and staging dir.
+        # cd out of the staging dir first so rmdir can succeed.
+        #
+        f':CLEANUP\r\n'
+        f'cd /d "%TEMP%"\r\n'
         f'del "{zip_path}" 2>nul\r\n'
         f'rmdir /S /Q "{staging_dir}" 2>nul\r\n',
         encoding="utf-8",
@@ -163,4 +212,6 @@ def apply_update(zip_path: Path) -> None:
         ["cmd.exe", "/C", str(updater_bat)],
         creationflags=subprocess.CREATE_NEW_CONSOLE,
     )
-    sys.exit(0)
+    # Use os._exit to skip the finally block in main() — the backend is
+    # already stopped and we need the process to release file handles ASAP.
+    os._exit(0)

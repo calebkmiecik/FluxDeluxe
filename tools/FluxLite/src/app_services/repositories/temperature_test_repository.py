@@ -23,6 +23,7 @@ class TemperatureTestRepository:
             return []
 
         files = []
+        raw_stems: set = set()
         try:
             for f in os.listdir(device_dir):
                 lower = f.lower()
@@ -31,6 +32,25 @@ class TemperatureTestRepository:
                 if not lower.startswith("temp-raw-"):
                     continue
                 files.append(os.path.join(device_dir, f))
+                # Track the stem so we can detect meta-only sessions below.
+                stem, _ = os.path.splitext(f)
+                raw_stems.add(stem)
+        except Exception:
+            pass
+
+        # Also discover sessions that have a .meta.json but no raw CSV
+        # (e.g. downloaded from Supabase with only trimmed/processed data).
+        try:
+            for f in os.listdir(device_dir):
+                if not f.endswith(".meta.json"):
+                    continue
+                if not f.startswith("temp-raw-"):
+                    continue
+                stem = f[: -len(".meta.json")]  # e.g. "temp-raw-DEVICE-20260105-121211"
+                if stem in raw_stems:
+                    continue  # already have the raw CSV
+                # Synthesize the expected raw CSV path so downstream code can use the meta.
+                files.append(os.path.join(device_dir, stem + ".csv"))
         except Exception:
             pass
 
