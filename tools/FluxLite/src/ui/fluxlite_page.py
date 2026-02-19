@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import time
+from collections import deque
 from typing import Dict, Optional
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -26,6 +27,69 @@ from .periodic_tare import PeriodicTareController
 from .live_data_frames import extract_device_frames
 from .live_session_gate_ui import LiveSessionGateUi
 from .live_measurement_ui import LiveMeasurementUi
+
+
+class DeviceTempTracker:
+    """Lightweight per-device temperature trend tracker.
+    Averages all readings within each 10s window, stores those averages
+    in a capped deque (~11 min history).  Requires ~10 min of data before
+    reporting any trend ('heating', 'cooling', or 'stable').
+    """
+    SAMPLE_INTERVAL = 10.0    # seconds between averaged samples
+    MAX_SAMPLES = 66          # ~11 min at 10s intervals
+    MIN_SAMPLES = 60          # ~10 min before showing any trend
+    STABLE_SPAN_F = 1.5       # max temp range for stable
+    STABLE_MIN_SECS = 600.0   # 10 min continuous narrow span
+
+    __slots__ = (
+        "_samples", "_last_sample_time", "_stable_since", "trend",
+        "_accum_sum", "_accum_count",
+    )
+
+    def __init__(self) -> None:
+        self._samples: deque[tuple[float, float]] = deque(maxlen=self.MAX_SAMPLES)
+        self._last_sample_time: float = 0.0
+        self._stable_since: float | None = None
+        self.trend: str | None = None
+        self._accum_sum: float = 0.0
+        self._accum_count: int = 0
+
+    def update(self, temp_f: float) -> None:
+        now = time.time()
+        self._accum_sum += temp_f
+        self._accum_count += 1
+        if now - self._last_sample_time < self.SAMPLE_INTERVAL:
+            return
+        # Flush accumulated readings as one averaged sample
+        avg = self._accum_sum / self._accum_count
+        self._accum_sum = 0.0
+        self._accum_count = 0
+        self._last_sample_time = now
+        self._samples.append((now, avg))
+        self._recompute(now)
+
+    def _recompute(self, now: float) -> None:
+        temps = [t for _, t in self._samples]
+        if len(temps) < self.MIN_SAMPLES:
+            return
+        span = max(temps) - min(temps)
+        if span <= self.STABLE_SPAN_F:
+            if self._stable_since is None:
+                self._stable_since = now
+            if now - self._stable_since >= self.STABLE_MIN_SECS:
+                self.trend = "stable"
+                return
+        else:
+            self._stable_since = None
+        n = len(temps)
+        third = max(1, n // 3)
+        avg_first = sum(temps[:third]) / third
+        avg_last = sum(temps[-third:]) / third
+        self.trend = "heating" if avg_last >= avg_first else "cooling"
+
+    @property
+    def stable_since(self) -> float | None:
+        return self._stable_since if self.trend == "stable" else None
 
 
 class FluxLitePage(QtWidgets.QWidget):
@@ -53,6 +117,11 @@ class FluxLitePage(QtWidgets.QWidget):
         self._connected_device_ids: set[str] = set()
         self._active_device_ids: set[str] = set()
         self._live_test_start_enabled_last: Optional[bool] = None
+
+        # Per-device temperature tracking (axf_id -> latest avg temp °F)
+        self._device_temps: dict[str, float] = {}
+        self._device_temps_last_push: float = 0.0
+        self._device_temp_trackers: dict[str, DeviceTempTracker] = {}
 
         # Live testing measurement engine (arming -> stability -> capture)
         self._live_meas = LiveMeasurementEngine()
@@ -90,6 +159,25 @@ class FluxLitePage(QtWidgets.QWidget):
         )
         # Some backends send missing/stale timestamps; maintain a monotonic stream clock for countdowns.
         self._stream_time_last_ms: int = 0
+
+        # --- Capture sound effect ---
+        self._capture_sound_player = None
+        self._capture_sound_output = None
+        try:
+            from PySide6 import QtMultimedia as _QtMM
+            import os as _os
+            from ..project_paths import project_root as _project_root
+            sound_path = _os.path.join(_project_root(), "assets", "sound", "cell_capture_success.mp3")
+            if _os.path.isfile(sound_path):
+                audio_out = _QtMM.QAudioOutput(self)
+                audio_out.setVolume(0.8)
+                player = _QtMM.QMediaPlayer(self)
+                player.setAudioOutput(audio_out)
+                player.setSource(QtCore.QUrl.fromLocalFile(sound_path))
+                self._capture_sound_player = player
+                self._capture_sound_output = audio_out
+        except Exception:
+            pass
 
         # --- Mound render throttling (smooth 60 Hz UI) ---
         # We may receive mound packets at ~400-500 Hz. We buffer the latest Launch/Landing samples and
@@ -278,14 +366,20 @@ class FluxLitePage(QtWidgets.QWidget):
         # Colors: match active-cell highlight for arming, use yellow for measuring.
         arming_hex = "#00C8FF"
         measuring_hex = "#FFD24A"
+        syncing_hex = "#FFD24A"
+        success_hex = "#4CAF50"
         idle_hex = "#BBB"
         color = idle_hex
         if m == "arming":
             color = arming_hex
         elif m == "measuring":
             color = measuring_hex
+        elif m == "syncing":
+            color = syncing_hex
+        elif m == "success":
+            color = success_hex
 
-        show = bool(m in ("arming", "measuring") and t)
+        show = bool(m in ("arming", "measuring", "syncing", "success") and t)
         try:
             if hasattr(self, "lbl_live_status_text") and self.lbl_live_status_text is not None:
                 self.lbl_live_status_text.setText(t)
@@ -807,6 +901,19 @@ class FluxLitePage(QtWidgets.QWidget):
                     mz = float(moments.get("z", 0.0))
                     moments_data[did] = (t_ms, mx, my, mz)
 
+                    # Track per-device temperature (all plates, not just selected)
+                    try:
+                        _avg_t = float(frame.get("avgTemperatureF") or 0.0)
+                        if _avg_t > 1.0:
+                            self._device_temps[did] = _avg_t
+                            _tracker = self._device_temp_trackers.get(did)
+                            if _tracker is None:
+                                _tracker = DeviceTempTracker()
+                                self._device_temp_trackers[did] = _tracker
+                            _tracker.update(_avg_t)
+                    except Exception:
+                        pass
+
                     # Is this the selected device?
                     if self.state.display_mode == "single" and did == selected_id:
                         # 1. Update Sensor Plot (Right pane by default)
@@ -965,6 +1072,18 @@ class FluxLitePage(QtWidgets.QWidget):
                 except Exception:
                     pass
 
+            # Push per-device temperatures to the control panel device list at ~2 Hz
+            try:
+                _now = time.time()
+                if _now - self._device_temps_last_push >= 0.5 and self._device_temps:
+                    self._device_temps_last_push = _now
+                    _trend_info: dict[str, tuple[str | None, float | None]] = {}
+                    for _tid, _trk in self._device_temp_trackers.items():
+                        _trend_info[_tid] = (_trk.trend, _trk.stable_since)
+                    self.controls.update_device_temperatures(self._device_temps, _trend_info)
+            except Exception:
+                pass
+
         except Exception:
             pass
 
@@ -1033,6 +1152,8 @@ class FluxLitePage(QtWidgets.QWidget):
             ctx = self._temp_live_capture_ctx
             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
                 self._temp_live_capture.stop(group_id=str(ctx.group_id))
+                # Show immediate feedback while backend flushes the CSV.
+                self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
                 # Kick off background auto-sync (trim + upload) before clearing ctx.
                 self._start_post_capture_sync(ctx)
         except Exception:
@@ -1060,17 +1181,67 @@ class FluxLitePage(QtWidgets.QWidget):
             capture_name = str(getattr(ctx, "capture_name", "") or "").strip()
             if not csv_dir or not capture_name:
                 return
-            # Device ID is the last component of csv_dir (convention: temp_testing/{device_id}/).
             import os
             device_id = os.path.basename(csv_dir.rstrip("/\\"))
             if not device_id:
                 return
-            worker = PostCaptureAutoSyncWorker(capture_name, csv_dir, device_id)
+            # Gather session metadata for the meta.json the worker will create.
+            session_meta: dict = {}
+            try:
+                sess = getattr(self.controller.testing, "current_session", None)
+                if sess:
+                    session_meta = {
+                        "device_id": str(getattr(sess, "device_id", "") or ""),
+                        "model_id": str(getattr(sess, "model_id", "") or ""),
+                        "tester_name": str(getattr(sess, "tester_name", "") or ""),
+                        "body_weight_n": float(getattr(sess, "body_weight_n", 0) or 0),
+                        "started_at_ms": getattr(sess, "started_at_ms", None),
+                    }
+            except Exception:
+                pass
+            worker = PostCaptureAutoSyncWorker(capture_name, csv_dir, device_id, session_meta)
             self._post_capture_sync_worker = worker
+            worker.sync_status.connect(self._on_post_capture_sync_status)
             worker.finished.connect(lambda: setattr(self, "_post_capture_sync_worker", None))
             worker.start()
         except Exception:
             pass
+
+    def _on_post_capture_sync_status(self, message: str, color: str) -> None:
+        """Show upload status on the live-testing status bar."""
+        try:
+            if color:
+                # Success — show green, hold for 3s, then fade out over 1.5s.
+                self._set_live_status_bar_state(mode="success", text=message, pct=None)
+                QtCore.QTimer.singleShot(3000, self._fade_out_status_bar)
+            else:
+                # In-progress (yellow).
+                self._set_live_status_bar_state(mode="syncing", text=message, pct=None)
+        except Exception:
+            pass
+
+    def _fade_out_status_bar(self) -> None:
+        """Fade the status bar text opacity to 0 over 1.5s, then clear it."""
+        try:
+            label = self.lbl_live_status_text
+            effect = QtWidgets.QGraphicsOpacityEffect(label)
+            label.setGraphicsEffect(effect)
+            anim = QtCore.QPropertyAnimation(effect, b"opacity")
+            anim.setDuration(1500)
+            anim.setStartValue(1.0)
+            anim.setEndValue(0.0)
+            anim.setEasingCurve(QtCore.QEasingCurve.InQuad)
+
+            def _on_done():
+                self._set_live_status_bar_state(mode="idle", text="", pct=None)
+                label.setGraphicsEffect(None)
+
+            anim.finished.connect(_on_done)
+            # Hold a reference so the animation isn't garbage-collected.
+            self._status_fade_anim = anim
+            anim.start()
+        except Exception:
+            self._set_live_status_bar_state(mode="idle", text="", pct=None)
 
     def _on_live_session_paused(self, _summary: object) -> None:
         """Disable measurement engine while paused; close any stage switch dialog."""
@@ -1308,6 +1479,19 @@ class FluxLitePage(QtWidgets.QWidget):
                     self.canvas.set_live_cell_text(row, col, text)
             except Exception:
                 pass
+
+        self._play_capture_sound()
+
+    def _play_capture_sound(self) -> None:
+        """Play short ding after a successful cell capture."""
+        player = self._capture_sound_player
+        if player is None:
+            return
+        try:
+            player.stop()
+            player.play()
+        except Exception:
+            pass
 
     def _render_live_stage_grid(self, stage_idx: int, stage: object) -> None:
         """When switching stages, redraw grid colors/text for that stage's results."""
@@ -1825,6 +2009,7 @@ class FluxLitePage(QtWidgets.QWidget):
                     self.sensor_plot_right.set_temperature_f(None)
             except Exception:
                 pass
+            self._device_temp_trackers.clear()
             self._update_live_test_start_enabled("clear_device_views")
         except Exception:
             pass
@@ -1840,6 +2025,22 @@ class FluxLitePage(QtWidgets.QWidget):
                 self.canvas_right.update()
             except Exception:
                 pass
+
+        # Clear force plot temp buffer and seed from per-device cache
+        try:
+            new_id = (self.state.selected_device_id or "").strip()
+            if self.sensor_plot_left:
+                self.sensor_plot_left.clear_temperature()
+            if self.sensor_plot_right:
+                self.sensor_plot_right.clear_temperature()
+            cached = self._device_temps.get(new_id)
+            if cached is not None:
+                if self.sensor_plot_left:
+                    self.sensor_plot_left.set_temperature_f(cached)
+                if self.sensor_plot_right:
+                    self.sensor_plot_right.set_temperature_f(cached)
+        except Exception:
+            pass
 
         # Update Live Testing panel's device info from current selection
         try:

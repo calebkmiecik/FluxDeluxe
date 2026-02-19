@@ -40,6 +40,8 @@ hiddenimports = [
     "fluxdeluxe.ui.tools.tool_registry",
     "fluxdeluxe.ui.tools.web_tool_page",
     "fluxdeluxe.ui.tools.metrics_editor_page",
+    # QtMultimedia used by FluxLite for capture sound effects
+    "PySide6.QtMultimedia",
 ]
 
 # ── Excludes (reduce bundle size) ─────────────────────────────────────────
@@ -56,7 +58,6 @@ excludes = [
     "PySide6.Qt3DRender",
     "PySide6.QtPositioning",
     # Heavy libs not needed in frozen Qt app (backend has its own Python)
-    "numpy",
     "pandas",
     "scipy",
     "pyarrow",
@@ -67,6 +68,7 @@ excludes = [
     "grpc",
     "cryptography",
     "setuptools",
+    "pkg_resources",  # not used by our code; prevents jaraco.text crash from runtime hook
     # Never needed
     "tkinter",
     "matplotlib",
