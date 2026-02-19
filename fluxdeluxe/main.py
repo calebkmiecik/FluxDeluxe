@@ -181,11 +181,51 @@ def _update_dynamo_deluxe() -> None:
         _logger.warning("Unexpected error updating DynamoPy: %s", exc)
 
 
+def _kill_stale_backend(port: int = 3000) -> None:
+    """Kill any leftover process bound to *port* from a previous run.
+
+    This prevents ``[Errno 10048]`` ("address already in use") when the app
+    is restarted but the old DynamoPy backend hasn't fully exited yet.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        # Ask Windows which PID owns the port via netstat
+        result = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        for line in result.stdout.splitlines():
+            # Match lines like  TCP  127.0.0.1:3000  ...  LISTENING  12345
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            if parts[1].endswith(f":{port}") and "LISTENING" in parts[3]:
+                pid = int(parts[4])
+                if pid == 0:
+                    continue
+                _logger.warning(
+                    "Stale process (PID %d) still bound to port %d — killing it",
+                    pid, port,
+                )
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True, timeout=5,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+    except Exception as exc:
+        _logger.debug("Stale-backend cleanup skipped: %s", exc)
+
+
 def _start_dynamo_backend() -> None:
     """Start the DynamoPy backend as a subprocess."""
     from .runtime import get_python_executable
 
     global _dynamo_process
+
+    # Kill any orphaned backend still holding the socket port
+    _kill_stale_backend(port=3000)
 
     dynamo_path = _get_dynamo_path()
     if not dynamo_path.exists():

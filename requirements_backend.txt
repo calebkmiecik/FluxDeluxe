@@ -46,9 +46,8 @@ lxml>=6.0.0
 pyserial==3.5
 pyserial-asyncio==0.6
 
-# --- ML (tflite-runtime only, NOT full TensorFlow) ---
-# tflite-runtime is installed separately from a local wheel in DynamoPy.
-# See build.py step 2 for the wheel install.
+# --- ML ---
+tensorflow>=2.13.0
 numba>=0.62.0
 
 # --- Plotting ---

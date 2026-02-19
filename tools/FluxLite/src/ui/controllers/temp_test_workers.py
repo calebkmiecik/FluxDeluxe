@@ -683,14 +683,17 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
     """Fire-and-forget worker that trims a just-captured raw CSV and uploads to Supabase.
 
     Designed to run right after a live capture session ends.  All steps are
-    wrapped in try/except so failures are logged but never propagate.
+    wrapped in try/except so failures are logged but never propagated.
     """
 
-    def __init__(self, capture_name: str, csv_dir: str, device_id: str):
+    sync_status = QtCore.Signal(str, str)  # (message, color)
+
+    def __init__(self, capture_name: str, csv_dir: str, device_id: str, session_meta: dict):
         super().__init__()
         self.capture_name = str(capture_name or "")
         self.csv_dir = str(csv_dir or "")
         self.device_id = str(device_id or "")
+        self.session_meta = dict(session_meta or {})
 
     def run(self) -> None:
         import json
@@ -709,24 +712,31 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
             meta_path = os.path.join(csv_dir, f"{capture}.meta.json")
             raw_csv = os.path.join(csv_dir, f"{capture}.csv")
 
-            # 1) Wait for meta JSON (backend writes it asynchronously).
+            # 1) Wait for the raw CSV (backend writes it on capture stop).
             deadline = _time.monotonic() + 30.0
-            while not os.path.isfile(meta_path):
-                if _time.monotonic() > deadline:
-                    _log.warning("PostCaptureAutoSync: meta never appeared for %s", capture)
-                    return
-                _time.sleep(0.5)
-
-            # 2) Wait briefly for the raw CSV.
-            deadline_csv = _time.monotonic() + 5.0
             while not os.path.isfile(raw_csv):
-                if _time.monotonic() > deadline_csv:
+                if _time.monotonic() > deadline:
                     _log.warning("PostCaptureAutoSync: raw CSV never appeared for %s", capture)
                     return
                 _time.sleep(0.5)
 
-            # Small stability delay.
+            # Small stability delay for the file to be fully flushed.
             _time.sleep(0.5)
+
+            # 2) Create/update meta JSON with session info.
+            meta: dict = {}
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh) or {}
+                except Exception:
+                    meta = {}
+            # Merge in session metadata from the live test.
+            meta.setdefault("device_id", device_id)
+            for k, v in self.session_meta.items():
+                if v is not None:
+                    meta.setdefault(k, v)
+            meta["capture_name"] = capture
 
             # 3) Trim: downsample raw to 50 Hz.
             trimmed_name = capture.replace("temp-raw-", "temp-trimmed-")
@@ -738,22 +748,22 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
                 _log.warning("PostCaptureAutoSync: trim failed: %s", exc)
                 return
 
-            # 4) Update meta with trimmed CSV info.
+            # 4) Update meta with trimmed CSV info and write to disk.
+            baseline = meta.get("processed_baseline")
+            if not isinstance(baseline, dict):
+                baseline = {}
+            baseline["trimmed_csv"] = f"{trimmed_name}.csv"
+            baseline["updated_at_ms"] = int(_time.time() * 1000)
+            meta["processed_baseline"] = baseline
             try:
-                with open(meta_path, "r", encoding="utf-8") as fh:
-                    meta = json.load(fh) or {}
-                baseline = meta.get("processed_baseline")
-                if not isinstance(baseline, dict):
-                    baseline = {}
-                baseline["trimmed_csv"] = f"{trimmed_name}.csv"
-                baseline["updated_at_ms"] = int(_time.time() * 1000)
-                meta["processed_baseline"] = baseline
+                os.makedirs(os.path.dirname(meta_path), exist_ok=True)
                 with open(meta_path, "w", encoding="utf-8") as fh:
                     json.dump(meta, fh, indent=2, sort_keys=True)
             except Exception as exc:
-                _log.warning("PostCaptureAutoSync: meta update failed: %s", exc)
+                _log.warning("PostCaptureAutoSync: meta write failed: %s", exc)
 
             # 5) Upload to Supabase.
+            self.sync_status.emit("Uploading…", "")
             try:
                 from ...infra.supabase_temp_repo import SupabaseTempRepository
 
@@ -771,7 +781,9 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
                         "processed_at_ms": int(_time.time() * 1000),
                     })
                     _log.info("PostCaptureAutoSync: uploaded session %s", session_id)
+                    self.sync_status.emit("Uploaded successfully", "#2e7d32")
             except Exception as exc:
+                self.sync_status.emit("", "")
                 _log.warning("PostCaptureAutoSync: Supabase upload failed: %s", exc)
 
         except Exception as exc:

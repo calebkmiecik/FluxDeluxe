@@ -527,6 +527,28 @@ class ControlPanel(QtWidgets.QWidget):
         except Exception as e:
             print(f"[ControlPanel] Error loading backend config: {e}")
 
+    def update_device_temperatures(
+        self,
+        temps: dict[str, float],
+        trends: dict[str, tuple[str | None, float | None]] | None = None,
+    ) -> None:
+        """Store per-device temps and trend info, then update display."""
+        for i in range(self.device_list.count()):
+            item = self.device_list.item(i)
+            if item is None:
+                continue
+            try:
+                name, axf_id, dev_type = item.data(QtCore.Qt.UserRole)
+                temp_f = temps.get(axf_id)
+                item.setData(QtCore.Qt.UserRole + 2, temp_f)  # None if no reading
+                if trends is not None:
+                    trend_str, stable_since = trends.get(axf_id, (None, None))
+                    item.setData(QtCore.Qt.UserRole + 3, trend_str)
+                    item.setData(QtCore.Qt.UserRole + 4, stable_since)
+            except Exception:
+                continue
+        self.device_list.viewport().update()
+
     def _on_tab_changed(self, idx: int) -> None:
         try:
             if idx == getattr(self, "_config_tab_index", -1):

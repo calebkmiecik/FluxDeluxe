@@ -128,7 +128,7 @@ def _clean_stale_packages(python_exe: Path) -> None:
     (e.g. pyqtgraph pulling in jaraco.* dependencies).
     """
     required = _parse_required_packages()
-    # Also keep tflite-runtime (installed from local wheel, not in reqs file)
+    # Keep tflite-runtime if present (bundled with tensorflow)
     required.add("tflite_runtime")
 
     # Get list of installed packages via pip freeze
@@ -240,20 +240,8 @@ def prepare_embedded_python() -> Path:
         "-r", str(BACKEND_REQS),
     ])
 
-    # Install tflite-runtime from local wheel in DynamoPy
-    tflite_wheel = (
-        ROOT / "fluxdeluxe" / "DynamoPy" / "tflite-runtime"
-        / "win_amd64" / "tflite_runtime-2.13.0-cp311-cp311-win_amd64.whl"
-    )
-    if tflite_wheel.exists():
-        print("  Installing tflite-runtime from local wheel ...")
-        _run([
-            str(python_exe), "-m", "pip", "install",
-            "--no-warn-script-location",
-            str(tflite_wheel),
-        ])
-    else:
-        print(f"  WARNING: tflite-runtime wheel not found at {tflite_wheel}")
+    # Note: tflite-runtime is no longer installed separately.
+    # Full TensorFlow (from requirements_backend.txt) includes TF Lite support.
 
     # Verify DynamoPy imports are all available
     verify_backend_imports(python_exe)
@@ -309,7 +297,7 @@ _IGNORE_IMPORTS = {
     "PyInstaller",      # build-time only
     "PyQt5",            # test scripts only
     "pyqtgraph",        # UI-side dependency; not required in embedded backend import check
-    "tensorflow",       # optional; tflite_runtime is used at runtime on Windows
+    # tensorflow is now a real backend dependency — installed via requirements_backend.txt
     "win32api",         # pywin32 — only used in legacy/optional paths
     "win32com",         # pywin32
     "category_editor",  # DynamoPy local tool

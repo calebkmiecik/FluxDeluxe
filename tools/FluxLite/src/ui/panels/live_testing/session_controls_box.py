@@ -421,7 +421,7 @@ class SessionControlsBox(QtWidgets.QGroupBox):
         current = self.edit_save_dir.text().strip()
         if not current:
             # Field is empty — just populate with the default
-            is_temp = self.session_mode_combo.currentIndex() == 1
+            is_temp = self.session_mode_combo.currentIndex() >= 1
             self.edit_save_dir.setText(self._get_default_save_dir(is_temp))
             return
 
@@ -437,7 +437,7 @@ class SessionControlsBox(QtWidgets.QGroupBox):
             or os.path.normpath(current).startswith(os.path.normpath(temp_prefix))
         )
         if is_auto:
-            is_temp = self.session_mode_combo.currentIndex() == 1
+            is_temp = self.session_mode_combo.currentIndex() >= 1
             self.edit_save_dir.setText(self._get_default_save_dir(is_temp))
 
     def _on_capture_toggled(self, enabled: bool) -> None:
@@ -445,12 +445,12 @@ class SessionControlsBox(QtWidgets.QGroupBox):
         self._save_row_widget.setVisible(bool(enabled))
         if enabled and not self.edit_save_dir.text().strip():
             # Set default path based on current session type
-            is_temp = self.session_mode_combo.currentIndex() == 1  # Index 1 = Temperature Test
+            is_temp = self.session_mode_combo.currentIndex() >= 1  # Index 1 = Temperature Test
             self.edit_save_dir.setText(self._get_default_save_dir(is_temp))
 
     def _choose_save_directory(self) -> None:
         """Open file dialog to choose CSV save directory."""
-        is_temp = self.session_mode_combo.currentIndex() == 1
+        is_temp = self.session_mode_combo.currentIndex() >= 1
         start_dir = self.edit_save_dir.text().strip() or self._get_default_save_dir(is_temp)
         options = QtWidgets.QFileDialog.Options()
         directory = QtWidgets.QFileDialog.getExistingDirectory(

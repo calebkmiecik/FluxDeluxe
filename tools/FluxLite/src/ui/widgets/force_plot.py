@@ -335,7 +335,10 @@ class ForcePlotWidget(QtWidgets.QWidget):
             if self._pg_x_land:
                 mn = self._pg_x_land[0]
                 mx = self._pg_x_land[-1]
-                min_x = mn if min_x is None else min(min_x, mn)
+                # Use the *later* min so a lagging series doesn't pull the
+                # window backward and cause jitter when buffers trim at
+                # different times.
+                min_x = mn if min_x is None else max(min_x, mn)
                 max_x = mx if max_x is None else max(max_x, mx)
         else:
             if self._pg_x_single:
@@ -407,6 +410,12 @@ class ForcePlotWidget(QtWidgets.QWidget):
                 pass
         # Update y-range with minimum height constraint after visibility change
         self._pg_update_y_range_min(10.0, 1.15)
+
+    def clear_temperature(self) -> None:
+        """Reset temperature buffer (e.g. on device switch)."""
+        self._temp_buffer.clear()
+        self._last_temp_update_time = 0.0
+        self._temp_label.setText("Temp: -- °F")
 
     def set_temperature_f(self, value_f: Optional[float]) -> None:
         """Update the smoothed temperature label (°F) using a 10-second rolling average."""
