@@ -734,6 +734,9 @@ class FluxLitePage(QtWidgets.QWidget):
         # Plot button - goes through controller, then back to main thread for matplotlib
         temp_panel.plot_stages_requested.connect(temp_ctrl.plot_stage_detection)
 
+        # Tell the background sync timer to skip cycles during live captures.
+        temp_ctrl._is_live_capture_active = lambda: self._temp_live_capture_ctx is not None
+
         # Populate the temperature testing device list on startup (no auto-selection).
         try:
             QtCore.QTimer.singleShot(250, temp_ctrl.refresh_devices)

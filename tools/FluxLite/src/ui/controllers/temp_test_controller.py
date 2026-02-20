@@ -11,6 +11,7 @@ from ...project_paths import data_dir
 from ..presenters.grid_presenter import GridPresenter
 from .temp_test_controller_actions import TempTestControllerActionsMixin
 from .temp_test_workers import (
+    BackgroundSyncWorker,
     BiasComputeWorker,
     PlateTypeAutoSearchWorker,
     PlateTypeDistinctCoefsWorker,
@@ -97,6 +98,16 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self._supabase_worker = None
         self._bulk_upload_worker = None
         self._sync_down_worker = None
+        self._bg_sync_worker: BackgroundSyncWorker | None = None
+
+        # Periodic background sync: uploads unsynced sessions, pulls new remote ones.
+        # Starts after 30 s, then every 5 minutes.  Skipped while a live capture
+        # is active (checked via is_live_capture_active callback set by the page).
+        self._is_live_capture_active = lambda: False  # overridden by FluxLitePage
+        self._bg_sync_timer = QtCore.QTimer(self)
+        self._bg_sync_timer.setInterval(5 * 60 * 1000)  # 5 minutes
+        self._bg_sync_timer.timeout.connect(self._on_bg_sync_tick)
+        QtCore.QTimer.singleShot(30_000, self._start_bg_sync_timer)
 
     def import_temperature_tests(self, file_paths: list[str]) -> None:
         """
@@ -356,6 +367,43 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         downloaded = int((result or {}).get("downloaded", 0))
         if downloaded > 0 and self._current_device_id == device_id:
             tests = self.testing.list_temperature_tests(device_id)
+            self.tests_listed.emit(tests)
+
+    # ------------------------------------------------------------------
+    # Background auto-sync (periodic)
+    # ------------------------------------------------------------------
+
+    def _start_bg_sync_timer(self) -> None:
+        """Called once after 30 s delay to kick off the repeating timer and run the first sync."""
+        self._bg_sync_timer.start()
+        self._on_bg_sync_tick()
+
+    def _on_bg_sync_tick(self) -> None:
+        """Fired every 5 minutes.  Skipped during live captures or if already running."""
+        if self._is_live_capture_active():
+            return
+        if self._bg_sync_worker and self._bg_sync_worker.isRunning():
+            return
+        root = data_dir("temp_testing")
+        if not os.path.isdir(root):
+            return
+        worker = BackgroundSyncWorker(root)
+        self._bg_sync_worker = worker
+        worker.finished.connect(lambda: setattr(self, "_bg_sync_worker", None))
+        worker.finished_with_result.connect(self._on_bg_sync_done)
+        worker.start()
+
+    def _on_bg_sync_done(self, result: dict) -> None:
+        """Refresh the test list if the background sync pulled new sessions."""
+        import logging
+        uploaded = int((result or {}).get("uploaded", 0))
+        downloaded = int((result or {}).get("downloaded", 0))
+        if uploaded or downloaded:
+            logging.getLogger(__name__).info(
+                "BackgroundSync: uploaded=%d, downloaded=%d", uploaded, downloaded
+            )
+        if downloaded > 0 and self._current_device_id:
+            tests = self.testing.list_temperature_tests(self._current_device_id)
             self.tests_listed.emit(tests)
 
     def _start_bias_compute(self, device_id: str) -> None:

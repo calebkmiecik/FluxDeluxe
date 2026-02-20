@@ -780,6 +780,13 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
                         "trimmed_csv_storage_path": trimmed_storage,
                         "processed_at_ms": int(_time.time() * 1000),
                     })
+                    # Stamp synced_at_ms so background sync skips this session.
+                    meta["synced_at_ms"] = int(_time.time() * 1000)
+                    try:
+                        with open(meta_path, "w", encoding="utf-8") as fh:
+                            json.dump(meta, fh, indent=2, sort_keys=True)
+                    except Exception:
+                        pass
                     _log.info("PostCaptureAutoSync: uploaded session %s", session_id)
                     self.sync_status.emit("Uploaded successfully", "#2e7d32")
             except Exception as exc:
@@ -1013,3 +1020,124 @@ class SupabaseSyncDownWorker(QtCore.QThread):
             errors.append(str(exc))
 
         self.finished_with_result.emit({"downloaded": downloaded, "errors": errors})
+
+
+class BackgroundSyncWorker(QtCore.QThread):
+    """Periodic background worker that uploads unsynced sessions and pulls new remote ones.
+
+    Designed to be kicked off by a QTimer every few minutes.  Completely
+    silent — failures are logged but never surfaced to the user.
+    """
+
+    finished_with_result = QtCore.Signal(dict)  # {"uploaded": int, "downloaded": int}
+
+    def __init__(self, temp_testing_root: str):
+        super().__init__()
+        self.temp_testing_root = str(temp_testing_root or "")
+
+    def run(self) -> None:
+        import json
+        import logging
+        import time as _time
+
+        _log = logging.getLogger(__name__)
+        uploaded = 0
+        downloaded = 0
+
+        try:
+            from ...infra.supabase_temp_repo import SupabaseTempRepository
+
+            repo = SupabaseTempRepository()
+            if repo._sb is None:
+                self.finished_with_result.emit({"uploaded": 0, "downloaded": 0})
+                return
+
+            root = self.temp_testing_root
+            if not os.path.isdir(root):
+                self.finished_with_result.emit({"uploaded": 0, "downloaded": 0})
+                return
+
+            # --- Upload pass: find unsynced *.meta.json files ---
+            for device_dir in _listdir_dirs(root):
+                device_id = os.path.basename(device_dir)
+                for fname in os.listdir(device_dir):
+                    if not fname.endswith(".meta.json"):
+                        continue
+                    meta_path = os.path.join(device_dir, fname)
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as fh:
+                            meta = json.load(fh) or {}
+                    except Exception:
+                        continue
+
+                    # Skip if already synced and meta hasn't changed since.
+                    synced_at = meta.get("synced_at_ms")
+                    if synced_at:
+                        file_mtime_ms = int(os.path.getmtime(meta_path) * 1000)
+                        if file_mtime_ms <= int(synced_at):
+                            continue
+
+                    # Upload via the existing orchestrator.
+                    try:
+                        repo.sync_session_from_meta(meta_path)
+
+                        # Stamp synced_at_ms so we don't re-upload next cycle.
+                        meta["synced_at_ms"] = int(_time.time() * 1000)
+                        with open(meta_path, "w", encoding="utf-8") as fh:
+                            json.dump(meta, fh, indent=2, sort_keys=True)
+                        uploaded += 1
+                    except Exception as exc:
+                        _log.debug("BackgroundSync: upload failed for %s: %s", fname, exc)
+
+            # --- Download pass: pull new remote sessions per device ---
+            for device_dir in _listdir_dirs(root):
+                device_id = os.path.basename(device_dir)
+                try:
+                    sessions = repo.list_sessions_for_device(device_id)
+                    if not sessions:
+                        continue
+                    for s in sessions:
+                        capture_name = str(s.get("capture_name") or "")
+                        if not capture_name:
+                            continue
+                        local_meta = os.path.join(device_dir, f"{capture_name}.meta.json")
+                        if os.path.isfile(local_meta):
+                            continue
+                        # Reconstruct meta from remote data.
+                        meta = {
+                            "device_id": device_id,
+                            "capture_name": capture_name,
+                            "model_id": s.get("model_id"),
+                            "tester_name": s.get("tester_name"),
+                            "body_weight_n": s.get("body_weight_n"),
+                            "avg_temp": s.get("avg_temp"),
+                            "short_label": s.get("short_label"),
+                            "date": s.get("date"),
+                            "started_at_ms": s.get("started_at_ms"),
+                            "synced_at_ms": int(_time.time() * 1000),
+                        }
+                        meta = {k: v for k, v in meta.items() if v is not None}
+                        os.makedirs(device_dir, exist_ok=True)
+                        with open(local_meta, "w", encoding="utf-8") as fh:
+                            json.dump(meta, fh, indent=2, sort_keys=True)
+                        downloaded += 1
+                except Exception as exc:
+                    _log.debug("BackgroundSync: sync-down failed for %s: %s", device_id, exc)
+
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).debug("BackgroundSyncWorker failed: %s", exc)
+
+        self.finished_with_result.emit({"uploaded": uploaded, "downloaded": downloaded})
+
+
+def _listdir_dirs(root: str) -> List[str]:
+    """Return absolute paths of immediate subdirectories."""
+    try:
+        return [
+            os.path.join(root, d)
+            for d in os.listdir(root)
+            if os.path.isdir(os.path.join(root, d))
+        ]
+    except OSError:
+        return []
