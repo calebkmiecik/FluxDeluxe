@@ -6,7 +6,7 @@
 ; Or let build.py invoke it automatically.
 
 #define MyAppName "FluxDeluxe"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.1.8"
 #define MyAppPublisher "Axioforce"
 #define MyAppExeName "FluxDeluxe.exe"
 
