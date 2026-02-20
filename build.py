@@ -429,6 +429,14 @@ def assemble_dist(embedded_python: Path) -> None:
                 shutil.rmtree(match)
                 print(f"  Stripped {match.name}")
 
+    # Strip TensorFlow C++ headers — not needed at runtime and the
+    # extremely deep paths break Inno Setup (Windows MAX_PATH).
+    tf_include = site_packages / "tensorflow" / "include"
+    if tf_include.is_dir():
+        size = sum(f.stat().st_size for f in tf_include.rglob("*") if f.is_file())
+        shutil.rmtree(tf_include)
+        print(f"  Stripped tensorflow/include: {size / 1024 / 1024:.1f} MB")
+
     # Strip __pycache__, test dirs, and .pyc files to save space
     stripped_bytes = 0
     for pattern in ("__pycache__", "test", "tests"):
