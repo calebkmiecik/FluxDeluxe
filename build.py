@@ -488,6 +488,17 @@ def assemble_dist(embedded_python: Path) -> None:
             ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
         )
 
+    # Copy .env (Supabase credentials etc.) into dist root so that
+    # tools/FluxLite/src/infra/supabase_client.py can resolve it via
+    # its relative "../../../../.env" path.
+    src_env = ROOT / ".env"
+    if src_env.exists():
+        dest_env = DIST / ".env"
+        shutil.copy2(src_env, dest_env)
+        print("  Copied .env to dist root")
+    else:
+        print("  WARNING: .env not found — Supabase credentials will be missing")
+
     print("  Dist assembly complete.")
 
 
