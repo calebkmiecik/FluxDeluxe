@@ -167,7 +167,7 @@ class SessionControlsBox(QtWidgets.QGroupBox):
         filters_row.setContentsMargins(0, 0, 0, 0)
         filters_row.setSpacing(6)
         self.discrete_type_filter = QtWidgets.QComboBox(self)
-        self.discrete_type_filter.addItems(["All types", "06", "07", "08", "11"])
+        self.discrete_type_filter.addItems(["All types", "06", "07", "08", "10", "11", "12"])
         self.discrete_type_filter.setVisible(False)
         self.discrete_plate_filter = QtWidgets.QComboBox(self)
         self.discrete_plate_filter.addItem("All plates")

@@ -44,7 +44,7 @@ class DeviceState:
 class Device:
     """Represents a physical device configuration."""
     id: str
-    type: str  # "06", "07", "08", "11"
+    type: str  # "06", "07", "08", "10", "11", "12"
     name: str
     config: Dict[str, Any] = field(default_factory=dict)
 

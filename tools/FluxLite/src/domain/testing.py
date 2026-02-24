@@ -33,7 +33,7 @@ class TestStage:
 class TestSession:
     tester_name: str
     device_id: str
-    model_id: str  # "06", "07", "08", "11"
+    model_id: str  # "06", "07", "08", "10", "11", "12"
     body_weight_n: float
     thresholds: TestThresholds
     grid_rows: int

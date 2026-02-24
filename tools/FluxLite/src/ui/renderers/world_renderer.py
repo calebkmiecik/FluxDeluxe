@@ -138,7 +138,7 @@ class WorldRenderer:
                 else:
                     prefix, tail = full_id[:2], full_id
                 suffix = tail[-2:] if len(tail) >= 2 else tail
-                type_prefix = dev_type if dev_type in ("06", "07", "08", "11") else (prefix if prefix in ("06", "07", "08", "11") else "")
+                type_prefix = dev_type if dev_type in ("06", "07", "08", "10", "11", "12") else (prefix if prefix in ("06", "07", "08", "10", "11", "12") else "")
                 short = f"{type_prefix}-{suffix}" if type_prefix else suffix
             except Exception:
                 short = full_id[-2:] if len(full_id) >= 2 else full_id
@@ -277,14 +277,12 @@ class WorldRenderer:
             return config.TYPE07_W_MM, config.TYPE07_H_MM
         for name, axf_id, dev_type in self.canvas._available_devices:
             if axf_id == device_id:
-                if dev_type == "06":
+                if dev_type in ("06", "10"):
                     return config.TYPE06_W_MM, config.TYPE06_H_MM
-                elif dev_type == "07":
+                elif dev_type in ("07", "11"):
                     return config.TYPE07_W_MM, config.TYPE07_H_MM
-                elif dev_type == "08":
+                elif dev_type in ("08", "12"):
                     return config.TYPE08_W_MM, config.TYPE08_H_MM
-                elif dev_type == "11":
-                    return config.TYPE11_W_MM, config.TYPE11_H_MM
         return config.TYPE07_W_MM, config.TYPE07_H_MM
 
     def _draw_plates(self, p: QtGui.QPainter) -> None:
@@ -311,13 +309,11 @@ class WorldRenderer:
             if not sel_type:
                 # Default to 07/11 size if uncertain
                 w_mm, h_mm = config.TYPE07_W_MM, config.TYPE07_H_MM
-            elif sel_type == "06":
+            elif sel_type in ("06", "10"):
                 w_mm, h_mm = config.TYPE06_W_MM, config.TYPE06_H_MM
-            elif sel_type == "07":
+            elif sel_type in ("07", "11"):
                 w_mm, h_mm = config.TYPE07_W_MM, config.TYPE07_H_MM
-            elif sel_type == "11":
-                w_mm, h_mm = config.TYPE11_W_MM, config.TYPE11_H_MM
-            elif sel_type == "08":
+            elif sel_type in ("08", "12"):
                 w_mm, h_mm = config.TYPE08_W_MM, config.TYPE08_H_MM
             else:
                 w_mm, h_mm = config.TYPE07_W_MM, config.TYPE07_H_MM
@@ -477,7 +473,7 @@ class WorldRenderer:
             else:
                 prefix, tail = full[:2], full
             suffix = tail[-2:] if len(tail) >= 2 else tail
-            type_prefix = dev_type_hint if dev_type_hint in ("06", "07", "08", "11") else (prefix if prefix in ("06", "07", "08", "11") else "")
+            type_prefix = dev_type_hint if dev_type_hint in ("06", "07", "08", "10", "11", "12") else (prefix if prefix in ("06", "07", "08", "10", "11", "12") else "")
             return f"{type_prefix}-{suffix}" if type_prefix else suffix
         except Exception:
             return full[-2:] if len(full) >= 2 else full
