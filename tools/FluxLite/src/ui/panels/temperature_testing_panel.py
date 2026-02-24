@@ -843,6 +843,11 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
 
     def _on_refresh_clicked(self) -> None:
         if self.controller:
+            # Kick off a background sync (upload pending + download new).
+            try:
+                self.controller.force_background_sync()
+            except Exception:
+                pass
             # Refresh the device list first (safe, does not trigger analysis).
             try:
                 self.controller.refresh_devices()

@@ -97,30 +97,33 @@ class TemperatureLiveCaptureManager:
 
     def _resolve_dir(self, *, device_id: str, save_dir: str) -> str:
         """
-        Resolve the capture directory in a backward-compatible way.
+        Resolve the capture directory.
 
-        - If user provided nothing: default to repo-root `temp_testing/<device_id>`
-        - If user selected the base folder only: append `<device_id>`
-        - Otherwise: use the user-provided directory as-is
+        When the save_dir is empty OR falls under the ``temp_testing/`` base,
+        always resolve to ``temp_testing/<device_id>/``.  Only honour a fully
+        custom path if it is outside ``temp_testing/`` entirely (the user
+        explicitly chose an external location).
         """
         base_temp = data_dir("temp_testing")
-        base_live = data_dir("live_test_logs")
         dev_norm = self._sanitize(device_id)
 
         resolved_dir_in = str(save_dir or "").strip()
-        if not resolved_dir_in:
+
+        # Default: temp_testing/<device_id>
+        if not resolved_dir_in or not dev_norm:
             return os.path.join(base_temp, dev_norm) if dev_norm else base_temp
 
+        # If the user's save_dir is anywhere under temp_testing/, always
+        # force the correct device subfolder to prevent misplaced files.
         try:
             norm_in = os.path.normpath(resolved_dir_in)
-            if dev_norm and os.path.normpath(base_temp) == norm_in:
+            norm_base = os.path.normpath(base_temp)
+            if norm_in == norm_base or norm_in.startswith(norm_base + os.sep):
                 return os.path.join(base_temp, dev_norm)
-            # Keep parity with older behavior if a base live folder is selected.
-            if dev_norm and os.path.normpath(base_live) == norm_in:
-                return os.path.join(base_live, dev_norm)
         except Exception:
             pass
 
+        # Fully external directory — honour user's choice as-is.
         return resolved_dir_in
 
     @staticmethod

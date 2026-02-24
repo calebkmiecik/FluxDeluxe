@@ -55,6 +55,8 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
     # Auto-update status (post-import)
     auto_update_status = QtCore.Signal(dict)
     auto_update_done = QtCore.Signal(dict)
+    # Background sync progress: (message, level)
+    bg_sync_status = QtCore.Signal(str, str)
 
     def __init__(self, testing_service: TestingService, hardware_service: HardwareService):
         super().__init__()
@@ -378,23 +380,27 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self._bg_sync_timer.start()
         self._on_bg_sync_tick()
 
-    def _on_bg_sync_tick(self) -> None:
+    def force_background_sync(self) -> None:
+        """Trigger an immediate background sync (called by the Refresh button)."""
+        self._on_bg_sync_tick(force=True)
+
+    def _on_bg_sync_tick(self, force: bool = False) -> None:
         """Fired every 5 minutes.  Skipped during live captures or if already running."""
-        if self._is_live_capture_active():
+        if not force and self._is_live_capture_active():
             return
         if self._bg_sync_worker and self._bg_sync_worker.isRunning():
             return
         root = data_dir("temp_testing")
-        if not os.path.isdir(root):
-            return
+        os.makedirs(root, exist_ok=True)
         worker = BackgroundSyncWorker(root)
         self._bg_sync_worker = worker
         worker.finished.connect(lambda: setattr(self, "_bg_sync_worker", None))
         worker.finished_with_result.connect(self._on_bg_sync_done)
+        worker.sync_progress.connect(self.bg_sync_status.emit)
         worker.start()
 
     def _on_bg_sync_done(self, result: dict) -> None:
-        """Refresh the test list if the background sync pulled new sessions."""
+        """Refresh device and test lists if the background sync changed anything."""
         import logging
         uploaded = int((result or {}).get("uploaded", 0))
         downloaded = int((result or {}).get("downloaded", 0))
@@ -402,9 +408,12 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             logging.getLogger(__name__).info(
                 "BackgroundSync: uploaded=%d, downloaded=%d", uploaded, downloaded
             )
-        if downloaded > 0 and self._current_device_id:
-            tests = self.testing.list_temperature_tests(self._current_device_id)
-            self.tests_listed.emit(tests)
+        if downloaded > 0:
+            # New device folders may have been created — refresh the combo.
+            self.refresh_devices()
+            if self._current_device_id:
+                tests = self.testing.list_temperature_tests(self._current_device_id)
+                self.tests_listed.emit(tests)
 
     def _start_bias_compute(self, device_id: str) -> None:
         if self._bias_worker and self._bias_worker.isRunning():
