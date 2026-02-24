@@ -329,16 +329,17 @@ class HardwareService(QtCore.QObject):
 
     def _infer_device_type(self, axf_id: str, payload_hint: object | None = None) -> str:
         """
-        Infer canonical device type ("06","07","08","11") from an axfId.
+        Infer canonical device type ("06","07","08","10","11","12") from an axfId.
         Backends vary on whether deviceTypeId is present; this keeps UI stable.
         """
+        _known = ("06", "07", "08", "10", "11", "12")
         try:
             s = str(axf_id or "").strip()
             if not s:
                 return ""
             # Common formats: "07.00000051", "07-....", "07..."
             prefix = s[:2]
-            if prefix in ("06", "07", "08", "11"):
+            if prefix in _known:
                 return prefix
         except Exception:
             pass
@@ -346,7 +347,7 @@ class HardwareService(QtCore.QObject):
         try:
             dt = str(payload_hint or "").strip()
             # If backend already sent canonical type, keep it.
-            if dt in ("06", "07", "08", "11"):
+            if dt in _known:
                 return dt
         except Exception:
             pass
