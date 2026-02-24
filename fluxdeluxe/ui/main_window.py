@@ -130,11 +130,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fluxlite_page = page
             self.tool_stack.addWidget(page)
 
-            # Mirror FluxLite connection status into the host status bar.
+            # Typed stage -> colored status bar (replaces old plain-text bridge)
             try:
-                page.controller.hardware.connection_status_changed.connect(self.status_label.setText)
+                page.controller.hardware.connection_state.stage_changed.connect(self._on_connection_stage)
             except Exception:
-                pass
+                # Fall back to plain text bridge if typed state machine not available
+                try:
+                    page.controller.hardware.connection_status_changed.connect(self.status_label.setText)
+                except Exception:
+                    pass
 
             # Ensure the tool can clean up on close.
             try:
@@ -159,6 +163,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self._fluxlite_page = ph
             self.tool_stack.addWidget(ph)
             return ph
+
+    def _on_connection_stage(self, stage: object) -> None:
+        """Update status bar with colored dot matching connection stage."""
+        try:
+            dot_color = getattr(stage, "dot_color", "#BDBDBD")
+            label = getattr(stage, "label", str(stage))
+            self.status_label.setText(f'<span style="color:{dot_color};">\u25CF</span> {label}')
+        except Exception:
+            pass
 
     def _ensure_metrics_editor_page(self) -> MetricsEditorPage:
         if self._metrics_editor_page is not None:

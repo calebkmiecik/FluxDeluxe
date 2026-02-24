@@ -562,6 +562,39 @@ class ForcePlotWidget(QtWidgets.QWidget):
             self.update()
         self._update_overlay()
 
+    def add_points_batch(self, points: list) -> None:
+        """Append multiple (t_ms, fx, fy, fz) points, then repaint once."""
+        if not points:
+            return
+        if self._use_pg:
+            for t_ms, fx, fy, fz in points:
+                if self._time0_ms is None:
+                    self._time0_ms = int(t_ms)
+                self._pg_x_single.append(int(t_ms))
+                self._pg_fx.append(float(fx))
+                self._pg_fy.append(float(fy))
+                self._pg_fz.append(float(fz))
+            self._last_raw_single = (float(points[-1][1]), float(points[-1][2]), float(points[-1][3]))
+            self._pg_trim_single_all()
+            try:
+                self._pg_curves["fx"].setData(self._pg_x_single, self._pg_fx)  # type: ignore[union-attr]
+                self._pg_curves["fy"].setData(self._pg_x_single, self._pg_fy)  # type: ignore[union-attr]
+                self._pg_curves["fz"].setData(self._pg_x_single, self._pg_fz)  # type: ignore[union-attr]
+                self._pg_set_view_last_ms(10_000)
+                self._pg_update_y_range_min(10.0, 1.15)
+            except Exception:
+                pass
+        else:
+            for t_ms, fx, fy, fz in points:
+                self._samples.append((t_ms, float(fx), float(fy), float(fz)))
+            self._last_raw_single = (float(points[-1][1]), float(points[-1][2]), float(points[-1][3]))
+            self._ema_fx = self._ema_fy = self._ema_fz = None
+            if len(self._samples) > self._max_points:
+                self._samples = self._samples[-self._max_points:]
+            self._recompute_autoscale()
+            self.update()
+        self._update_overlay()
+
     # Dual-series API for mound mode
     def set_dual_series_enabled(self, enabled: bool) -> None:
         self._dual_enabled = bool(enabled)

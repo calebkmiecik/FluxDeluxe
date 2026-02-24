@@ -9,6 +9,7 @@ from ..io_client import IoClient
 from ..domain.models import DeviceState, Device, LAUNCH_NAME, LANDING_NAME
 import requests
 from ..infra.backend_address import BackendAddress, backend_address_from_config
+from ..connection_state import ConnectionStateMachine, ConnectionStage
 
 class HardwareService(QtCore.QObject):
     """
@@ -56,6 +57,10 @@ class HardwareService(QtCore.QObject):
         # Socket callbacks may run on non-Qt threads; never start Qt timers from there.
         self._qt_call_lock = threading.Lock()
         self._qt_call_queue: list[Callable[[], None]] = []
+
+        # Typed connection state machine (replaces ad-hoc string emissions)
+        self.connection_state = ConnectionStateMachine(self)
+        self.connection_state.status_text_changed.connect(self.connection_status_changed.emit)
 
     @QtCore.Slot()
     def _drain_qt_call_queue(self) -> None:
@@ -167,7 +172,7 @@ class HardwareService(QtCore.QObject):
             self.client.on("error", lambda d: self.socket_error_received.emit(str(d)))
 
             self.client.start()
-            self.connection_status_changed.emit(f"Connecting to {host}:{port}...")
+            self.connection_state.set_stage(ConnectionStage.SOCKET_CONNECTING, f"{host}:{port}")
 
     def disconnect(self) -> None:
         if self.client:
@@ -181,7 +186,7 @@ class HardwareService(QtCore.QObject):
             self.device_list_updated.emit([])
         except Exception:
             pass
-        self.connection_status_changed.emit("Disconnected")
+        self.connection_state.set_stage(ConnectionStage.DISCONNECTED)
 
     def _on_connect(self) -> None:
         # Force status update in case IoClient handler didn't run yet or failed
@@ -197,7 +202,7 @@ class HardwareService(QtCore.QObject):
             except Exception:
                 pass
             
-        self.connection_status_changed.emit("Connected")
+        self.connection_state.set_stage(ConnectionStage.DISCOVERING_DEVICES)
         if self.client:
             try:
                 # IMPORTANT: Many DynamoPy-style backends do not emit `jsonData`
@@ -214,7 +219,7 @@ class HardwareService(QtCore.QObject):
                 pass
 
     def _on_disconnect(self, *args) -> None:
-        self.connection_status_changed.emit("Disconnected")
+        self.connection_state.set_stage(ConnectionStage.DISCONNECTED)
         if self.client:
             try:
                 self.client.status.connected = False
@@ -1032,6 +1037,9 @@ class HardwareService(QtCore.QObject):
         print(f"[hardware] device_list_updated: {len(devices)} devices -> {devices}")
         self.device_list_updated.emit(devices)
 
+        if devices:
+            self.connection_state.set_stage(ConnectionStage.READY)
+
     def auto_connect(self, host: str = config.SOCKET_HOST, http_port: int = config.HTTP_PORT) -> None:
         """
         Attempt to automatically connect to the backend.
@@ -1045,15 +1053,15 @@ class HardwareService(QtCore.QObject):
             while not self._stop_flag.is_set():
                 # If already connected, we are done.
                 if self.client and self.client.status.connected:
-                    self.connection_status_changed.emit("Connected")
+                    self.connection_state.set_stage(ConnectionStage.READY)
                     return
 
-                self.connection_status_changed.emit("Auto-connecting...")
+                self.connection_state.set_stage(ConnectionStage.SOCKET_CONNECTING, "auto-discovering")
                 
                 # 1. Try discovery
                 port = self._discover_socket_port(host, http_port)
                 if port:
-                    self.connection_status_changed.emit(f"Found port {port}, connecting...")
+                    self.connection_state.set_stage(ConnectionStage.SOCKET_CONNECTING, f"port {port}")
                     self.connect(host, port)
                     # Wait for connection
                     for _ in range(25): # 5s
@@ -1072,7 +1080,7 @@ class HardwareService(QtCore.QObject):
                         if self.client and self.client.status.connected:
                             return # Success!
                         
-                        self.connection_status_changed.emit(f"Trying port {p}...")
+                        self.connection_state.set_stage(ConnectionStage.SOCKET_CONNECTING, f"port {p}")
                         try:
                             self.connect(host, p)
                             # Wait for connection
@@ -1086,7 +1094,7 @@ class HardwareService(QtCore.QObject):
                 if self.client and self.client.status.connected:
                     return
                     
-                self.connection_status_changed.emit("Retrying in 5s...")
+                self.connection_state.set_stage(ConnectionStage.SOCKET_CONNECTING, "retrying in 5s")
                 
                 # Disconnect to clean up before next attempt (stops the previous IoClient thread)
                 self.disconnect()

@@ -32,8 +32,23 @@ class MainWindow(QtWidgets.QMainWindow):
         # Basic status bar
         self.status_label = QtWidgets.QLabel("Disconnected")
         self.statusBar().addPermanentWidget(self.status_label)
+
+        # Typed stage -> colored status bar (replaces old plain-text bridge)
         try:
-            self.page.connection_status_changed.connect(self.status_label.setText)
+            self.page.controller.hardware.connection_state.stage_changed.connect(self._on_connection_stage)
+        except Exception:
+            # Fall back to plain text bridge if typed state machine not available
+            try:
+                self.page.connection_status_changed.connect(self.status_label.setText)
+            except Exception:
+                pass
+
+    def _on_connection_stage(self, stage: object) -> None:
+        """Update status bar with colored dot matching connection stage."""
+        try:
+            dot_color = getattr(stage, "dot_color", "#BDBDBD")
+            label = getattr(stage, "label", str(stage))
+            self.status_label.setText(f'<span style="color:{dot_color};">\u25CF</span> {label}')
         except Exception:
             pass
 

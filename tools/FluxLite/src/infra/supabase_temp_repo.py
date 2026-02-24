@@ -53,12 +53,12 @@ class SupabaseTempRepository:
 
             # --- baseline ---
             baseline = meta.get("processed_baseline") or {}
-            if isinstance(baseline, dict) and baseline.get("processed_off"):
+            if isinstance(baseline, dict) and (baseline.get("processed_off") or baseline.get("trimmed_csv")):
                 trimmed_path = os.path.join(folder, baseline["trimmed_csv"]) if baseline.get("trimmed_csv") else None
-                off_path = os.path.join(folder, baseline["processed_off"])
+                off_path = os.path.join(folder, baseline["processed_off"]) if baseline.get("processed_off") else None
 
                 trimmed_storage = self.upload_csv_gzipped(trimmed_path, device_id) if trimmed_path else None
-                off_storage = self.upload_csv_gzipped(off_path, device_id)
+                off_storage = self.upload_csv_gzipped(off_path, device_id) if off_path else None
 
                 self.upsert_processing_run(session_id, {
                     "mode": "baseline",
@@ -192,6 +192,41 @@ class SupabaseTempRepository:
     # ------------------------------------------------------------------
     # Remote listing / querying
     # ------------------------------------------------------------------
+
+    def list_all_device_ids(self) -> List[str]:
+        """Return distinct device_ids from ``temp_test_sessions``."""
+        if self._sb is None:
+            return []
+        try:
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("device_id")
+                .execute()
+            )
+            ids = sorted({str(r.get("device_id") or "") for r in (resp.data or [])})
+            return [d for d in ids if d]
+        except Exception as exc:
+            _logger.warning("list_all_device_ids failed: %s", exc)
+            return []
+
+    def list_all_capture_names(self) -> set:
+        """Return the set of all ``capture_name`` values in ``temp_test_sessions``.
+
+        Used by the background sync to skip uploads for sessions that already
+        exist remotely.
+        """
+        if self._sb is None:
+            return set()
+        try:
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("capture_name")
+                .execute()
+            )
+            return {str(r.get("capture_name") or "") for r in (resp.data or [])} - {""}
+        except Exception as exc:
+            _logger.warning("list_all_capture_names failed: %s", exc)
+            return set()
 
     def list_sessions_for_device(self, device_id: str) -> List[dict]:
         """Query ``temp_test_sessions`` filtered by *device_id*."""

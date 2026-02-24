@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import time
 from collections import deque
 from typing import Dict, Optional
@@ -23,10 +24,15 @@ from .widgets.world_canvas import WorldCanvas
 from .widgets.live_cell_details import LiveCellDetailsPanel
 from .dialogs.stage_switch_prompt import StageSwitchPromptDialog
 from .mound_render_throttler import MoundRenderThrottler
+from .single_render_throttler import SingleModeRenderThrottler
 from .periodic_tare import PeriodicTareController
 from .live_data_frames import extract_device_frames
 from .live_session_gate_ui import LiveSessionGateUi
 from .live_measurement_ui import LiveMeasurementUi
+from .widgets.startup_overlay import StartupOverlay
+
+
+_log = logging.getLogger(__name__)
 
 
 class DeviceTempTracker:
@@ -179,19 +185,20 @@ class FluxLitePage(QtWidgets.QWidget):
         except Exception:
             pass
 
-        # --- Mound render throttling (smooth 60 Hz UI) ---
-        # We may receive mound packets at ~400-500 Hz. We buffer the latest Launch/Landing samples and
-        # render them at a fixed UI rate via a GUI-thread QTimer to avoid choppy/jittery updates.
+        # --- Render throttling (smooth 60 Hz UI) ---
+        # Backend can emit data at ~100-500 Hz. Buffer latest samples and flush
+        # to Qt widgets at a fixed UI rate via a GUI-thread QTimer.
         self._mound_throttler = MoundRenderThrottler()
-        self._mound_render_timer = QtCore.QTimer(self)
+        self._single_throttler = SingleModeRenderThrottler()
+        self._render_timer = QtCore.QTimer(self)
         try:
             hz = int(getattr(config, "UI_TICK_HZ", 60))
         except Exception:
             hz = 60
         interval_ms = int(max(5, round(1000.0 / float(max(1, hz)))))
-        self._mound_render_timer.setInterval(interval_ms)
-        self._mound_render_timer.timeout.connect(self._on_mound_render_tick)
-        self._mound_render_timer.start()
+        self._render_timer.setInterval(interval_ms)
+        self._render_timer.timeout.connect(self._on_render_tick)
+        self._render_timer.start()
 
         # Legacy Bridge (kept for compatibility)
         self.bridge = UiBridge()
@@ -200,27 +207,47 @@ class FluxLitePage(QtWidgets.QWidget):
         self._setup_ui()
         self._connect_signals()
 
+        # Startup connection overlay — created AFTER all layout widgets so it
+        # sits on top of the entire page. The overlay installs an event filter
+        # on us to auto-track our size, so no manual geometry management needed.
+        self._startup_overlay = StartupOverlay(self)
+        try:
+            self.controller.hardware.connection_state.stage_changed.connect(self._startup_overlay.set_stage)
+        except Exception:
+            pass
+
         # Start Controller (triggers autoconnect)
         self.controller.start()
 
     @QtCore.Slot()
-    def _on_mound_render_tick(self) -> None:
+    def _on_render_tick(self) -> None:
         """
-        Render buffered mound Launch/Landing samples at a stable UI rate.
+        Unified 60 Hz render tick — dispatches to the correct throttler based on display mode.
 
         This avoids updating Qt widgets at backend packet rate and prevents "choppy" motion caused
         by bursty packet arrival / uneven per-packet processing time.
         """
         try:
-            mound_group_id = str(getattr(self.state, "mound_group_id", "") or "").strip()
-            self._mound_throttler.on_tick(
-                display_mode=str(getattr(self.state, "display_mode", "") or ""),
-                mound_group_id=mound_group_id,
-                canvas_left=getattr(self, "canvas_left", None),
-                canvas_right=getattr(self, "canvas_right", None),
-                sensor_plot_left=getattr(self, "sensor_plot_left", None),
-                sensor_plot_right=getattr(self, "sensor_plot_right", None),
-            )
+            display_mode = str(getattr(self.state, "display_mode", "") or "")
+            if display_mode == "mound":
+                mound_group_id = str(getattr(self.state, "mound_group_id", "") or "").strip()
+                self._mound_throttler.on_tick(
+                    display_mode=display_mode,
+                    mound_group_id=mound_group_id,
+                    canvas_left=getattr(self, "canvas_left", None),
+                    canvas_right=getattr(self, "canvas_right", None),
+                    sensor_plot_left=getattr(self, "sensor_plot_left", None),
+                    sensor_plot_right=getattr(self, "sensor_plot_right", None),
+                )
+            elif display_mode == "single":
+                self._single_throttler.on_tick(
+                    canvas_left=getattr(self, "canvas_left", None),
+                    canvas_right=getattr(self, "canvas_right", None),
+                    sensor_plot_left=getattr(self, "sensor_plot_left", None),
+                    sensor_plot_right=getattr(self, "sensor_plot_right", None),
+                    moments_view_left=getattr(self, "moments_view_left", None),
+                    moments_view_right=getattr(self, "moments_view_right", None),
+                )
         except Exception:
             return
 
@@ -734,6 +761,9 @@ class FluxLitePage(QtWidgets.QWidget):
         # Plot button - goes through controller, then back to main thread for matplotlib
         temp_panel.plot_stages_requested.connect(temp_ctrl.plot_stage_detection)
 
+        # Background sync status → live status bar
+        temp_ctrl.bg_sync_status.connect(self._on_bg_sync_status)
+
         # Tell the background sync timer to skip cycles during live captures.
         temp_ctrl._is_live_capture_active = lambda: self._temp_live_capture_ctx is not None
 
@@ -919,31 +949,17 @@ class FluxLitePage(QtWidgets.QWidget):
 
                     # Is this the selected device?
                     if self.state.display_mode == "single" and did == selected_id:
-                        # 1. Update Sensor Plot (Right pane by default)
-                        if self.sensor_plot_right:
-                            self.sensor_plot_right.add_point(t_ms, fx, fy, fz)
-
-                        # Update Temp Label (Left/Right Sensor Plot)
+                        # Buffer frame for 60 Hz render tick (canvas + force plot + temp)
+                        is_visible = abs(fz) > 5.0
+                        snap = (cop_x, cop_y, fz, t_ms, is_visible, cop_x, cop_y)
                         try:
                             avg_temp = float(frame.get("avgTemperatureF") or 0.0)
-                            if avg_temp > 1.0:
-                                if self.sensor_plot_left:
-                                    self.sensor_plot_left.set_temperature_f(avg_temp)
-                                if self.sensor_plot_right:
-                                    self.sensor_plot_right.set_temperature_f(avg_temp)
-                            else:
-                                if self.sensor_plot_left:
-                                    self.sensor_plot_left.set_temperature_f(None)
-                                if self.sensor_plot_right:
-                                    self.sensor_plot_right.set_temperature_f(None)
+                            _temp_val = avg_temp if avg_temp > 1.0 else None
                         except Exception:
-                            pass
-
-                        # 2. Update Plate View (Left pane by default) - Single Snapshot
-                        is_visible = abs(fz) > 5.0  # Basic threshold
-                        snap = (cop_x, cop_y, fz, t_ms, is_visible, cop_x, cop_y)
-                        self.canvas_left.set_single_snapshot(snap)
-                        self.canvas_right.set_single_snapshot(snap)  # Sync if both showing plate
+                            _temp_val = None
+                        self._single_throttler.buffer_single_frame(
+                            snap, t_ms, fx, fy, fz, _temp_val,
+                        )
 
                         # If stage switch dialog is showing, update force and check threshold
                         try:
@@ -1068,10 +1084,13 @@ class FluxLitePage(QtWidgets.QWidget):
 
             if moments_data:
                 try:
-                    if self.moments_view_left:
-                        self.moments_view_left.set_moments(moments_data)
-                    if self.moments_view_right:
-                        self.moments_view_right.set_moments(moments_data)
+                    if self.state.display_mode == "single":
+                        self._single_throttler.buffer_moments(moments_data)
+                    else:
+                        if self.moments_view_left:
+                            self.moments_view_left.set_moments(moments_data)
+                        if self.moments_view_right:
+                            self.moments_view_right.set_moments(moments_data)
                 except Exception:
                     pass
 
@@ -1114,17 +1133,29 @@ class FluxLitePage(QtWidgets.QWidget):
                     capture_enabled = False
                     save_dir = ""
                 if capture_enabled:
-                    try:
-                        gid_fallback = ""
-                    except Exception:
-                        gid_fallback = ""
-                    self._temp_live_capture_ctx = self._temp_live_capture.start(
+                    gid_fallback = ""
+                    # Stop any still-running capture from a previous session
+                    # before starting a new one — prevents the backend from
+                    # ignoring the second start_capture.
+                    prev_ctx = self._temp_live_capture_ctx
+                    if prev_ctx is not None:
+                        _log.warning("Previous capture context still set — stopping stale capture (group_id=%s)", getattr(prev_ctx, "group_id", "?"))
+                        try:
+                            self._temp_live_capture.stop(group_id=str(getattr(prev_ctx, "group_id", "") or ""))
+                        except Exception:
+                            pass
+                        self._temp_live_capture_ctx = None
+                    ctx = self._temp_live_capture.start(
                         device_id=str(getattr(sess, "device_id", "") or ""),
                         save_dir=save_dir,
                         group_id_fallback=gid_fallback,
                     )
+                    self._temp_live_capture_ctx = ctx
+                    _log.info("Temp capture started: ctx=%s", ctx)
+                else:
+                    _log.debug("Temp session but capture not enabled — skipping capture start")
         except Exception:
-            pass
+            _log.exception("Failed to start temperature capture")
         # Initialize the Testing Guide stage tracker (Location A/B overview)
         try:
             sess = getattr(self.controller.testing, "current_session", None)
@@ -1154,13 +1185,20 @@ class FluxLitePage(QtWidgets.QWidget):
         try:
             ctx = self._temp_live_capture_ctx
             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
+                _log.info("Session ended — stopping capture (group_id=%s, capture=%s)", ctx.group_id, ctx.capture_name)
                 self._temp_live_capture.stop(group_id=str(ctx.group_id))
+                # Write a minimal meta.json synchronously so it exists on
+                # disk even if the background worker never runs (offline,
+                # crash, bug).  The worker will load and augment it later.
+                self._write_capture_meta_json(ctx)
                 # Show immediate feedback while backend flushes the CSV.
                 self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
                 # Kick off background auto-sync (trim + upload) before clearing ctx.
                 self._start_post_capture_sync(ctx)
+            else:
+                _log.warning("Session ended but no capture context — skipping post-capture sync (ctx=%s)", ctx)
         except Exception:
-            pass
+            _log.exception("Error during session-end capture cleanup")
         self._temp_live_capture_ctx = None
         self._reset_live_gate("session_ended")
         self._reset_live_measurement_engine("session_ended")
@@ -1177,38 +1215,104 @@ class FluxLitePage(QtWidgets.QWidget):
         except Exception:
             pass
 
+    def _write_capture_meta_json(self, ctx: CaptureContext) -> None:
+        """Write a minimal meta.json for the just-finished capture.
+
+        This runs synchronously so the file exists on disk regardless of
+        whether the background worker succeeds.  The worker will load this
+        file and merge in additional fields (trimmed_csv, synced_at_ms, etc.).
+        """
+        import json
+        import os
+
+        try:
+            csv_dir = str(getattr(ctx, "csv_dir", "") or "").strip()
+            capture_name = str(getattr(ctx, "capture_name", "") or "").strip()
+            if not csv_dir or not capture_name:
+                return
+
+            meta_path = os.path.join(csv_dir, f"{capture_name}.meta.json")
+
+            # If it already exists (e.g. from a previous run), load and merge.
+            meta: dict = {}
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh) or {}
+                except Exception:
+                    meta = {}
+
+            # Populate from the current session.
+            meta["capture_name"] = capture_name
+            sess = getattr(self.controller.testing, "current_session", None)
+            if sess:
+                device_id = str(getattr(sess, "device_id", "") or "")
+                meta.setdefault("device_id", device_id)
+                meta.setdefault("model_id", str(getattr(sess, "model_id", "") or ""))
+                meta.setdefault("tester_name", str(getattr(sess, "tester_name", "") or ""))
+                bw = getattr(sess, "body_weight_n", None)
+                if bw is not None:
+                    meta.setdefault("body_weight_n", float(bw))
+                started = getattr(sess, "started_at_ms", None)
+                if started is not None:
+                    meta.setdefault("started_at_ms", started)
+                # Include avg_temp from live temperature tracking
+                avg_temp = self._device_temps.get(device_id)
+                if avg_temp is not None:
+                    meta.setdefault("avg_temp", float(avg_temp))
+
+            os.makedirs(csv_dir, exist_ok=True)
+            with open(meta_path, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, sort_keys=True)
+            _log.info("Wrote capture meta.json: %s", meta_path)
+        except Exception:
+            _log.exception("Failed to write capture meta.json")
+
     def _start_post_capture_sync(self, ctx: CaptureContext) -> None:
         """Kick off background trim + Supabase upload for a just-finished capture."""
         try:
             csv_dir = str(getattr(ctx, "csv_dir", "") or "").strip()
             capture_name = str(getattr(ctx, "capture_name", "") or "").strip()
             if not csv_dir or not capture_name:
+                _log.warning("PostCaptureSync: empty csv_dir or capture_name — skipping")
                 return
             import os
             device_id = os.path.basename(csv_dir.rstrip("/\\"))
             if not device_id:
+                _log.warning("PostCaptureSync: empty device_id from csv_dir=%s — skipping", csv_dir)
                 return
             # Gather session metadata for the meta.json the worker will create.
             session_meta: dict = {}
             try:
                 sess = getattr(self.controller.testing, "current_session", None)
                 if sess:
+                    sess_device_id = str(getattr(sess, "device_id", "") or "")
                     session_meta = {
-                        "device_id": str(getattr(sess, "device_id", "") or ""),
+                        "device_id": sess_device_id,
                         "model_id": str(getattr(sess, "model_id", "") or ""),
                         "tester_name": str(getattr(sess, "tester_name", "") or ""),
                         "body_weight_n": float(getattr(sess, "body_weight_n", 0) or 0),
                         "started_at_ms": getattr(sess, "started_at_ms", None),
                     }
+                    avg_temp = self._device_temps.get(sess_device_id)
+                    if avg_temp is not None:
+                        session_meta["avg_temp"] = float(avg_temp)
+                else:
+                    _log.warning("PostCaptureSync: current_session is None — meta will be incomplete")
             except Exception:
-                pass
+                _log.exception("PostCaptureSync: failed to read session metadata")
+            _log.info("PostCaptureSync: starting worker for capture=%s csv_dir=%s", capture_name, csv_dir)
             worker = PostCaptureAutoSyncWorker(capture_name, csv_dir, device_id, session_meta)
             self._post_capture_sync_worker = worker
             worker.sync_status.connect(self._on_post_capture_sync_status)
-            worker.finished.connect(lambda: setattr(self, "_post_capture_sync_worker", None))
+            # Use a weak check so worker1's finished signal doesn't clear worker2's ref.
+            worker.finished.connect(lambda w=worker: (
+                setattr(self, "_post_capture_sync_worker", None)
+                if self._post_capture_sync_worker is w else None
+            ))
             worker.start()
         except Exception:
-            pass
+            _log.exception("PostCaptureSync: failed to start worker")
 
     def _on_post_capture_sync_status(self, message: str, color: str) -> None:
         """Show upload status on the live-testing status bar."""
@@ -1219,6 +1323,21 @@ class FluxLitePage(QtWidgets.QWidget):
                 QtCore.QTimer.singleShot(3000, self._fade_out_status_bar)
             else:
                 # In-progress (yellow).
+                self._set_live_status_bar_state(mode="syncing", text=message, pct=None)
+        except Exception:
+            pass
+
+    def _on_bg_sync_status(self, message: str, level: str) -> None:
+        """Show background-sync progress on the live-testing status bar."""
+        try:
+            level = str(level or "info").lower()
+            if level == "success":
+                self._set_live_status_bar_state(mode="success", text=message, pct=None)
+                QtCore.QTimer.singleShot(3000, self._fade_out_status_bar)
+            elif level == "error":
+                self._set_live_status_bar_state(mode="syncing", text=message, pct=None)
+                QtCore.QTimer.singleShot(5000, self._fade_out_status_bar)
+            else:
                 self._set_live_status_bar_state(mode="syncing", text=message, pct=None)
         except Exception:
             pass
@@ -2028,6 +2147,12 @@ class FluxLitePage(QtWidgets.QWidget):
                 self.canvas_right.update()
             except Exception:
                 pass
+
+        # Clear stale single-mode render buffers on device/mode switch
+        try:
+            self._single_throttler.reset()
+        except Exception:
+            pass
 
         # Clear force plot temp buffer and seed from per-device cache
         try:

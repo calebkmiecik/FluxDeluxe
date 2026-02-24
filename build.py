@@ -437,11 +437,19 @@ def assemble_dist(embedded_python: Path) -> None:
         shutil.rmtree(tf_include)
         print(f"  Stripped tensorflow/include: {size / 1024 / 1024:.1f} MB")
 
-    # Strip __pycache__, test dirs, and .pyc files to save space
+    # Strip __pycache__, test dirs, and .pyc files to save space.
+    # IMPORTANT: TensorFlow uses "test" and "tests" dirs as runtime API
+    # modules (e.g. tf.test, tf.__internal__.test), not just test suites.
+    # Deleting ANY of them can break `import tensorflow` with circular
+    # import errors.  Skip the entire tensorflow tree to be safe.
     stripped_bytes = 0
     for pattern in ("__pycache__", "test", "tests"):
         for match in site_packages.rglob(pattern):
             if match.is_dir() and match.name == pattern:
+                if pattern in ("test", "tests"):
+                    rel = match.relative_to(site_packages)
+                    if "tensorflow" in rel.parts:
+                        continue
                 size = sum(f.stat().st_size for f in match.rglob("*") if f.is_file())
                 shutil.rmtree(match)
                 stripped_bytes += size
@@ -498,6 +506,24 @@ def assemble_dist(embedded_python: Path) -> None:
         print("  Copied .env to dist root")
     else:
         print("  WARNING: .env not found — Supabase credentials will be missing")
+
+    # Post-strip verification: make sure critical packages still import
+    # in the STRIPPED copy.  The earlier verify_backend_imports runs on the
+    # source embedded Python BEFORE stripping, so it can't catch breakage
+    # caused by directory removal (e.g. TensorFlow test/ dirs).
+    dest_python_exe = dest_python / "python.exe"
+    if dest_python_exe.exists():
+        print("  Verifying tensorflow imports in stripped dist...")
+        result = subprocess.run(
+            [str(dest_python_exe), "-c", "import tensorflow; print('  tensorflow OK')"],
+            capture_output=True, text=True, timeout=60,
+        )
+        print(result.stdout.strip())
+        if result.returncode != 0:
+            print(f"\n  ERROR: tensorflow failed to import in stripped dist!")
+            print(f"  stderr: {result.stderr.strip()[:500]}")
+            print("  The test/tests directory stripping likely broke it.")
+            sys.exit(1)
 
     print("  Dist assembly complete.")
 

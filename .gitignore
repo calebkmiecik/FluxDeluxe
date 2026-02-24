@@ -11,6 +11,7 @@ live_test_logs/
 .claude/
 /dist/
 /build/
+/output/
 *.spec
 !FluxDeluxe.spec
 nul
