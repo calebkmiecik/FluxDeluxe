@@ -128,8 +128,6 @@ def _clean_stale_packages(python_exe: Path) -> None:
     (e.g. pyqtgraph pulling in jaraco.* dependencies).
     """
     required = _parse_required_packages()
-    # Keep tflite-runtime if present (bundled with tensorflow)
-    required.add("tflite_runtime")
 
     # Get list of installed packages via pip freeze
     result = subprocess.run(
@@ -304,6 +302,7 @@ _IGNORE_IMPORTS = {
     "script_editor",    # DynamoPy local tool
     "sklearn",          # standalone research script (copRegressionModel.py), not runtime
     "_ctypes",          # CPython internal C extension
+    "tflite_runtime",   # DynamoPy imports this but falls back to tensorflow.lite at runtime
 }
 
 
@@ -516,7 +515,7 @@ def assemble_dist(embedded_python: Path) -> None:
         print("  Verifying tensorflow imports in stripped dist...")
         result = subprocess.run(
             [str(dest_python_exe), "-c", "import tensorflow; print('  tensorflow OK')"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=180,
         )
         print(result.stdout.strip())
         if result.returncode != 0:
