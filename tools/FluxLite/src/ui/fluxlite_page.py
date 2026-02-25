@@ -1134,16 +1134,21 @@ class FluxLitePage(QtWidgets.QWidget):
                     save_dir = ""
                 if capture_enabled:
                     gid_fallback = ""
-                    # Stop any still-running capture from a previous session
-                    # before starting a new one — prevents the backend from
-                    # ignoring the second start_capture.
+                    # Cancel ALL captures across every device group before
+                    # starting a new one.  The "simple" capture type
+                    # broadcasts startCapture to all groups, but
+                    # stopCapture only targets one — leaving zombie
+                    # captures on the other groups.  A blanket cancel
+                    # clears those without processing data or writing
+                    # CSVs, so the next startCapture is accepted by
+                    # every group.
+                    try:
+                        self.controller.hardware.cancel_all_captures()
+                    except Exception:
+                        pass
                     prev_ctx = self._temp_live_capture_ctx
                     if prev_ctx is not None:
-                        _log.warning("Previous capture context still set — stopping stale capture (group_id=%s)", getattr(prev_ctx, "group_id", "?"))
-                        try:
-                            self._temp_live_capture.stop(group_id=str(getattr(prev_ctx, "group_id", "") or ""))
-                        except Exception:
-                            pass
+                        _log.warning("Previous capture context still set — clearing stale ctx (group_id=%s)", getattr(prev_ctx, "group_id", "?"))
                         self._temp_live_capture_ctx = None
                     ctx = self._temp_live_capture.start(
                         device_id=str(getattr(sess, "device_id", "") or ""),
@@ -1186,7 +1191,20 @@ class FluxLitePage(QtWidgets.QWidget):
             ctx = self._temp_live_capture_ctx
             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
                 _log.info("Session ended — stopping capture (group_id=%s, capture=%s)", ctx.group_id, ctx.capture_name)
-                self._temp_live_capture.stop(group_id=str(ctx.group_id))
+                # Stop our specific group so it processes data and saves the CSV.
+                try:
+                    self._temp_live_capture.stop(group_id=str(ctx.group_id))
+                except Exception:
+                    pass
+                # Cancel all remaining captures across every group.
+                # The "simple" capture type broadcasts startCapture to
+                # every group, but stopCapture only targets one — leaving
+                # zombie captures on the other groups.  A blanket cancel
+                # clears those without processing data or writing CSVs.
+                try:
+                    self.controller.hardware.cancel_all_captures()
+                except Exception:
+                    pass
                 # Write a minimal meta.json synchronously so it exists on
                 # disk even if the background worker never runs (offline,
                 # crash, bug).  The worker will load and augment it later.
