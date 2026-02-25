@@ -1098,7 +1098,23 @@ class BackgroundSyncWorker(QtCore.QThread):
                 self.finished_with_result.emit({"uploaded": 0, "downloaded": 0})
                 return
 
-            # --- Organization + repair pass ---
+            # --- Filename fix + organization + repair pass ---
+            try:
+                fix = _fix_csv_filenames(root)
+                if fix.get("renamed"):
+                    _log.info("BackgroundSync: renamed %d misnamed files", fix["renamed"])
+                # Delete stale Supabase records for the old (wrong) capture names
+                # so the corrected session is re-uploaded cleanly.
+                stale_names = fix.get("old_capture_names") or []
+                if stale_names:
+                    try:
+                        n = repo.delete_sessions_by_capture_names(stale_names)
+                        if n:
+                            _log.info("BackgroundSync: deleted %d stale Supabase records", n)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                _log.debug("BackgroundSync: filename fix pass failed: %s", exc)
             try:
                 org = _organize_temp_files(root)
                 if org.get("moved"):
@@ -1377,6 +1393,152 @@ class BackgroundSyncWorker(QtCore.QThread):
         else:
             self.sync_progress.emit("Sync complete: everything up to date", "success")
         self.finished_with_result.emit({"uploaded": uploaded, "downloaded": downloaded})
+
+
+def _fix_csv_filenames(root: str) -> dict:
+    """Rename temp CSV files whose filename device_id doesn't match the data inside.
+
+    The ``device_id`` column in the CSV is the source of truth.  If the
+    filename contains a different device_id (e.g. from a zombie capture),
+    the file — and its associated meta.json / trimmed CSV — are renamed.
+
+    Must run **before** ``_organize_temp_files`` so that renamed files land
+    in the correct device folder during the organize pass.
+
+    Returns ``{"renamed": int, "old_capture_names": list[str], "errors": list[str]}``.
+    """
+    import csv
+    import glob
+    import json
+    import logging
+    import re
+
+    _log = logging.getLogger(__name__)
+    renamed = 0
+    old_capture_names: List[str] = []
+    errors: List[str] = []
+
+    if not os.path.isdir(root):
+        return {"renamed": renamed, "old_capture_names": old_capture_names, "errors": errors}
+
+    # Match both raw and trimmed CSVs.
+    patterns = [
+        os.path.join(root, "**", "temp-raw-*.csv"),
+        os.path.join(root, "**", "temp-trimmed-*.csv"),
+    ]
+    seen_paths: set = set()
+    for pattern in patterns:
+        for csv_path in glob.glob(pattern, recursive=True):
+            if csv_path in seen_paths:
+                continue
+            seen_paths.add(csv_path)
+
+            basename = os.path.basename(csv_path)
+            parent_dir = os.path.dirname(csv_path)
+
+            # Extract device_id from the filename.
+            # Pattern: temp-raw-<device_id>-<timestamp>.csv
+            #      or: temp-trimmed-<device_id>-<timestamp>.csv
+            m = re.match(r"temp-(?:raw|trimmed)-([^-]+(?:\.[^-]+)*)-(\d{8}-\d{6})\.csv$", basename)
+            if not m:
+                continue
+            filename_device_id = m.group(1)
+            timestamp_part = m.group(2)
+
+            # Read device_id from the CSV content (first data row).
+            csv_device_id = ""
+            try:
+                with open(csv_path, "r", encoding="utf-8", newline="") as fh:
+                    reader = csv.DictReader(fh)
+                    for row in reader:
+                        raw = row.get("device_id") or row.get("device-id") or ""
+                        csv_device_id = str(raw).strip()
+                        break  # only need first row
+            except Exception:
+                continue
+
+            if not csv_device_id or csv_device_id == filename_device_id:
+                continue  # already correct or can't determine
+
+            _log.info(
+                "fix_filenames: %s has device_id=%s in data but %s in name — renaming",
+                basename, csv_device_id, filename_device_id,
+            )
+
+            # Determine prefix (raw or trimmed) from current file.
+            is_trimmed = basename.startswith("temp-trimmed-")
+            prefix = "temp-trimmed" if is_trimmed else "temp-raw"
+            new_basename = f"{prefix}-{csv_device_id}-{timestamp_part}.csv"
+            new_path = os.path.join(parent_dir, new_basename)
+
+            if os.path.exists(new_path):
+                continue  # target already exists, don't overwrite
+
+            # Track the old capture_name so Supabase records can be cleaned up.
+            old_capture = f"temp-raw-{filename_device_id}-{timestamp_part}"
+            added_this_iter = old_capture not in old_capture_names
+            if added_this_iter:
+                old_capture_names.append(old_capture)
+
+            try:
+                os.rename(csv_path, new_path)
+                renamed += 1
+            except Exception as exc:
+                errors.append(f"rename {csv_path}: {exc}")
+                if added_this_iter:
+                    old_capture_names.remove(old_capture)
+                continue
+
+            # Rename the sibling (raw↔trimmed) if it exists with the old name.
+            sibling_prefix = "temp-raw" if is_trimmed else "temp-trimmed"
+            old_sibling = os.path.join(parent_dir, f"{sibling_prefix}-{filename_device_id}-{timestamp_part}.csv")
+            if os.path.isfile(old_sibling):
+                new_sibling = os.path.join(parent_dir, f"{sibling_prefix}-{csv_device_id}-{timestamp_part}.csv")
+                if not os.path.exists(new_sibling):
+                    try:
+                        os.rename(old_sibling, new_sibling)
+                        renamed += 1
+                        seen_paths.add(old_sibling)
+                    except Exception as exc:
+                        errors.append(f"rename sibling {old_sibling}: {exc}")
+
+            # Rename the meta.json if it exists with the old capture name.
+            old_meta = os.path.join(parent_dir, f"temp-raw-{filename_device_id}-{timestamp_part}.meta.json")
+            if os.path.isfile(old_meta):
+                new_meta = os.path.join(parent_dir, f"temp-raw-{csv_device_id}-{timestamp_part}.meta.json")
+                if not os.path.exists(new_meta):
+                    try:
+                        os.rename(old_meta, new_meta)
+                        renamed += 1
+                    except Exception as exc:
+                        errors.append(f"rename meta {old_meta}: {exc}")
+
+                # Also update capture_name and device_id inside the meta.
+                meta_to_update = new_meta if os.path.isfile(new_meta) else old_meta
+                if os.path.isfile(meta_to_update):
+                    try:
+                        with open(meta_to_update, "r", encoding="utf-8") as fh:
+                            meta = json.load(fh) or {}
+                        changed = False
+                        new_capture_name = f"temp-raw-{csv_device_id}-{timestamp_part}"
+                        if meta.get("capture_name") != new_capture_name:
+                            meta["capture_name"] = new_capture_name
+                            changed = True
+                        if meta.get("device_id") != csv_device_id:
+                            meta["device_id"] = csv_device_id
+                            changed = True
+                        # Clear synced_at_ms so the upload pass treats this as
+                        # a fresh unsynced session after the rename.
+                        if "synced_at_ms" in meta:
+                            del meta["synced_at_ms"]
+                            changed = True
+                        if changed:
+                            with open(meta_to_update, "w", encoding="utf-8") as fh:
+                                json.dump(meta, fh, indent=2, sort_keys=True)
+                    except Exception as exc:
+                        errors.append(f"update meta content {meta_to_update}: {exc}")
+
+    return {"renamed": renamed, "old_capture_names": old_capture_names, "errors": errors}
 
 
 def _organize_temp_files(root: str) -> dict:

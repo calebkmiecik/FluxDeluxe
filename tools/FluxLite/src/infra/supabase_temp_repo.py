@@ -228,6 +228,28 @@ class SupabaseTempRepository:
             _logger.warning("list_all_capture_names failed: %s", exc)
             return set()
 
+    def delete_sessions_by_capture_names(self, capture_names: List[str]) -> int:
+        """Delete ``temp_test_sessions`` rows whose ``capture_name`` is in *capture_names*.
+
+        Used after ``_fix_csv_filenames`` renames local files — the old
+        Supabase records with the wrong ``capture_name`` become stale and
+        should be removed so the corrected session can be re-uploaded cleanly.
+
+        Returns the number of rows deleted.
+        """
+        if self._sb is None or not capture_names:
+            return 0
+        deleted = 0
+        for name in capture_names:
+            try:
+                self._sb.table("temp_test_sessions").delete().eq(
+                    "capture_name", name
+                ).execute()
+                deleted += 1
+            except Exception as exc:
+                _logger.warning("delete session %s failed: %s", name, exc)
+        return deleted
+
     def list_sessions_for_device(self, device_id: str) -> List[dict]:
         """Query ``temp_test_sessions`` filtered by *device_id*."""
         if self._sb is None or not device_id:

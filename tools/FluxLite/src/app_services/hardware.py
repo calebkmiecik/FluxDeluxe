@@ -409,6 +409,16 @@ class HardwareService(QtCore.QObject):
             p = {"groupId": payload.get("group_id", "")}
             self.client.emit("stopCapture", p)
 
+    def cancel_all_captures(self) -> None:
+        """Send cancelCapture without a groupId so the backend cancels ALL groups.
+
+        This is a lightweight cleanup that resets is_capturing on every group
+        without processing data or writing CSVs — safe for clearing zombie
+        captures left by the 'simple' broadcast start.
+        """
+        if self.client:
+            self.client.emit("cancelCapture", {})
+
     def tare(self, group_id: str | None = None) -> None:
         if self.client:
             try:
@@ -1047,10 +1057,15 @@ class HardwareService(QtCore.QObject):
         Runs in a background thread.
         Stops once connected.
         """
+        # Emit BACKEND_STARTING immediately (on caller's thread) so the
+        # startup overlay receives a stage signal before the background
+        # thread begins.
+        self.connection_state.set_stage(ConnectionStage.BACKEND_STARTING)
+
         def _run():
             # Fallback ports to try if discovery fails
             fallback_ports = [3000]
-            
+
             while not self._stop_flag.is_set():
                 # If already connected, we are done.
                 if self.client and self.client.status.connected:
