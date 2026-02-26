@@ -346,6 +346,21 @@ class FluxLitePage(QtWidgets.QWidget):
             pass
         self._stream_time_last_ms = 0
 
+    def _on_local_config_update(self, payload: dict) -> None:
+        """Apply local FluxLite config changes (smoothing settings)."""
+        try:
+            enabled = bool(payload.get("adaptive_ema_enabled", True))
+            strength = str(payload.get("adaptive_ema_strength", "medium"))
+            # Update live measurement engine (stability checks)
+            self._live_meas.update_smoothing_config(enabled=enabled, strength=strength)
+            # Update both force plot widgets (visible smoothing on all axes)
+            for plot in (getattr(self, "sensor_plot_left", None),
+                         getattr(self, "sensor_plot_right", None)):
+                if plot is not None:
+                    plot.update_smoothing_config(enabled=enabled, strength=strength)
+        except Exception as e:
+            _log.warning("Failed to update local config: %s", e)
+
     def _reset_live_measurement_engine(self, reason: str = "") -> None:
         """Reset only arming/stability/capture state (does NOT touch warmup/tare gate)."""
         try:
@@ -652,6 +667,9 @@ class FluxLitePage(QtWidgets.QWidget):
         self.controller.restart_countdown.connect(self._on_backend_restart_countdown)
         # Load backend config into UI when received
         self.controller.hardware.config_status_received.connect(self.controls.load_backend_config)
+
+        # Local FluxLite config (adaptive EMA)
+        self.controls.local_config_update.connect(self._on_local_config_update)
 
         # Hardware -> UI Signals
         self.controller.hardware.device_list_updated.connect(self.controls.set_available_devices)

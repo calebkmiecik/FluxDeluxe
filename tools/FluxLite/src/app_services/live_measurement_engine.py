@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from collections import deque
-from typing import Deque, List, Optional, Tuple
+from typing import Deque, Dict, List, Optional, Tuple
 
 from .geometry import GeometryService
 
@@ -24,6 +24,20 @@ class LiveMeasurementConfig:
 
     # Median filter kernel size for noise reduction (must be odd)
     median_filter_size: int = 7
+
+
+@dataclass
+class SmoothingConfig:
+    """Mutable config for per-sample rolling median smoothing."""
+    enabled: bool = True
+    window_size: int = 5  # number of samples in rolling median (must be odd)
+
+
+SMOOTHING_PRESETS: Dict[str, int] = {
+    "light": 3,     # ~50ms at 60 Hz — minimal smoothing
+    "medium": 5,    # ~83ms — moderate
+    "heavy": 7,     # ~117ms — aggressive, still edge-preserving
+}
 
 
 @dataclass(frozen=True)
@@ -96,6 +110,8 @@ class LiveMeasurementEngine:
 
     def __init__(self, cfg: LiveMeasurementConfig | None = None) -> None:
         self.cfg = cfg or LiveMeasurementConfig()
+        self._smooth_cfg = SmoothingConfig()
+        self._smooth_buf: Deque[float] = deque(maxlen=self._smooth_cfg.window_size)
         self.reset()
 
     def reset(self) -> None:
@@ -110,6 +126,8 @@ class LiveMeasurementEngine:
         self._progress_01: float = 0.0
         # Track stability for progress indication
         self._stable_since_ms: Optional[int] = None
+        # Reset smoothing filter state
+        self._smooth_buf = deque(maxlen=self._smooth_cfg.window_size)
 
     @property
     def active_cell(self) -> Optional[Tuple[int, int]]:
@@ -130,6 +148,30 @@ class LiveMeasurementEngine:
 
     def status(self) -> str:
         return self._last_status
+
+    def _clear_window_and_filter(self) -> None:
+        """Clear the sliding window and reset smoothing + stability state."""
+        self._window.clear()
+        self._smooth_buf.clear()
+        self._stable_since_ms = None
+
+    def _apply_smoothing(self, raw_fz: float) -> float:
+        """Apply rolling median smoothing to a single Fz sample.
+
+        Median filters are edge-preserving: step changes pass through
+        within window_size/2 samples with no exponential easing.
+        """
+        if not self._smooth_cfg.enabled:
+            return raw_fz
+        self._smooth_buf.append(raw_fz)
+        return _median(list(self._smooth_buf))
+
+    def update_smoothing_config(self, enabled: bool, strength: str) -> None:
+        """Update smoothing config from UI. *strength* is 'light'/'medium'/'heavy'."""
+        ws = SMOOTHING_PRESETS.get(strength.lower(), SMOOTHING_PRESETS["medium"])
+        self._smooth_cfg.enabled = bool(enabled)
+        self._smooth_cfg.window_size = ws
+        self._smooth_buf = deque(maxlen=ws)
 
     def _check_stability(self) -> Tuple[bool, float, float, float, str]:
         """
@@ -208,8 +250,7 @@ class LiveMeasurementEngine:
             self._arming_cell = None
             self._arming_start_ms = None
             self._active_cell = None
-            self._window.clear()
-            self._stable_since_ms = None
+            self._clear_window_and_filter()
             self._last_status = "Move load onto plate to arm…"
             self._phase = "idle"
             self._progress_01 = 0.0
@@ -246,8 +287,7 @@ class LiveMeasurementEngine:
             self._arming_cell = None
             self._arming_start_ms = None
             self._active_cell = None
-            self._window.clear()
-            self._stable_since_ms = None
+            self._clear_window_and_filter()
             self._last_status = "Move load onto plate to arm…"
             self._phase = "idle"
             self._progress_01 = 0.0
@@ -255,8 +295,11 @@ class LiveMeasurementEngine:
 
         row, col = int(cell_rc[0]), int(cell_rc[1])
 
+        # Apply rolling median smoothing before storing in window
+        fz_smoothed = self._apply_smoothing(float(fz_abs))
+
         # Always add to sliding window and trim old samples
-        self._window.append((int(t_ms), float(cop_x_mm), float(cop_y_mm), float(fz_abs)))
+        self._window.append((int(t_ms), float(cop_x_mm), float(cop_y_mm), fz_smoothed))
         cutoff = int(t_ms) - int(self.cfg.stability_duration_ms)
         while self._window and self._window[0][0] < cutoff:
             self._window.popleft()
@@ -267,8 +310,7 @@ class LiveMeasurementEngine:
             if is_cell_already_done(int(row), int(col)):
                 self._arming_cell = None
                 self._arming_start_ms = None
-                self._window.clear()
-                self._stable_since_ms = None
+                self._clear_window_and_filter()
                 self._last_status = "Already captured — move to next cell."
                 self._phase = "idle"
                 self._progress_01 = 0.0
@@ -314,8 +356,7 @@ class LiveMeasurementEngine:
         # Must remain in the same cell
         if (row, col) != self._active_cell:
             self._active_cell = None
-            self._window.clear()
-            self._stable_since_ms = None
+            self._clear_window_and_filter()
             self._last_status = f"Cell changed — need ≥{self.cfg.arming_min_fz_n:.0f}N to re-arm"
             self._phase = "idle"
             self._progress_01 = 0.0
@@ -387,8 +428,7 @@ class LiveMeasurementEngine:
 
                 # Reset for next cell
                 self._active_cell = None
-                self._window.clear()
-                self._stable_since_ms = None
+                self._clear_window_and_filter()
                 self._last_status = "Captured! Move to next cell."
                 self._phase = "idle"
                 self._progress_01 = 0.0
