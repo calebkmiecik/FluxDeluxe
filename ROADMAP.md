@@ -7,7 +7,7 @@ Organized by priority tier — Tier 1 items deliver the biggest impact for least
 
 ## Tier 1 — Transformative (Do First)
 
-### A. Frame Accumulator + 60fps Paint Timer
+### ~~A. Frame Accumulator + 60fps Paint Timer~~ ✅ DONE
 **Problem:** Live data arrives at 100Hz+ and every frame triggers processing + canvas repaints on the main thread. UI events (clicks, scrolls, transitions) queue behind frame processing.
 **Solution:** Data goes into a thread-safe ring buffer. A 16ms QTimer on the main thread pulls the latest state and repaints once per tick. Completely decouples data acquisition from rendering.
 **Files:** `fluxlite_page.py:_on_live_data()`, canvas widgets
@@ -17,12 +17,12 @@ Organized by priority tier — Tier 1 items deliver the biggest impact for least
 **Solution:** Every command gets a unique ID. Backend responds with `{command_id, status, message}`. Frontend shows a spinner until ACK, error toast on timeout (2s), auto-retry once.
 **Files:** `io_client.py`, `hardware.py`, DynamoPy event handlers
 
-### C. Connection State Machine with Visual Feedback
+### ~~C. Connection State Machine with Visual Feedback~~ ✅ DONE
 **Problem:** Backend readiness is detected by checking if the subprocess exists — but the socket may not be listening yet. Users see a blank screen and wonder "is it working?"
 **Solution:** Explicit startup stages with UI feedback:
-`LAUNCHING → BACKEND_STARTING → SOCKET_CONNECTING → DISCOVERING_DEVICES → READY`
-Show each stage in the status bar or a startup overlay.
-**Files:** `main_window.py`, `hardware.py:_auto_connect_thread()`
+`BACKEND_STARTING → SOCKET_CONNECTING → DISCOVERING_DEVICES → READY`
+Show each stage in the status bar and a startup overlay with animated arc.
+**Files:** `connection_state.py`, `startup_overlay.py`, `main_window.py`, `hardware.py`
 
 ### D. Backend Heartbeat + Auto-Recovery
 **Problem:** If the backend hangs (not crashed, just stuck), the frontend has no way to detect it. If it crashes, the user has to manually restart the app.
