@@ -5,6 +5,8 @@ from typing import Optional, Tuple, Dict
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from ... import config
+from collections import deque
+from ...app_services.live_measurement_engine import SmoothingConfig, SMOOTHING_PRESETS, _median
 
 
 class ForcePlotWidget(QtWidgets.QWidget):
@@ -234,16 +236,20 @@ class ForcePlotWidget(QtWidgets.QWidget):
                 self._plot_widget.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)  # type: ignore[attr-defined]
             except Exception:
                 pass
-        # Smoothed running values for visual stability
-        self._ema_fx: Optional[float] = None
-        self._ema_fy: Optional[float] = None
-        self._ema_fz: Optional[float] = None
-        self._ema_fx_launch: Optional[float] = None
-        self._ema_fy_launch: Optional[float] = None
-        self._ema_fz_launch: Optional[float] = None
-        self._ema_fx_landing: Optional[float] = None
-        self._ema_fy_landing: Optional[float] = None
-        self._ema_fz_landing: Optional[float] = None
+        # Rolling median smoothing config
+        self._smooth_cfg = SmoothingConfig()
+        # Per-axis median buffers — single mode
+        self._med_fx: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fy: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fz: deque = deque(maxlen=self._smooth_cfg.window_size)
+        # Per-axis median buffers — launch series
+        self._med_fx_launch: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fy_launch: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fz_launch: deque = deque(maxlen=self._smooth_cfg.window_size)
+        # Per-axis median buffers — landing series
+        self._med_fx_landing: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fy_landing: deque = deque(maxlen=self._smooth_cfg.window_size)
+        self._med_fz_landing: deque = deque(maxlen=self._smooth_cfg.window_size)
         # Smoothing toggle (affects plotted lines and overlay values)
         self._smoothing_enabled: bool = True
         # Last raw/smoothed single values (for overlay)
@@ -526,16 +532,17 @@ class ForcePlotWidget(QtWidgets.QWidget):
             # Reset scale
             self._y_min = -10.0
             self._y_max = 10.0
-            self._ema_fx = self._ema_fy = self._ema_fz = None
-            self._ema_fx_launch = self._ema_fy_launch = self._ema_fz_launch = None
-            self._ema_fx_landing = self._ema_fy_landing = self._ema_fz_landing = None
+            self._reset_smooth_state()
             self._last_raw_single = None
             self._last_smoothed_single = None
             self.update()
 
     def add_point(self, t_ms: int, fx: float, fy: float, fz: float) -> None:
-        # Plot raw live data; overlay handles its own smoothing separately
         self._last_raw_single = (float(fx), float(fy), float(fz))
+        # Apply rolling median smoothing per axis
+        fx = self._median_filter(float(fx), self._med_fx)
+        fy = self._median_filter(float(fy), self._med_fy)
+        fz = self._median_filter(float(fz), self._med_fz)
         if self._use_pg:
             if self._time0_ms is None:
                 self._time0_ms = int(t_ms)
@@ -554,8 +561,6 @@ class ForcePlotWidget(QtWidgets.QWidget):
                 pass
         else:
             self._samples.append((t_ms, float(fx), float(fy), float(fz)))
-            # Reset EMAs used previously for plotted series
-            self._ema_fx = self._ema_fy = self._ema_fz = None
             if len(self._samples) > self._max_points:
                 self._samples = self._samples[-self._max_points:]
             self._recompute_autoscale()
@@ -566,15 +571,18 @@ class ForcePlotWidget(QtWidgets.QWidget):
         """Append multiple (t_ms, fx, fy, fz) points, then repaint once."""
         if not points:
             return
+        self._last_raw_single = (float(points[-1][1]), float(points[-1][2]), float(points[-1][3]))
         if self._use_pg:
             for t_ms, fx, fy, fz in points:
                 if self._time0_ms is None:
                     self._time0_ms = int(t_ms)
+                fx = self._median_filter(float(fx), self._med_fx)
+                fy = self._median_filter(float(fy), self._med_fy)
+                fz = self._median_filter(float(fz), self._med_fz)
                 self._pg_x_single.append(int(t_ms))
                 self._pg_fx.append(float(fx))
                 self._pg_fy.append(float(fy))
                 self._pg_fz.append(float(fz))
-            self._last_raw_single = (float(points[-1][1]), float(points[-1][2]), float(points[-1][3]))
             self._pg_trim_single_all()
             try:
                 self._pg_curves["fx"].setData(self._pg_x_single, self._pg_fx)  # type: ignore[union-attr]
@@ -586,9 +594,10 @@ class ForcePlotWidget(QtWidgets.QWidget):
                 pass
         else:
             for t_ms, fx, fy, fz in points:
+                fx = self._median_filter(float(fx), self._med_fx)
+                fy = self._median_filter(float(fy), self._med_fy)
+                fz = self._median_filter(float(fz), self._med_fz)
                 self._samples.append((t_ms, float(fx), float(fy), float(fz)))
-            self._last_raw_single = (float(points[-1][1]), float(points[-1][2]), float(points[-1][3]))
-            self._ema_fx = self._ema_fy = self._ema_fz = None
             if len(self._samples) > self._max_points:
                 self._samples = self._samples[-self._max_points:]
             self._recompute_autoscale()
@@ -606,6 +615,10 @@ class ForcePlotWidget(QtWidgets.QWidget):
             self.update()
 
     def add_point_launch(self, t_ms: int, fx: float, fy: float, fz: float) -> None:
+        # Apply rolling median per axis (launch series)
+        fx = self._median_filter(float(fx), self._med_fx_launch)
+        fy = self._median_filter(float(fy), self._med_fy_launch)
+        fz = self._median_filter(float(fz), self._med_fz_launch)
         if self._use_pg:
             if self._time0_ms is None:
                 self._time0_ms = int(t_ms)
@@ -623,15 +636,17 @@ class ForcePlotWidget(QtWidgets.QWidget):
             except Exception:
                 pass
         else:
-            # Plot raw in dual mode as well
             self._samples_launch.append((t_ms, float(fx), float(fy), float(fz)))
-            self._ema_fx_launch = self._ema_fy_launch = self._ema_fz_launch = None
             if len(self._samples_launch) > self._max_points:
                 self._samples_launch = self._samples_launch[-self._max_points:]
             self._recompute_autoscale()
             self.update()
 
     def add_point_landing(self, t_ms: int, fx: float, fy: float, fz: float) -> None:
+        # Apply rolling median per axis (landing series)
+        fx = self._median_filter(float(fx), self._med_fx_landing)
+        fy = self._median_filter(float(fy), self._med_fy_landing)
+        fz = self._median_filter(float(fz), self._med_fz_landing)
         if self._use_pg:
             if self._time0_ms is None:
                 self._time0_ms = int(t_ms)
@@ -649,9 +664,7 @@ class ForcePlotWidget(QtWidgets.QWidget):
             except Exception:
                 pass
         else:
-            # Plot raw in dual mode as well
             self._samples_landing.append((t_ms, float(fx), float(fy), float(fz)))
-            self._ema_fx_landing = self._ema_fy_landing = self._ema_fz_landing = None
             if len(self._samples_landing) > self._max_points:
                 self._samples_landing = self._samples_landing[-self._max_points:]
             self._recompute_autoscale()
@@ -667,9 +680,36 @@ class ForcePlotWidget(QtWidgets.QWidget):
         self._autoscale_counter = 0
         self.update()
 
+    def _median_filter(self, raw: float, buf: deque) -> float:
+        """Append *raw* to the rolling window and return the median."""
+        if not self._smooth_cfg.enabled or not self._smoothing_enabled:
+            return raw
+        buf.append(raw)
+        return _median(list(buf))
+
+    def update_smoothing_config(self, enabled: bool, strength: str) -> None:
+        """Update rolling-median settings from the FluxLite Config UI."""
+        ws = SMOOTHING_PRESETS.get(strength.lower(), SMOOTHING_PRESETS["medium"])
+        self._smooth_cfg.enabled = bool(enabled)
+        self._smooth_cfg.window_size = ws
+        self._reset_smooth_state()
+
+    def _reset_smooth_state(self) -> None:
+        """Clear all per-axis median buffers."""
+        ws = self._smooth_cfg.window_size
+        self._med_fx = deque(maxlen=ws)
+        self._med_fy = deque(maxlen=ws)
+        self._med_fz = deque(maxlen=ws)
+        self._med_fx_launch = deque(maxlen=ws)
+        self._med_fy_launch = deque(maxlen=ws)
+        self._med_fz_launch = deque(maxlen=ws)
+        self._med_fx_landing = deque(maxlen=ws)
+        self._med_fy_landing = deque(maxlen=ws)
+        self._med_fz_landing = deque(maxlen=ws)
+
     def _on_smooth_toggled(self, checked: bool) -> None:
-        # Overlay removed; keep state but do nothing
         self._smoothing_enabled = bool(checked)
+        self._reset_smooth_state()
         self.update()
 
     def _update_overlay(self) -> None:

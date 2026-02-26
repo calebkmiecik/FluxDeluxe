@@ -18,6 +18,8 @@ class ControlPanel(QtWidgets.QWidget):
     # Backend configuration updates (Config tab, right-hand pane)
     backend_config_update = QtCore.Signal(object)  # dict with any config keys to update
     backend_restart_requested = QtCore.Signal()  # request to restart backend
+    # Local FluxLite config updates (adaptive EMA, etc.)
+    local_config_update = QtCore.Signal(object)  # dict with local config keys
 
     def __init__(self, state: ViewState, controller: object = None, parent: Optional[QtWidgets.QWidget] = None) -> None:
         super().__init__(parent)
@@ -44,12 +46,13 @@ class ControlPanel(QtWidgets.QWidget):
         cfg_layout = QtWidgets.QGridLayout(config_tab)
         cfg_layout.setColumnStretch(0, 2)
         cfg_layout.setColumnStretch(1, 1)
+        cfg_layout.setColumnStretch(2, 1)
 
-        # Left column: layout mode, device filters, and device list
-        cfg_left = QtWidgets.QWidget()
-        cfg_left_layout = QtWidgets.QVBoxLayout(cfg_left)
-        cfg_left_layout.setContentsMargins(0, 0, 0, 0)
-        cfg_left_layout.setSpacing(6)
+        # Column 0: Device picker
+        device_box = QtWidgets.QGroupBox("Device")
+        device_box_layout = QtWidgets.QVBoxLayout(device_box)
+        device_box_layout.setContentsMargins(6, 6, 6, 6)
+        device_box_layout.setSpacing(6)
 
         layout_row = QtWidgets.QWidget()
         layout_row_layout = QtWidgets.QHBoxLayout(layout_row)
@@ -61,7 +64,7 @@ class ControlPanel(QtWidgets.QWidget):
         layout_row_layout.addWidget(self.rb_layout_single)
         layout_row_layout.addWidget(self.rb_layout_mound)
         layout_row_layout.addStretch(1)
-        cfg_left_layout.addWidget(layout_row)
+        device_box_layout.addWidget(layout_row)
         self.state.display_mode = "single"
 
         filter_row = QtWidgets.QWidget()
@@ -78,14 +81,35 @@ class ControlPanel(QtWidgets.QWidget):
         filter_row_layout.addWidget(self.chk_filter_07)
         filter_row_layout.addWidget(self.chk_filter_08)
         filter_row_layout.addStretch(1)
-        cfg_left_layout.addWidget(filter_row)
+        device_box_layout.addWidget(filter_row)
 
         self.device_list = QtWidgets.QListWidget()
         self.device_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.device_list.setItemDelegate(DeviceListDelegate())
-        cfg_left_layout.addWidget(self.device_list, 1)
+        device_box_layout.addWidget(self.device_list, 1)
 
-        cfg_layout.addWidget(cfg_left, 0, 0, 1, 1)
+        cfg_layout.addWidget(device_box, 0, 0, 1, 1)
+
+        # Column 1: FluxLite local config (smoothing)
+        fluxlite_box = QtWidgets.QGroupBox("FluxLite Config")
+        fluxlite_layout = QtWidgets.QGridLayout(fluxlite_box)
+        fluxlite_layout.setVerticalSpacing(4)
+        fr = 0
+
+        self.chk_adaptive_smoothing = QtWidgets.QCheckBox("Smoothing")
+        self.chk_adaptive_smoothing.setChecked(True)
+        fluxlite_layout.addWidget(self.chk_adaptive_smoothing, fr, 0, 1, 2)
+        fr += 1
+
+        fluxlite_layout.addWidget(QtWidgets.QLabel("Strength:"), fr, 0)
+        self.combo_ema_strength = QtWidgets.QComboBox()
+        self.combo_ema_strength.addItems(["Light", "Medium", "Heavy"])
+        self.combo_ema_strength.setCurrentText("Medium")
+        fluxlite_layout.addWidget(self.combo_ema_strength, fr, 1)
+        fr += 1
+
+        fluxlite_layout.setRowStretch(fr, 1)
+        cfg_layout.addWidget(fluxlite_box, 0, 1, 1, 1)
 
         # Right column: Backend configuration quick settings
         backend_box = QtWidgets.QGroupBox("Backend Config")
@@ -210,7 +234,8 @@ class ControlPanel(QtWidgets.QWidget):
         row += 1
 
         backend_layout.setRowStretch(row, 1)
-        cfg_layout.addWidget(backend_box, 0, 1, 1, 1)
+
+        cfg_layout.addWidget(backend_box, 0, 2, 1, 1)
 
         self._config_tab_index = tabs.addTab(config_tab, "Config")
 
@@ -300,6 +325,12 @@ class ControlPanel(QtWidgets.QWidget):
         self.spin_temp_y.valueChanged.connect(self._on_scalar_changed)
         self.spin_temp_z.valueChanged.connect(self._on_scalar_changed)
 
+        # FluxLite local config signals
+        self.chk_adaptive_smoothing.toggled.connect(self._on_local_config_changed)
+        self.combo_ema_strength.currentTextChanged.connect(self._on_local_config_changed)
+        # Checkbox toggles combo enabled state
+        self.chk_adaptive_smoothing.toggled.connect(self.combo_ema_strength.setEnabled)
+
         # Action buttons
         self.btn_view_full_config.clicked.connect(self._show_full_config_dialog)
         self.btn_restart_backend.clicked.connect(lambda: self.backend_restart_requested.emit())
@@ -330,6 +361,17 @@ class ControlPanel(QtWidgets.QWidget):
             self.backend_config_update.emit(payload)
         except Exception as e:
             print(f"[ControlPanel] Error updating config: {e}")
+
+    def _on_local_config_changed(self) -> None:
+        """Emit local FluxLite config when adaptive smoothing controls change."""
+        try:
+            payload = {
+                "adaptive_ema_enabled": bool(self.chk_adaptive_smoothing.isChecked()),
+                "adaptive_ema_strength": str(self.combo_ema_strength.currentText()).lower(),
+            }
+            self.local_config_update.emit(payload)
+        except Exception as e:
+            print(f"[ControlPanel] Error emitting local config: {e}")
 
     def _on_scalar_changed(self) -> None:
         """Handle real-time scalar updates."""
