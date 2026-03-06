@@ -21,4 +21,5 @@ GRID_BY_MODEL: Dict[str, Tuple[int, int]] = {
     "07": (5, 3),   # Launchpad
     "08": (5, 5),   # XL
     "11": (5, 3),   # Launchpad (identical to 07)
+    "12": (5, 5),   # XL (identical to 08)
 }

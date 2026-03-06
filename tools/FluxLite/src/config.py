@@ -108,6 +108,7 @@ THRESHOLDS_DB_N_BY_MODEL = {
     "07": 6.0,
     "08": 8.0,
     "11": 6.0,
+    "12": 8.0,
 }
 
 # Bodyweight tolerance percentages (fraction of body weight), per model id
@@ -118,6 +119,7 @@ THRESHOLDS_BW_PCT_BY_MODEL = {
     "07": 0.015,
     "08": 0.020,
     "11": 0.015,
+    "12": 0.020,
 }
 
 # Default device type for fallbacks (Lite)
@@ -213,6 +215,7 @@ GRID_DIMS_BY_MODEL = {
     "07": (5, 3),
     "08": (5, 5),
     "11": (5, 3),
+    "12": (5, 5),
 }
 
 

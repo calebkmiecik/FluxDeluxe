@@ -16,6 +16,7 @@ class GeometryService:
         "07": (5, 3),
         "08": (5, 5),
         "11": (5, 3),
+        "12": (5, 5),
     }
 
     @staticmethod
@@ -163,7 +164,7 @@ class GeometryService:
         # 1. Apply device-specific mirror (Anti-diagonal for 06/08)
         dr, dc = row, col
         dev_type = (device_type or "").strip()
-        if dev_type in ("06", "08"):
+        if dev_type in ("06", "08", "12"):
             # Anti-diagonal mirror: (r, c) -> (rows-1-c, cols-1-r)
             dr = rows - 1 - int(col)
             dc = cols - 1 - int(row)
@@ -203,7 +204,7 @@ class GeometryService:
             half_w = w_mm / 2.0
             half_h = h_mm / 2.0
             rx, ry = x_mm, y_mm
-        elif dev == "08":
+        elif dev in ("08", "12"):
             w_mm = config.TYPE08_W_MM
             h_mm = config.TYPE08_H_MM
             half_w = w_mm / 2.0
@@ -266,7 +267,7 @@ class GeometryService:
 
         # 2) Inverse device mirror (self-inverse)
         dev_type = (device_type or "").strip()
-        if dev_type in ("06", "08"):
+        if dev_type in ("06", "08", "12"):
             # mirror: (r, c) -> (rows-1-c, cols-1-r) is its own inverse
             return (rr - 1 - int(dc)), (cc - 1 - int(dr))
 
