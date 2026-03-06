@@ -453,7 +453,7 @@ class WorldCanvas(QtWidgets.QWidget):
         if rows <= 0 or cols <= 0:
             return int(row), int(col)
         dev_type = (self.state.selected_device_type or "").strip()
-        if dev_type in ("06", "08"):
+        if dev_type in ("06", "08", "12"):
             r = rows - 1 - int(col)
             c = cols - 1 - int(row)
             return r, c
@@ -597,7 +597,7 @@ class WorldCanvas(QtWidgets.QWidget):
         except Exception:
             return int(row), int(col)
         dev_type = (self.state.selected_device_type or "").strip()
-        if dev_type in ("06", "08"):
+        if dev_type in ("06", "08", "12"):
             # Inverse of anti-diagonal mirror is itself
             return (rows - 1 - int(col)), (cols - 1 - int(row))
         return int(row), int(col)
