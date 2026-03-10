@@ -37,7 +37,7 @@ class SessionControlsBox(QtWidgets.QGroupBox):
         mode_row.addWidget(QtWidgets.QLabel("Session Type:"))
         self.session_mode_combo = QtWidgets.QComboBox()
         try:
-            self.session_mode_combo.addItems(["Normal", "Temperature Test", "Discrete Temp. Testing"])
+            self.session_mode_combo.addItems(["Normal", "Temperature Test"])
         except Exception:
             pass
         mode_row.addWidget(self.session_mode_combo)

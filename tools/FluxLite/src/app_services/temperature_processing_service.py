@@ -38,10 +38,6 @@ class TemperatureProcessingService:
             except Exception:
                 pass
 
-        if not os.path.isfile(csv_path):
-            emit({"status": "error", "message": f"File not found: {csv_path}"})
-            return
-
         if not self._hardware:
             emit({"status": "error", "message": "Hardware service unavailable for temperature correction"})
             return
@@ -52,12 +48,18 @@ class TemperatureProcessingService:
             slopes_name = self._repo.formatted_slope_name(slopes)
             processed_on_name = paths["processed_on_template"].format(slopes=slopes_name)
 
-            if os.path.isfile(paths["trimmed"]):
+            # Prefer existing trimmed CSV; only fall back to raw for downsampling.
+            has_trimmed = os.path.isfile(paths["trimmed"])
+            has_raw = os.path.isfile(csv_path)
+            if has_trimmed:
                 trimmed_path = paths["trimmed"]
                 emit({"status": "running", "message": "Using existing 50Hz CSV...", "progress": 5})
-            else:
+            elif has_raw:
                 emit({"status": "running", "message": "Slimming CSV to 50Hz...", "progress": 5})
                 trimmed_path = self._repo.downsample_csv_to_50hz(csv_path, paths["trimmed"])
+            else:
+                emit({"status": "error", "message": f"Neither trimmed nor raw CSV found for {os.path.basename(csv_path)}"})
+                return
 
             emit({"status": "running", "message": "Checking baseline...", "progress": 25})
 
@@ -128,32 +130,44 @@ class TemperatureProcessingService:
             except Exception:
                 pass
 
-        if not os.path.isfile(csv_path):
-            raise FileNotFoundError(csv_path)
+        # derive_temperature_paths is pure string manipulation — works even if the raw CSV
+        # doesn't exist on disk (e.g. meta-only sessions synced from Supabase).
+        paths = self._repo.derive_temperature_paths(csv_path, device_id, mode="legacy")
+        processed_off_path = os.path.join(folder, paths["processed_off_name"])
+
+        # Short-circuit: if the processed-off file already exists (e.g. downloaded
+        # from Supabase), return immediately — no raw CSV or hardware needed.
+        if os.path.isfile(processed_off_path):
+            return processed_off_path
+
+        # We need to produce the processed-off file.  Check what inputs are available.
+        has_raw = os.path.isfile(csv_path)
+        has_trimmed = os.path.isfile(paths["trimmed"])
+
+        if not has_raw and not has_trimmed:
+            raise FileNotFoundError(
+                f"Neither raw CSV nor trimmed CSV found on disk for {os.path.basename(csv_path)}"
+            )
         if not self._hardware:
             raise RuntimeError("Hardware service unavailable for temperature correction")
 
-        paths = self._repo.derive_temperature_paths(csv_path, device_id, mode="legacy")
-
-        if os.path.isfile(paths["trimmed"]):
+        if has_trimmed:
             trimmed_path = paths["trimmed"]
         else:
             emit({"status": "running", "message": "Slimming baseline CSV to 50Hz...", "progress": 5})
             trimmed_path = self._repo.downsample_csv_to_50hz(csv_path, paths["trimmed"])
 
-        processed_off_path = os.path.join(folder, paths["processed_off_name"])
-        if not os.path.isfile(processed_off_path):
-            emit({"status": "running", "message": "Processing baseline (temp correction off)...", "progress": 25})
-            self._call_backend_process_csv(
-                input_csv_path=trimmed_path,
-                device_id=device_id,
-                output_folder=folder,
-                output_filename=paths["processed_off_name"],
-                use_temperature_correction=False,
-                room_temp_f=room_temp_f,
-                slopes=None,
-                mode="legacy",
-            )
+        emit({"status": "running", "message": "Processing baseline (temp correction off)...", "progress": 25})
+        self._call_backend_process_csv(
+            input_csv_path=trimmed_path,
+            device_id=device_id,
+            output_folder=folder,
+            output_filename=paths["processed_off_name"],
+            use_temperature_correction=False,
+            room_temp_f=room_temp_f,
+            slopes=None,
+            mode="legacy",
+        )
 
         # Record baseline output in meta for discoverability in the UI and for future reuse.
         try:

@@ -29,6 +29,9 @@ class HardwareService(QtCore.QObject):
     model_activation_status_received = QtCore.Signal(object)
     model_load_status_received = QtCore.Signal(object)
 
+    # Capture lifecycle signals
+    stop_capture_confirmed = QtCore.Signal(dict)  # Backend finished writing CSV
+
     # Error signals
     socket_error_received = QtCore.Signal(str)  # For socket.io errors
 
@@ -167,6 +170,9 @@ class HardwareService(QtCore.QObject):
             self.client.on("modelPackageStatus", lambda d: self.model_package_status_received.emit(d))
             self.client.on("modelActivationStatus", lambda d: self.model_activation_status_received.emit(d))
             self.client.on("modelLoadStatus", lambda d: self.model_load_status_received.emit(d))
+
+            # Capture lifecycle
+            self.client.on("stopCaptureStatus", self._on_stop_capture_status)
 
             # Error event listener (socket.io standard error event)
             self.client.on("error", lambda d: self.socket_error_received.emit(str(d)))
@@ -384,6 +390,12 @@ class HardwareService(QtCore.QObject):
         try:
             if self.client:
                 self.client.emit("getConnectedDevices")
+        except Exception:
+            pass
+
+    def _on_stop_capture_status(self, data: dict) -> None:
+        try:
+            self.stop_capture_confirmed.emit(dict(data or {}))
         except Exception:
             pass
 

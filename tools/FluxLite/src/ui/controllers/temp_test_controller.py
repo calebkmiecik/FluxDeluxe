@@ -106,6 +106,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         # Starts after 30 s, then every 5 minutes.  Skipped while a live capture
         # is active (checked via is_live_capture_active callback set by the page).
         self._is_live_capture_active = lambda: False  # overridden by FluxLitePage
+        self._auto_sync_enabled: bool = False  # toggled by UI checkbox
         self._bg_sync_timer = QtCore.QTimer(self)
         self._bg_sync_timer.setInterval(5 * 60 * 1000)  # 5 minutes
         self._bg_sync_timer.timeout.connect(self._on_bg_sync_tick)
@@ -348,6 +349,10 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         worker.finished_with_result.connect(_on_done)
         worker.start()
 
+    def temp_testing_root(self) -> str:
+        """Return the root temp_testing directory path."""
+        return data_dir("temp_testing")
+
     def _start_supabase_sync_down(self, device_id: str) -> None:
         """Start a background worker to download remote sessions not present locally."""
         dev = str(device_id or "").strip()
@@ -386,6 +391,8 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
 
     def _on_bg_sync_tick(self, force: bool = False) -> None:
         """Fired every 5 minutes.  Skipped during live captures or if already running."""
+        if not force and not self._auto_sync_enabled:
+            return
         if not force and self._is_live_capture_active():
             return
         if self._bg_sync_worker and self._bg_sync_worker.isRunning():

@@ -95,11 +95,13 @@ class TemperatureBaselineBiasService:
             temp_f = entry.get("temp_f")
             temp_label = f"{float(temp_f):.1f}°F" if temp_f is not None else "—°F"
 
-            if not raw_csv or not os.path.isfile(raw_csv):
-                errors.append(f"Baseline missing CSV: {raw_csv}")
+            if not raw_csv:
+                errors.append(f"Baseline missing CSV path")
                 continue
 
-            # Process OFF for this baseline (only if missing).
+            # ensure_temp_off_processed will short-circuit if the processed-off
+            # file already exists on disk (e.g. synced from Supabase), so we
+            # don't require the raw CSV to be present in that case.
             folder = os.path.dirname(raw_csv)
             room_temp_f = float(temp_f) if temp_f is not None else float(meta.get("room_temperature_f") or 72.0)
             emit(
@@ -227,10 +229,12 @@ class TemperatureBaselineBiasService:
 
         if errors:
             msg = "Bias-controlled grading disabled: one or more room-temp baseline files are not usable."
+            emit({"status": "error", "message": msg})
             return {"ok": False, "message": msg, "cache_path": None, "payload": None, "errors": errors}
 
         if rows is None or cols is None or device_type is None or not per_baseline_bias_all:
             msg = "Bias-controlled grading disabled: no usable room-temp baselines were found."
+            emit({"status": "error", "message": msg})
             return {"ok": False, "message": msg, "cache_path": None, "payload": None, "errors": [msg]}
 
         emit({"status": "running", "message": "Averaging baseline biases per cell...", "progress": 85})
