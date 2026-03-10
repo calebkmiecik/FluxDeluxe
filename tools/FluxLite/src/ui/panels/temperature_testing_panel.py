@@ -58,6 +58,211 @@ class ProcessedRunItemWidget(QtWidgets.QWidget):
         super().mousePressEvent(event)
 
 
+class TestFilesDialog(QtWidgets.QDialog):
+    """Inspector dialog showing file status and editable meta for a temperature test."""
+
+    def __init__(self, raw_csv_path: str, parent=None):
+        super().__init__(parent)
+        self._raw_csv_path = raw_csv_path
+        self._device_dir = os.path.dirname(raw_csv_path)
+        self._filename = os.path.basename(raw_csv_path)
+        self._capture_name = os.path.splitext(self._filename)[0]
+
+        # Derive related file paths.
+        if self._filename.startswith("temp-raw-"):
+            suffix = self._filename[len("temp-raw-"):]
+            base = suffix[:-4] if suffix.lower().endswith(".csv") else suffix
+        else:
+            base = os.path.splitext(self._filename)[0]
+        self._meta_path = os.path.join(self._device_dir, f"{self._capture_name}.meta.json")
+        self._trimmed_path = os.path.join(self._device_dir, f"temp-trimmed-{base}.csv")
+        self._raw_path = raw_csv_path
+
+        self.setWindowTitle(f"Files — {self._capture_name}")
+        self.setMinimumWidth(500)
+        self._build_ui()
+        self._load()
+
+    def _build_ui(self) -> None:
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        # --- File status section ---
+        files_box = QtWidgets.QGroupBox("Files on Disk")
+        files_layout = QtWidgets.QGridLayout(files_box)
+        files_layout.setSpacing(4)
+
+        self._lbl_raw = QtWidgets.QLabel()
+        self._btn_plot_raw = QtWidgets.QPushButton("Plot")
+        self._btn_plot_raw.setFixedWidth(60)
+        self._btn_plot_raw.clicked.connect(lambda: self._plot_csv(self._raw_path, "Raw"))
+        files_layout.addWidget(QtWidgets.QLabel("Raw CSV:"), 0, 0)
+        files_layout.addWidget(self._lbl_raw, 0, 1)
+        files_layout.addWidget(self._btn_plot_raw, 0, 2)
+
+        self._lbl_trimmed = QtWidgets.QLabel()
+        self._btn_plot_trimmed = QtWidgets.QPushButton("Plot")
+        self._btn_plot_trimmed.setFixedWidth(60)
+        self._btn_plot_trimmed.clicked.connect(lambda: self._plot_csv(self._trimmed_path, "Trimmed"))
+        files_layout.addWidget(QtWidgets.QLabel("Trimmed CSV:"), 1, 0)
+        files_layout.addWidget(self._lbl_trimmed, 1, 1)
+        files_layout.addWidget(self._btn_plot_trimmed, 1, 2)
+
+        self._lbl_meta = QtWidgets.QLabel()
+        files_layout.addWidget(QtWidgets.QLabel("Meta JSON:"), 2, 0)
+        files_layout.addWidget(self._lbl_meta, 2, 1)
+
+        layout.addWidget(files_box)
+
+        # --- Editable meta section ---
+        meta_box = QtWidgets.QGroupBox("Meta (editable)")
+        meta_layout = QtWidgets.QGridLayout(meta_box)
+        meta_layout.setSpacing(4)
+
+        self._meta_fields: dict[str, QtWidgets.QLineEdit] = {}
+        field_defs = [
+            ("capture_name", "Capture Name"),
+            ("device_id", "Device ID"),
+            ("date", "Date"),
+            ("tester_name", "Tester Name"),
+            ("short_label", "Short Label"),
+            ("model_id", "Model ID"),
+            ("avg_temp", "Avg Temp (F)"),
+            ("body_weight_n", "Body Weight (N)"),
+            ("session_type", "Session Type"),
+            ("started_at_ms", "Started At (ms)"),
+        ]
+        for row, (key, label) in enumerate(field_defs):
+            meta_layout.addWidget(QtWidgets.QLabel(f"{label}:"), row, 0)
+            le = QtWidgets.QLineEdit()
+            if key == "capture_name":
+                le.setReadOnly(True)
+                le.setStyleSheet("color: #888;")
+            self._meta_fields[key] = le
+            meta_layout.addWidget(le, row, 1)
+
+        layout.addWidget(meta_box)
+
+        # --- Buttons ---
+        btn_row = QtWidgets.QHBoxLayout()
+        self._btn_save = QtWidgets.QPushButton("Save Meta")
+        self._btn_save.clicked.connect(self._save_meta)
+        btn_close = QtWidgets.QPushButton("Close")
+        btn_close.clicked.connect(self.accept)
+        btn_row.addStretch()
+        btn_row.addWidget(self._btn_save)
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
+
+    def _load(self) -> None:
+        """Populate file status labels and meta fields."""
+        # File status.
+        self._update_file_label(self._lbl_raw, self._btn_plot_raw, self._raw_path)
+        self._update_file_label(self._lbl_trimmed, self._btn_plot_trimmed, self._trimmed_path)
+
+        if os.path.isfile(self._meta_path):
+            size_kb = os.path.getsize(self._meta_path) / 1024
+            self._lbl_meta.setText(f"Found ({size_kb:.1f} KB)")
+            self._lbl_meta.setStyleSheet("color: green;")
+        else:
+            self._lbl_meta.setText("Missing")
+            self._lbl_meta.setStyleSheet("color: red;")
+
+        # Meta fields.
+        meta = {}
+        if os.path.isfile(self._meta_path):
+            try:
+                with open(self._meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
+            except Exception:
+                meta = {}
+
+        for key, le in self._meta_fields.items():
+            val = meta.get(key)
+            le.setText(str(val) if val is not None else "")
+
+        # Default capture_name if blank.
+        if not self._meta_fields["capture_name"].text():
+            self._meta_fields["capture_name"].setText(self._capture_name)
+
+    @staticmethod
+    def _update_file_label(label: QtWidgets.QLabel, btn: QtWidgets.QPushButton, path: str) -> None:
+        if os.path.isfile(path):
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            label.setText(f"Found ({size_mb:.2f} MB)")
+            label.setStyleSheet("color: green;")
+            btn.setEnabled(True)
+        else:
+            label.setText("Missing")
+            label.setStyleSheet("color: red;")
+            btn.setEnabled(False)
+
+    def _save_meta(self) -> None:
+        """Write meta fields back to the .meta.json file."""
+        meta = {}
+        # Preserve existing fields not shown in the form.
+        if os.path.isfile(self._meta_path):
+            try:
+                with open(self._meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
+            except Exception:
+                meta = {}
+
+        # Numeric fields.
+        numeric_keys = {"avg_temp", "body_weight_n", "started_at_ms"}
+        for key, le in self._meta_fields.items():
+            text = le.text().strip()
+            if not text:
+                continue
+            if key in numeric_keys:
+                try:
+                    meta[key] = float(text) if "." in text else int(text)
+                except ValueError:
+                    meta[key] = text
+            else:
+                meta[key] = text
+
+        # Clear synced_at_ms so next sync re-uploads with updated meta.
+        meta.pop("synced_at_ms", None)
+
+        try:
+            os.makedirs(os.path.dirname(self._meta_path), exist_ok=True)
+            with open(self._meta_path, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, sort_keys=True)
+            QtWidgets.QMessageBox.information(self, "Saved", "Meta file saved.")
+            self._load()  # Refresh status labels.
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to save: {exc}")
+
+    def _plot_csv(self, csv_path: str, label: str) -> None:
+        if not os.path.isfile(csv_path):
+            return
+        try:
+            from ..widgets.temp_stage_plotter import _load_csv_data
+            import matplotlib.pyplot as plt
+
+            times, fz = _load_csv_data(csv_path)
+            if not times:
+                QtWidgets.QMessageBox.warning(self, "Plot", f"No Z-axis data in {os.path.basename(csv_path)}")
+                return
+
+            t0 = times[0] if times and times[0] == times[0] else 0.0
+            times = [(t - t0) if (t == t) else t for t in times]
+
+            fig, ax = plt.subplots(figsize=(12, 5))
+            fig.canvas.manager.set_window_title(f"{label}: {os.path.basename(csv_path)}")
+            ax.plot(times, fz, "b-", linewidth=0.8, alpha=0.8)
+            ax.set_title(f"{label} — {os.path.basename(csv_path)}")
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("Force Z (N)")
+            ax.grid(True, alpha=0.3)
+            ax.axhline(0, color="k", linewidth=0.5)
+            plt.tight_layout()
+            plt.show()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Plot", f"Failed to plot: {exc}")
+
+
 class TemperatureTestingPanel(QtWidgets.QWidget):
     run_requested = QtCore.Signal(dict)
     device_selected = QtCore.Signal(str)
@@ -75,100 +280,98 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
 
         root = QtWidgets.QHBoxLayout(self)
         root.setContentsMargins(6, 6, 6, 6)
-        root.setSpacing(10)
+        root.setSpacing(8)
 
-        # Single settings pane (labels on the left of each control)
-        settings_box = QtWidgets.QGroupBox("Temperature Testing")
-        settings_layout = QtWidgets.QGridLayout(settings_box)
-
-        # Device selection
-        self.device_combo = QtWidgets.QComboBox()
-        self.btn_refresh = QtWidgets.QPushButton("Refresh")
-        device_row_widget = QtWidgets.QWidget()
-        device_row_layout = QtWidgets.QHBoxLayout(device_row_widget)
-        device_row_layout.setContentsMargins(0, 0, 0, 0)
-        device_row_layout.setSpacing(6)
-        device_row_layout.addWidget(self.device_combo, 1)
-        device_row_layout.addWidget(self.btn_refresh, 0)
-        settings_layout.addWidget(QtWidgets.QLabel("Device:"), 0, 0)
-        settings_layout.addWidget(device_row_widget, 0, 1)
-
-        # Device and model info
+        # Hidden labels kept for compatibility with existing code
         self.lbl_device_id = QtWidgets.QLabel("—")
         self.lbl_model = QtWidgets.QLabel("—")
         self.lbl_bw = QtWidgets.QLabel("—")
-        # Removed from layout per request
-        # settings_layout.addWidget(QtWidgets.QLabel("Device ID:"), 1, 0)
-        # settings_layout.addWidget(self.lbl_device_id, 1, 1)
-        # settings_layout.addWidget(QtWidgets.QLabel("Latest Model:"), 2, 0)
-        # settings_layout.addWidget(self.lbl_model, 2, 1)
-        # settings_layout.addWidget(QtWidgets.QLabel("Body Weight (N):"), 3, 0)
-        # settings_layout.addWidget(self.lbl_bw, 3, 1)
 
         # Stage selector (moved to Display pane; placeholder init only)
         self.stage_combo = QtWidgets.QComboBox()
         self.stage_combo.addItems(["All"])
 
-        # Test files list
+        # ── Left column ─────────────────────────────────────────────────
+        left_col = QtWidgets.QVBoxLayout()
+        left_col.setSpacing(4)
+        left_col.setContentsMargins(0, 0, 0, 0)
+
+        # Device row
+        device_row = QtWidgets.QHBoxLayout()
+        device_row.setSpacing(4)
+        self.device_combo = QtWidgets.QComboBox()
+        self.btn_refresh = QtWidgets.QPushButton("Refresh")
+        self.btn_refresh.setFixedWidth(60)
+        device_row.addWidget(QtWidgets.QLabel("Device:"))
+        device_row.addWidget(self.device_combo, 1)
+        device_row.addWidget(self.btn_refresh)
+        left_col.addLayout(device_row)
+
+        # Test list
+        lbl_tests = QtWidgets.QLabel("Tests in Device:")
+        lbl_tests.setStyleSheet("font-weight: bold; margin-top: 2px;")
+        left_col.addWidget(lbl_tests)
         self.test_list = QtWidgets.QListWidget()
-        settings_layout.addWidget(QtWidgets.QLabel("Tests in Device:"), 1, 0, QtCore.Qt.AlignTop)
-        settings_layout.addWidget(self.test_list, 1, 1)
+        self.test_list.setFont(QtGui.QFont("Consolas", 9))
         self.test_list.installEventFilter(self)
         self.test_list.viewport().installEventFilter(self)
+        left_col.addWidget(self.test_list, 1)
 
-        # Scalar temperature coefficients
-        slopes_row = 2
-
+        # Coefficients — compact single row
+        coef_row = QtWidgets.QHBoxLayout()
+        coef_row.setSpacing(3)
         self.spin_x = QtWidgets.QDoubleSpinBox()
         self.spin_y = QtWidgets.QDoubleSpinBox()
         self.spin_z = QtWidgets.QDoubleSpinBox()
         for sp in (self.spin_x, self.spin_y, self.spin_z):
             sp.setRange(-1000.0, 1000.0)
-            # Scalar coefficients are small; make entry practical.
             sp.setDecimals(6)
             sp.setSingleStep(0.0001)
             sp.setValue(0.002)
-        
-        self.lbl_slope_x = QtWidgets.QLabel("Coef X:")
-        settings_layout.addWidget(self.lbl_slope_x, slopes_row + 0, 0)
-        settings_layout.addWidget(self.spin_x, slopes_row + 0, 1)
-        
-        self.lbl_slope_y = QtWidgets.QLabel("Coef Y:")
-        settings_layout.addWidget(self.lbl_slope_y, slopes_row + 1, 0)
-        settings_layout.addWidget(self.spin_y, slopes_row + 1, 1)
-        
-        self.lbl_slope_z = QtWidgets.QLabel("Coef Z:")
-        settings_layout.addWidget(self.lbl_slope_z, slopes_row + 2, 0)
-        settings_layout.addWidget(self.spin_z, slopes_row + 2, 1)
+        self.lbl_slope_x = QtWidgets.QLabel("X:")
+        self.lbl_slope_y = QtWidgets.QLabel("Y:")
+        self.lbl_slope_z = QtWidgets.QLabel("Z:")
+        coef_row.addWidget(self.lbl_slope_x)
+        coef_row.addWidget(self.spin_x, 1)
+        coef_row.addWidget(self.lbl_slope_y)
+        coef_row.addWidget(self.spin_y, 1)
+        coef_row.addWidget(self.lbl_slope_z)
+        coef_row.addWidget(self.spin_z, 1)
+        left_col.addLayout(coef_row)
 
-        # Run buttons
+        # Action buttons — two rows, tight
         self.btn_run = QtWidgets.QPushButton("Process")
-        self.btn_run_plate_type = QtWidgets.QPushButton("Run current coefs across plate type")
+        self.btn_run_plate_type = QtWidgets.QPushButton("Run Plate Type")
         self.btn_run_plate_type.setToolTip(
             "Runs the current coefficients across all devices of this plate type for all tests with meta, generating missing outputs."
         )
         self.btn_add_tests = QtWidgets.QPushButton("Add Tests")
+        self.btn_reset_local = QtWidgets.QPushButton("Reset Local")
+        self.btn_reset_local.setToolTip(
+            "Delete all derived CSVs and orphan meta files (no matching raw CSV).\n"
+            "Keeps raw CSVs and their meta files. Next sync re-trims and re-uploads."
+        )
 
-        # Left column (single settings pane)
-        left_col = QtWidgets.QVBoxLayout()
-        left_col.setSpacing(8)
-        left_col.addWidget(settings_box, 1)
-        btn_row = QtWidgets.QHBoxLayout()
-        btn_row.setSpacing(6)
-        btn_row.addWidget(self.btn_run, 1)
-        btn_row.addWidget(self.btn_run_plate_type, 1)
-        btn_row_wrap = QtWidgets.QWidget()
-        btn_row_wrap.setLayout(btn_row)
-        left_col.addWidget(btn_row_wrap)
-        self.btn_bulk_upload = QtWidgets.QPushButton("Upload to Supabase")
-        self.btn_bulk_upload.setToolTip("Select a folder of test sessions to bulk-upload to Supabase")
-        add_upload_row = QtWidgets.QHBoxLayout()
-        add_upload_row.setSpacing(6)
-        add_upload_row.addWidget(self.btn_add_tests, 1)
-        add_upload_row.addWidget(self.btn_bulk_upload, 1)
-        add_upload_wrap = QtWidgets.QWidget()
-        add_upload_wrap.setLayout(add_upload_row)
-        left_col.addWidget(add_upload_wrap)
+        btn_row1 = QtWidgets.QHBoxLayout()
+        btn_row1.setSpacing(4)
+        btn_row1.addWidget(self.btn_run, 1)
+        btn_row1.addWidget(self.btn_run_plate_type, 1)
+        left_col.addLayout(btn_row1)
+
+        btn_row2 = QtWidgets.QHBoxLayout()
+        btn_row2.setSpacing(4)
+        btn_row2.addWidget(self.btn_add_tests, 1)
+        btn_row2.addWidget(self.btn_reset_local, 1)
+        left_col.addLayout(btn_row2)
+
+        self.chk_auto_sync = QtWidgets.QCheckBox("Auto-sync")
+        self.chk_auto_sync.setChecked(False)
+        self.chk_auto_sync.setToolTip(
+            "When enabled, background sync runs every 5 minutes.\n"
+            "Manual sync via Refresh button always works regardless."
+        )
+        left_col.addWidget(self.chk_auto_sync)
+
         left_wrap = QtWidgets.QWidget()
         left_wrap.setLayout(left_col)
 
@@ -208,7 +411,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         
         middle_layout.addWidget(controls_widget, 0)
 
-        # Right column: metrics (reworked)
+        # Right column: metrics
         right_box = QtWidgets.QGroupBox("Metrics")
         right_layout = QtWidgets.QVBoxLayout(right_box)
         self.metrics_widget = TempTestingMetricsWidget()
@@ -217,20 +420,16 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         root.addWidget(left_wrap, 1)
         root.addWidget(middle_box, 1)
         root.addWidget(right_box, 2)
-        try:
-            root.setStretch(0, 1)  # left ~ 1/4
-            root.setStretch(1, 1)  # middle ~ 1/4
-            root.setStretch(2, 2)  # right ~ 1/2
-        except Exception:
-            pass
 
         self.device_combo.currentTextChanged.connect(self._on_device_changed)
         self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         self.btn_run.clicked.connect(self._on_run_clicked)
         self.btn_run_plate_type.clicked.connect(self._on_run_plate_type_clicked)
         self.btn_add_tests.clicked.connect(self._on_add_tests_clicked)
-        self.btn_bulk_upload.clicked.connect(self._on_bulk_upload_clicked)
+        self.btn_reset_local.clicked.connect(self._on_reset_local_clicked)
         self.test_list.currentItemChanged.connect(self._emit_test_changed)
+        self.test_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.test_list.customContextMenuRequested.connect(self._on_test_list_context_menu)
         self.processed_list.currentItemChanged.connect(self._emit_processed_changed)
         self.stage_combo.currentTextChanged.connect(lambda s: self.stage_changed.emit(str(s)))
         self.btn_plot_stages.clicked.connect(lambda: self.plot_stages_requested.emit())
@@ -304,6 +503,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             
             # IMPORTANT: Do NOT auto-select and auto-run analysis on app startup.
             # We still allow explicit user-driven refresh via the Refresh button.
+            self.chk_auto_sync.toggled.connect(self._on_auto_sync_toggled)
         self._bias_available = False
         self.set_bias_mode_available(False, "")
         self._current_device_id = ""
@@ -544,15 +744,21 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             self.lbl_bw.setText("—")
 
     def set_tests(self, files: list[str]) -> None:
+        # Sort files by avg_temp (baselines first, then ascending temp).
+        def _sort_key(f: str):
+            meta = self._load_meta_for_csv(f)
+            temp = self._extract_temperature_value(meta) if meta else None
+            # None temps sort to the end.
+            return (0 if temp is None else 1, temp if temp is not None else 999)
+
+        sorted_files = sorted((f for f in (files or []) if f), key=_sort_key)
+
         items = []
         available = self._available_label_width()
-        for f in files or []:
-            if not f:
-                continue
+        for f in sorted_files:
             label = self._build_test_label(f, available)
             items.append((label, f))
         if not items and files:
-            # Fallback: show raw names if formatting failed
             items = [(os.path.basename(f.rstrip("\\/")), f) for f in files if f]
         self.set_tests_with_labels(items)
 
@@ -563,6 +769,12 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             display = self._build_test_label(path, available) if path else label
             item = QtWidgets.QListWidgetItem(display)
             item.setData(QtCore.Qt.UserRole, path)  # store full path
+            # Color baseline rows green.
+            if path:
+                meta = self._load_meta_for_csv(path)
+                temp = self._extract_temperature_value(meta) if meta else None
+                if self._is_baseline_temp(temp):
+                    item.setForeground(QtGui.QColor("#2e9e2e"))
             self.test_list.addItem(item)
         # Do not auto-select the first test; user must explicitly pick one.
         if self.test_list.count() == 0:
@@ -723,18 +935,124 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         self.metrics_widget.set_big_picture_status(f"Importing {len(files)} file(s)…")
         self.controller.import_temperature_tests(files)
 
-    def _on_bulk_upload_clicked(self) -> None:
-        if not self.controller:
-            return
-        folder = QtWidgets.QFileDialog.getExistingDirectory(
+    def _on_auto_sync_toggled(self, checked: bool) -> None:
+        if self.controller:
+            self.controller._auto_sync_enabled = checked
+
+    def _on_reset_local_clicked(self) -> None:
+        """Delete derived files and orphan metas. Keep raw CSVs + their metas."""
+        reply = QtWidgets.QMessageBox.question(
             self,
-            "Select folder containing test sessions",
-            "",
+            "Reset Local Files",
+            "This will:\n"
+            "  - Delete all trimmed, processed, and scalar CSVs\n"
+            "  - Delete meta files that have no matching raw CSV\n"
+            "  - Clear sync stamps on remaining meta files\n\n"
+            "Raw CSVs and their meta files are preserved.\n"
+            "Next sync will re-trim from raw and re-upload.\n\n"
+            "Continue?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
         )
-        if not folder:
+        if reply != QtWidgets.QMessageBox.Yes:
             return
-        self.metrics_widget.set_big_picture_status(f"Bulk uploading from {folder}…")
-        self.controller.bulk_upload_to_supabase(folder)
+
+        import glob
+
+        root = ""
+        if self.controller:
+            try:
+                root = self.controller.temp_testing_root()
+            except Exception:
+                pass
+        if not root or not os.path.isdir(root):
+            QtWidgets.QMessageBox.warning(self, "Reset", "Could not locate temp_testing folder.")
+            return
+
+        trimmed_deleted = 0
+        processed_deleted = 0
+        meta_cleared = 0
+        orphan_meta_deleted = 0
+
+        # Step 1: Build whitelist of raw stems per device directory.
+        raw_stems: set = set()  # (device_dir, stem) pairs
+        for device_dir_name in os.listdir(root):
+            device_dir = os.path.join(root, device_dir_name)
+            if not os.path.isdir(device_dir):
+                continue
+            for f in os.listdir(device_dir):
+                if f.startswith("temp-raw-") and f.lower().endswith(".csv"):
+                    stem = f[:-4]  # strip .csv
+                    raw_stems.add((device_dir, stem))
+
+        # Step 2: Delete trimmed, processed, scalar CSVs (regenerated from raw).
+        for pattern in ("temp-trimmed-*.csv", "temp-processed-*.csv", "temp-scalar-*.csv"):
+            for f in glob.glob(os.path.join(root, "*", pattern)):
+                try:
+                    os.remove(f)
+                    if "trimmed" in pattern:
+                        trimmed_deleted += 1
+                    else:
+                        processed_deleted += 1
+                except Exception:
+                    pass
+
+        # Step 3: Delete bias cache files.
+        for f in glob.glob(os.path.join(root, "*", "temp-baseline-bias.json")):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
+
+        # Step 4: Handle meta files — keep only those with a matching raw CSV.
+        for meta_path in glob.glob(os.path.join(root, "*", "*.meta.json")):
+            device_dir = os.path.dirname(meta_path)
+            fname = os.path.basename(meta_path)
+            if not fname.endswith(".meta.json"):
+                continue
+            stem = fname[: -len(".meta.json")]
+
+            if (device_dir, stem) not in raw_stems:
+                # Orphan meta (no local raw file) — delete it.
+                try:
+                    os.remove(meta_path)
+                    orphan_meta_deleted += 1
+                except Exception:
+                    pass
+                continue
+
+            # Has a raw file — strip sync stamps so it re-uploads cleanly.
+            try:
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                changed = False
+                if "synced_at_ms" in meta:
+                    del meta["synced_at_ms"]
+                    changed = True
+                if "processed_baseline" in meta:
+                    del meta["processed_baseline"]
+                    changed = True
+                if changed:
+                    with open(meta_path, "w", encoding="utf-8") as fh:
+                        json.dump(meta, fh, indent=2, sort_keys=True)
+                    meta_cleared += 1
+            except Exception:
+                pass
+
+        summary = (
+            f"Deleted {trimmed_deleted} trimmed and {processed_deleted} processed CSVs.\n"
+            f"Deleted {orphan_meta_deleted} orphan meta files (no matching raw CSV).\n"
+            f"Cleared sync stamps on {meta_cleared} meta files.\n\n"
+            "Run a sync or restart to re-trim and re-upload."
+        )
+        QtWidgets.QMessageBox.information(self, "Reset Complete", summary)
+
+        # Refresh UI
+        if self.controller:
+            try:
+                self.controller.refresh_devices()
+            except Exception:
+                pass
 
     def _on_import_ready(self, payload: dict) -> None:
         payload = payload or {}
@@ -867,6 +1185,143 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         it = self.test_list.currentItem()
         path = str(it.data(QtCore.Qt.UserRole)) if it is not None else ""
         self.test_changed.emit(path)
+
+    def _on_test_list_context_menu(self, pos) -> None:
+        item = self.test_list.itemAt(pos)
+        if item is None:
+            return
+        raw_path = str(item.data(QtCore.Qt.UserRole) or "")
+        if not raw_path:
+            return
+
+        menu = QtWidgets.QMenu(self)
+        act_files = menu.addAction("Files...")
+        act_delete = menu.addAction("Delete Test")
+        chosen = menu.exec_(self.test_list.viewport().mapToGlobal(pos))
+        if chosen == act_files:
+            dlg = TestFilesDialog(raw_path, parent=self)
+            dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+            dlg.show()
+        elif chosen == act_delete:
+            self._delete_test(raw_path)
+
+    def _plot_test_z_axis(self, raw_csv_path: str) -> None:
+        """Plot Z-axis force data from the processed-off CSV for a test."""
+        folder = os.path.dirname(raw_csv_path)
+        filename = os.path.basename(raw_csv_path)
+
+        # Derive the processed-off and trimmed filenames from the raw CSV name.
+        if filename.startswith("temp-raw-"):
+            base = filename[len("temp-raw-"):]
+            processed_name = f"temp-processed-{base}"
+            trimmed_name = f"temp-trimmed-{base}"
+        else:
+            processed_name = filename
+            trimmed_name = filename
+
+        # Try processed first, then trimmed, then raw.
+        candidates = [
+            os.path.join(folder, processed_name),
+            os.path.join(folder, trimmed_name),
+            raw_csv_path,
+        ]
+        csv_to_plot = None
+        for c in candidates:
+            if os.path.isfile(c):
+                csv_to_plot = c
+                break
+
+        if not csv_to_plot:
+            QtWidgets.QMessageBox.warning(self, "Plot", "No CSV file found on disk for this test.")
+            return
+
+        try:
+            from ..widgets.temp_stage_plotter import _load_csv_data
+            import matplotlib.pyplot as plt
+
+            times, fz = _load_csv_data(csv_to_plot)
+            if not times:
+                QtWidgets.QMessageBox.warning(self, "Plot", f"No Z-axis data found in {os.path.basename(csv_to_plot)}")
+                return
+
+            # Normalize time to start at 0
+            t0 = times[0] if times and times[0] == times[0] else 0.0
+            times = [(t - t0) if (t == t) else t for t in times]
+
+            fig, ax = plt.subplots(figsize=(12, 5))
+            fig.canvas.manager.set_window_title(f"Z-axis: {os.path.basename(csv_to_plot)}")
+            ax.plot(times, fz, "b-", linewidth=0.8, alpha=0.8)
+            ax.set_title(os.path.basename(csv_to_plot))
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("Force Z (N)")
+            ax.grid(True, alpha=0.3)
+            ax.axhline(0, color="k", linewidth=0.5)
+            plt.tight_layout()
+            plt.show()
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Plot", f"Failed to plot: {exc}")
+
+    def _delete_test(self, raw_csv_path: str) -> None:
+        """Delete a test locally and from Supabase."""
+        import glob as _glob
+
+        capture_name = os.path.splitext(os.path.basename(raw_csv_path))[0]
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Test",
+            f"Permanently delete '{capture_name}' locally and from Supabase?\n\n"
+            "This removes the raw CSV, all derived files, meta, and the Supabase record.\n"
+            "This cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        device_dir = os.path.dirname(raw_csv_path)
+        # Derive all related local file patterns.
+        # capture_name = "temp-raw-DEVICE-DATE-TIME"
+        suffix = capture_name.replace("temp-raw-", "", 1)  # "DEVICE-DATE-TIME"
+
+        deleted_files = 0
+        for pattern in (
+            f"temp-raw-{suffix}.csv",
+            f"temp-raw-{suffix}.meta.json",
+            f"temp-trimmed-{suffix}.csv",
+            f"temp-processed-{suffix}.csv",
+            f"temp-scalar-*-{suffix}.csv",
+        ):
+            for f in _glob.glob(os.path.join(device_dir, pattern)):
+                try:
+                    os.remove(f)
+                    deleted_files += 1
+                except Exception:
+                    pass
+
+        # Delete from Supabase.
+        supabase_ok = False
+        try:
+            from ...infra.supabase_temp_repo import SupabaseTempRepository
+            repo = SupabaseTempRepository()
+            supabase_ok = repo.delete_session_fully(capture_name)
+        except Exception:
+            pass
+
+        status = f"Deleted {deleted_files} local files."
+        if supabase_ok:
+            status += "\nSupabase record removed."
+        else:
+            status += "\nSupabase deletion skipped or failed."
+        QtWidgets.QMessageBox.information(self, "Delete Test", status)
+
+        # Refresh UI.
+        if self.controller:
+            try:
+                device_id = self.device_combo.currentText().strip()
+                if device_id:
+                    self.controller.refresh_tests(device_id)
+            except Exception:
+                pass
 
     def _emit_processed_changed(self) -> None:
         it = self.processed_list.currentItem()
@@ -1063,6 +1518,12 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         # Leave some breathing room for scrollbar/padding
         return max(0, width - 24)
 
+    def _is_baseline_temp(self, temp_val: Optional[float]) -> bool:
+        from ... import config
+        if temp_val is None:
+            return False
+        return config.TEMP_BASELINE_ROOM_TEMP_MIN_F <= temp_val <= config.TEMP_BASELINE_ROOM_TEMP_MAX_F
+
     def _build_test_label(self, csv_path: Optional[str], available_px: Optional[int] = None) -> str:
         if not csv_path:
             return ""
@@ -1073,8 +1534,9 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
 
         temp_val = self._extract_temperature_value(meta)
         temp_text = f"{temp_val:.1f}°F" if temp_val is not None else "—°F"
+        badge = "[BL] " if self._is_baseline_temp(temp_val) else ""
         tester = str(meta.get("tester_name") or meta.get("tester") or "Unknown").strip() or "Unknown"
-        prefix = f"{temp_text}, {tester}"
+        prefix = f"{badge}{temp_text}, {tester}"
 
         date_text = self._format_test_date(meta.get("date"))
         if not date_text:

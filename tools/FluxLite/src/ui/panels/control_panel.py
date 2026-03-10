@@ -248,7 +248,7 @@ class ControlPanel(QtWidgets.QWidget):
         live_scroll.setWidgetResizable(True)
         live_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
 
-        self._live_tab_index = tabs.addTab(live_scroll, "Live Testing")
+        self._live_tab_index = tabs.addTab(live_scroll, "Testing")
 
         # ── Temperature Testing tab ─────────────────────────────────────
         temp_ctrl = getattr(self.controller, "temp_test", None) if self.controller else None
@@ -260,7 +260,7 @@ class ControlPanel(QtWidgets.QWidget):
         temp_scroll.setWidgetResizable(True)
         temp_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
 
-        self._temp_tab_index = tabs.addTab(temp_scroll, "Temperature Testing")
+        self._temp_tab_index = tabs.addTab(temp_scroll, "Temperature")
 
         # Ensure tabs consume available vertical space
         try:

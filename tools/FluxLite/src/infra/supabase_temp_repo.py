@@ -18,8 +18,8 @@ _logger = logging.getLogger(__name__)
 
 
 class SupabaseTempRepository:
-    """CRUD + Storage helpers for the ``temp_test_sessions`` /
-    ``temp_test_processing_runs`` tables and the ``temp-testing-csvs`` bucket.
+    """CRUD + Storage helpers for the ``temp_test_sessions`` table
+    and the ``temp-testing-csvs`` bucket.
     """
 
     def __init__(self):
@@ -32,7 +32,7 @@ class SupabaseTempRepository:
     # ------------------------------------------------------------------
 
     def sync_session_from_meta(self, meta_path: str) -> None:
-        """Orchestrator: read meta JSON → upsert session + runs → upload CSVs."""
+        """Read meta JSON → upsert session → upload trimmed CSV."""
         if self._sb is None:
             return
         try:
@@ -44,34 +44,19 @@ class SupabaseTempRepository:
             with open(meta_path, "r", encoding="utf-8") as fh:
                 meta: dict = json.load(fh) or {}
 
-            session_id = self.upsert_session(meta, meta_path)
-            if not session_id:
-                return
-
             device_id = self._device_id_from_meta(meta, meta_path)
             folder = os.path.dirname(meta_path)
 
-            # --- baseline ---
+            # Upload trimmed CSV if available.
+            trimmed_storage = None
             baseline = meta.get("processed_baseline") or {}
-            if isinstance(baseline, dict) and (baseline.get("processed_off") or baseline.get("trimmed_csv")):
-                trimmed_path = os.path.join(folder, baseline["trimmed_csv"]) if baseline.get("trimmed_csv") else None
-                off_path = os.path.join(folder, baseline["processed_off"]) if baseline.get("processed_off") else None
+            if isinstance(baseline, dict) and baseline.get("trimmed_csv"):
+                trimmed_path = os.path.join(folder, baseline["trimmed_csv"])
+                trimmed_storage = self.upload_csv_gzipped(trimmed_path, device_id)
 
-                trimmed_storage = self.upload_csv_gzipped(trimmed_path, device_id) if trimmed_path else None
-                off_storage = self.upload_csv_gzipped(off_path, device_id) if off_path else None
-
-                self.upsert_processing_run(session_id, {
-                    "mode": "baseline",
-                    "slope_x": 0.0,
-                    "slope_y": 0.0,
-                    "slope_z": 0.0,
-                    "is_baseline": True,
-                    "trimmed_csv_storage_path": trimmed_storage,
-                    "processed_csv_storage_path": off_storage,
-                    "processed_at_ms": baseline.get("updated_at_ms"),
-                })
-
-            _logger.info("Supabase sync complete for session %s", session_id)
+            session_id = self.upsert_session(meta, meta_path, trimmed_csv_storage_path=trimmed_storage)
+            if session_id:
+                _logger.info("Supabase sync complete for session %s", session_id)
         except Exception as exc:
             _logger.warning("Supabase sync_session_from_meta failed: %s", exc)
 
@@ -79,7 +64,13 @@ class SupabaseTempRepository:
     # Session upsert
     # ------------------------------------------------------------------
 
-    def upsert_session(self, meta: dict, meta_path: str) -> Optional[str]:
+    def upsert_session(
+        self,
+        meta: dict,
+        meta_path: str,
+        *,
+        trimmed_csv_storage_path: Optional[str] = None,
+    ) -> Optional[str]:
         """Upsert a ``temp_test_sessions`` row.  Returns the session UUID."""
         if self._sb is None:
             return None
@@ -98,6 +89,7 @@ class SupabaseTempRepository:
                 "short_label": meta.get("short_label") or meta.get("shortLabel"),
                 "date": meta.get("date"),
                 "started_at_ms": _safe_int(meta.get("started_at_ms") or meta.get("startedAtMs")),
+                "trimmed_csv_storage_path": trimmed_csv_storage_path,
                 "version": 1,
                 "updated_at": "now()",
             }
@@ -116,38 +108,6 @@ class SupabaseTempRepository:
             return session_id
         except Exception as exc:
             _logger.warning("upsert_session failed: %s", exc)
-            return None
-
-    # ------------------------------------------------------------------
-    # Processing-run upsert
-    # ------------------------------------------------------------------
-
-    def upsert_processing_run(self, session_id: str, run_data: dict) -> Optional[str]:
-        if self._sb is None or not session_id:
-            return None
-        try:
-            row = {
-                "session_id": session_id,
-                "mode": run_data.get("mode", "legacy"),
-                "slope_x": float(run_data.get("slope_x", 0.0)),
-                "slope_y": float(run_data.get("slope_y", 0.0)),
-                "slope_z": float(run_data.get("slope_z", 0.0)),
-                "is_baseline": bool(run_data.get("is_baseline", False)),
-                "trimmed_csv_storage_path": run_data.get("trimmed_csv_storage_path"),
-                "processed_csv_storage_path": run_data.get("processed_csv_storage_path"),
-                "processed_at_ms": _safe_int(run_data.get("processed_at_ms")),
-            }
-            row = {k: v for k, v in row.items() if v is not None}
-
-            resp = (
-                self._sb.table("temp_test_processing_runs")
-                .upsert(row, on_conflict="session_id,mode,slope_x,slope_y,slope_z")
-                .execute()
-            )
-            data = (resp.data or [{}])[0] if resp.data else {}
-            return data.get("id")
-        except Exception as exc:
-            _logger.warning("upsert_processing_run failed: %s", exc)
             return None
 
     # ------------------------------------------------------------------
@@ -210,11 +170,7 @@ class SupabaseTempRepository:
             return []
 
     def list_all_capture_names(self) -> set:
-        """Return the set of all ``capture_name`` values in ``temp_test_sessions``.
-
-        Used by the background sync to skip uploads for sessions that already
-        exist remotely.
-        """
+        """Return the set of all ``capture_name`` values in ``temp_test_sessions``."""
         if self._sb is None:
             return set()
         try:
@@ -229,14 +185,7 @@ class SupabaseTempRepository:
             return set()
 
     def delete_sessions_by_capture_names(self, capture_names: List[str]) -> int:
-        """Delete ``temp_test_sessions`` rows whose ``capture_name`` is in *capture_names*.
-
-        Used after ``_fix_csv_filenames`` renames local files — the old
-        Supabase records with the wrong ``capture_name`` become stale and
-        should be removed so the corrected session can be re-uploaded cleanly.
-
-        Returns the number of rows deleted.
-        """
+        """Delete ``temp_test_sessions`` rows whose ``capture_name`` is in *capture_names*."""
         if self._sb is None or not capture_names:
             return 0
         deleted = 0
@@ -249,6 +198,39 @@ class SupabaseTempRepository:
             except Exception as exc:
                 _logger.warning("delete session %s failed: %s", name, exc)
         return deleted
+
+    def delete_session_fully(self, capture_name: str) -> bool:
+        """Delete a session row AND its storage file from Supabase."""
+        if self._sb is None or not capture_name:
+            return False
+        try:
+            # First, fetch the session to get the storage path.
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("trimmed_csv_storage_path")
+                .eq("capture_name", capture_name)
+                .execute()
+            )
+            storage_path = ""
+            if resp.data:
+                storage_path = str(resp.data[0].get("trimmed_csv_storage_path") or "")
+
+            # Delete storage file if present.
+            if storage_path:
+                try:
+                    self._sb.storage.from_("temp-testing-csvs").remove([storage_path])
+                except Exception as exc:
+                    _logger.warning("delete storage %s failed: %s", storage_path, exc)
+
+            # Delete the DB row.
+            self._sb.table("temp_test_sessions").delete().eq(
+                "capture_name", capture_name
+            ).execute()
+            _logger.info("Fully deleted session %s", capture_name)
+            return True
+        except Exception as exc:
+            _logger.warning("delete_session_fully failed for %s: %s", capture_name, exc)
+            return False
 
     def list_sessions_for_device(self, device_id: str) -> List[dict]:
         """Query ``temp_test_sessions`` filtered by *device_id*."""
@@ -264,22 +246,6 @@ class SupabaseTempRepository:
             return list(resp.data or [])
         except Exception as exc:
             _logger.warning("list_sessions_for_device failed: %s", exc)
-            return []
-
-    def list_runs_for_sessions(self, session_ids: List[str]) -> List[dict]:
-        """Query ``temp_test_processing_runs`` for a list of session IDs."""
-        if self._sb is None or not session_ids:
-            return []
-        try:
-            resp = (
-                self._sb.table("temp_test_processing_runs")
-                .select("*")
-                .in_("session_id", list(session_ids))
-                .execute()
-            )
-            return list(resp.data or [])
-        except Exception as exc:
-            _logger.warning("list_runs_for_sessions failed: %s", exc)
             return []
 
     # ------------------------------------------------------------------

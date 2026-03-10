@@ -150,6 +150,7 @@ class FluxLitePage(QtWidgets.QWidget):
         # Temperature live-testing CSV/raw capture lifecycle (backend-driven)
         self._temp_live_capture = TemperatureLiveCaptureManager(self.controller.hardware)
         self._temp_live_capture_ctx: CaptureContext | None = None
+        self._pending_post_capture_ctx: CaptureContext | None = None
         self._post_capture_sync_worker: PostCaptureAutoSyncWorker | None = None
         # Temperature test stage switch dialog
         self._stage_switch_dialog: StageSwitchPromptDialog | None = None
@@ -524,7 +525,7 @@ class FluxLitePage(QtWidgets.QWidget):
         self._cell_details_wrap_right = QtWidgets.QWidget()
         self._cell_details_wrap_left.setContentsMargins(0, 0, 0, 0)
         self._cell_details_wrap_right.setContentsMargins(0, 0, 0, 0)
-        
+
         wl = QtWidgets.QVBoxLayout(self._cell_details_wrap_left)
         wr = QtWidgets.QVBoxLayout(self._cell_details_wrap_right)
         wl.setContentsMargins(0, 0, 0, 0)
@@ -681,6 +682,7 @@ class FluxLitePage(QtWidgets.QWidget):
         self.controller.hardware.active_devices_updated.connect(self._auto_select_active_device)
 
         # Mound group signals
+        self.controller.hardware.stop_capture_confirmed.connect(self._on_stop_capture_confirmed)
         self.controller.hardware.mound_group_created.connect(self._on_mound_group_ready)
         self.controller.hardware.mound_group_found.connect(self._on_mound_group_ready)
         self.controller.hardware.mound_group_error.connect(
@@ -1209,6 +1211,15 @@ class FluxLitePage(QtWidgets.QWidget):
             ctx = self._temp_live_capture_ctx
             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
                 _log.info("Session ended — stopping capture (group_id=%s, capture=%s)", ctx.group_id, ctx.capture_name)
+                # Write a minimal meta.json synchronously so it exists on
+                # disk even if the background worker never runs (offline,
+                # crash, bug).  The worker will load and augment it later.
+                self._write_capture_meta_json(ctx)
+                # Show immediate feedback while backend flushes the CSV.
+                self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
+                # Stash context — the post-capture worker will start when
+                # the backend confirms the CSV is written (stopCaptureStatus).
+                self._pending_post_capture_ctx = ctx
                 # Stop our specific group so it processes data and saves the CSV.
                 try:
                     self._temp_live_capture.stop(group_id=str(ctx.group_id))
@@ -1223,14 +1234,6 @@ class FluxLitePage(QtWidgets.QWidget):
                     self.controller.hardware.cancel_all_captures()
                 except Exception:
                     pass
-                # Write a minimal meta.json synchronously so it exists on
-                # disk even if the background worker never runs (offline,
-                # crash, bug).  The worker will load and augment it later.
-                self._write_capture_meta_json(ctx)
-                # Show immediate feedback while backend flushes the CSV.
-                self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
-                # Kick off background auto-sync (trim + upload) before clearing ctx.
-                self._start_post_capture_sync(ctx)
             else:
                 _log.warning("Session ended but no capture context — skipping post-capture sync (ctx=%s)", ctx)
         except Exception:
@@ -1250,6 +1253,21 @@ class FluxLitePage(QtWidgets.QWidget):
             self.controls.live_testing_panel.set_session_controls_locked(False)
         except Exception:
             pass
+
+    def _on_stop_capture_confirmed(self, data: dict) -> None:
+        """Backend confirmed CSV is written to disk — safe to trim + upload."""
+        status = str((data or {}).get("status") or "").lower()
+        if status != "success":
+            _log.warning("stopCaptureStatus returned non-success: %s", data)
+            self._set_live_status_bar_state(mode="error", text="Capture save failed", pct=None)
+            self._pending_post_capture_ctx = None
+            return
+        ctx = self._pending_post_capture_ctx
+        self._pending_post_capture_ctx = None
+        if ctx is None:
+            return
+        _log.info("Backend confirmed CSV written — starting post-capture sync for %s", getattr(ctx, "capture_name", "?"))
+        self._start_post_capture_sync(ctx)
 
     def _write_capture_meta_json(self, ctx: CaptureContext) -> None:
         """Write a minimal meta.json for the just-finished capture.

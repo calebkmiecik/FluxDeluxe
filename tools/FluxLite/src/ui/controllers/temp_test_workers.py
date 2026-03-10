@@ -712,18 +712,13 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
             meta_path = os.path.join(csv_dir, f"{capture}.meta.json")
             raw_csv = os.path.join(csv_dir, f"{capture}.csv")
 
-            # 1) Wait for the raw CSV (backend writes it on capture stop).
-            deadline = _time.monotonic() + 30.0
-            while not os.path.isfile(raw_csv):
-                if _time.monotonic() > deadline:
-                    _log.warning("PostCaptureAutoSync: raw CSV never appeared for %s", capture)
-                    return
-                _time.sleep(0.5)
+            # The backend has already confirmed the CSV is fully written
+            # (stopCaptureStatus), so we just verify it exists.
+            if not os.path.isfile(raw_csv):
+                _log.warning("PostCaptureAutoSync: raw CSV not found for %s", capture)
+                return
 
-            # Small stability delay for the file to be fully flushed.
-            _time.sleep(0.5)
-
-            # 2) Create/update meta JSON with session info.
+            # Create/update meta JSON with session info.
             meta: dict = {}
             if os.path.isfile(meta_path):
                 try:
@@ -738,7 +733,7 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
                     meta.setdefault(k, v)
             meta["capture_name"] = capture
 
-            # 3) Trim: downsample raw to 50 Hz.
+            # Trim: downsample raw to 50 Hz.
             trimmed_name = capture.replace("temp-raw-", "temp-trimmed-")
             trimmed_csv = os.path.join(csv_dir, f"{trimmed_name}.csv")
             try:
@@ -748,7 +743,7 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
                 _log.warning("PostCaptureAutoSync: trim failed: %s", exc)
                 return
 
-            # 4) Update meta with trimmed CSV info and write to disk.
+            # Update meta with trimmed CSV info and write to disk.
             baseline = meta.get("processed_baseline")
             if not isinstance(baseline, dict):
                 baseline = {}
@@ -762,24 +757,17 @@ class PostCaptureAutoSyncWorker(QtCore.QThread):
             except Exception as exc:
                 _log.warning("PostCaptureAutoSync: meta write failed: %s", exc)
 
-            # 5) Upload to Supabase.
+            # Upload to Supabase.
             self.sync_status.emit("Uploading…", "")
             try:
                 from ...infra.supabase_temp_repo import SupabaseTempRepository
 
                 repo = SupabaseTempRepository()
-                session_id = repo.upsert_session(meta, meta_path)
+                trimmed_storage = repo.upload_csv_gzipped(trimmed_csv, device_id)
+                session_id = repo.upsert_session(
+                    meta, meta_path, trimmed_csv_storage_path=trimmed_storage,
+                )
                 if session_id:
-                    trimmed_storage = repo.upload_csv_gzipped(trimmed_csv, device_id)
-                    repo.upsert_processing_run(session_id, {
-                        "mode": "baseline",
-                        "slope_x": 0.0,
-                        "slope_y": 0.0,
-                        "slope_z": 0.0,
-                        "is_baseline": True,
-                        "trimmed_csv_storage_path": trimmed_storage,
-                        "processed_at_ms": int(_time.time() * 1000),
-                    })
                     # Stamp synced_at_ms so background sync skips this session.
                     meta["synced_at_ms"] = int(_time.time() * 1000)
                     try:
@@ -869,6 +857,91 @@ class SupabaseBulkUploadWorker(QtCore.QThread):
         })
 
 
+def sync_down_device(
+    repo: object,
+    device_id: str,
+    local_dir: str,
+    *,
+    skip_captures: set | None = None,
+    log: object | None = None,
+) -> dict:
+    """Download remote temperature test sessions for a single device.
+
+    Shared logic used by both SupabaseSyncDownWorker (single device, on-demand)
+    and BackgroundSyncWorker (all devices, periodic).
+
+    Returns ``{"downloaded": int, "errors": list[str]}``.
+    """
+    import json
+    import logging
+    import time as _time
+
+    _log = log or logging.getLogger(__name__)
+    downloaded = 0
+    errors: List[str] = []
+    skip = skip_captures or set()
+
+    os.makedirs(local_dir, exist_ok=True)
+
+    sessions = repo.list_sessions_for_device(device_id)
+    if not sessions:
+        return {"downloaded": 0, "errors": []}
+
+    if skip:
+        sessions = [s for s in sessions if str(s.get("capture_name") or "") not in skip]
+    if not sessions:
+        return {"downloaded": 0, "errors": []}
+
+    for s in sessions:
+        capture_name = str(s.get("capture_name") or "")
+        if not capture_name:
+            continue
+
+        meta_filename = f"{capture_name}.meta.json"
+        local_meta = os.path.join(local_dir, meta_filename)
+
+        # Reconstruct meta JSON from DB data if not present locally.
+        if not os.path.isfile(local_meta):
+            try:
+                meta = {
+                    "device_id": device_id,
+                    "capture_name": capture_name,
+                    "model_id": s.get("model_id"),
+                    "tester_name": s.get("tester_name"),
+                    "body_weight_n": s.get("body_weight_n"),
+                    "avg_temp": s.get("avg_temp"),
+                    "short_label": s.get("short_label"),
+                    "date": s.get("date"),
+                    "started_at_ms": s.get("started_at_ms"),
+                    "synced_at_ms": int(_time.time() * 1000),
+                }
+                meta = {k: v for k, v in meta.items() if v is not None}
+                os.makedirs(os.path.dirname(local_meta), exist_ok=True)
+                with open(local_meta, "w", encoding="utf-8") as fh:
+                    json.dump(meta, fh, indent=2, sort_keys=True)
+                downloaded += 1
+            except Exception as exc:
+                errors.append(f"meta reconstruct {capture_name}: {exc}")
+                continue
+
+        # Download trimmed CSV from session row.
+        storage_path = str(s.get("trimmed_csv_storage_path") or "")
+        if storage_path:
+            remote_basename = os.path.basename(storage_path)
+            local_name = remote_basename[:-3] if remote_basename.endswith(".gz") else remote_basename
+            local_csv = os.path.join(local_dir, local_name)
+            if not os.path.isfile(local_csv):
+                try:
+                    ok = repo.download_csv_gunzipped(storage_path, local_csv)
+                    if ok:
+                        _log.info("sync_down_device: downloaded %s", local_name)
+                        downloaded += 1
+                except Exception as exc:
+                    errors.append(f"download {storage_path}: {exc}")
+
+    return {"downloaded": downloaded, "errors": errors}
+
+
 class SupabaseSyncDownWorker(QtCore.QThread):
     """Background worker that downloads remote temperature test sessions not present locally."""
 
@@ -880,13 +953,6 @@ class SupabaseSyncDownWorker(QtCore.QThread):
         self.local_dir = str(local_dir or "")
 
     def run(self) -> None:
-        import json
-        import logging
-
-        _log = logging.getLogger(__name__)
-        downloaded = 0
-        errors: List[str] = []
-
         try:
             from ...infra.supabase_temp_repo import SupabaseTempRepository
 
@@ -895,167 +961,12 @@ class SupabaseSyncDownWorker(QtCore.QThread):
                 self.finished_with_result.emit({"downloaded": 0, "errors": []})
                 return
 
-            local_dir = self.local_dir
-            device_id = self.device_id
-            os.makedirs(local_dir, exist_ok=True)
-
-            # 1) List remote sessions for this device.
-            sessions = repo.list_sessions_for_device(device_id)
-            if not sessions:
-                self.finished_with_result.emit({"downloaded": 0, "errors": []})
-                return
-
-            # 2) Fetch processing runs in one batch.
-            session_map: Dict[str, dict] = {}
-            session_ids: List[str] = []
-            for s in sessions:
-                sid = str(s.get("id") or "")
-                if sid:
-                    session_ids.append(sid)
-                    session_map[sid] = s
-
-            runs = repo.list_runs_for_sessions(session_ids)
-            runs_by_session: Dict[str, List[dict]] = {}
-            for r in runs:
-                sid = str(r.get("session_id") or "")
-                runs_by_session.setdefault(sid, []).append(r)
-
-            # 3) For each session, ensure local meta + CSV files exist.
-            for s in sessions:
-                sid = str(s.get("id") or "")
-                capture_name = str(s.get("capture_name") or "")
-                if not capture_name:
-                    continue
-
-                meta_filename = f"{capture_name}.meta.json"
-                local_meta = os.path.join(local_dir, meta_filename)
-
-                # Reconstruct meta JSON from DB data if not present locally.
-                if not os.path.isfile(local_meta):
-                    try:
-                        meta = {
-                            "device_id": device_id,
-                            "capture_name": capture_name,
-                            "model_id": s.get("model_id"),
-                            "tester_name": s.get("tester_name"),
-                            "body_weight_n": s.get("body_weight_n"),
-                            "avg_temp": s.get("avg_temp"),
-                            "short_label": s.get("short_label"),
-                            "date": s.get("date"),
-                            "started_at_ms": s.get("started_at_ms"),
-                        }
-                        meta = {k: v for k, v in meta.items() if v is not None}
-                        os.makedirs(os.path.dirname(local_meta), exist_ok=True)
-                        with open(local_meta, "w", encoding="utf-8") as fh:
-                            json.dump(meta, fh, indent=2, sort_keys=True)
-                        downloaded += 1
-                    except Exception as exc:
-                        errors.append(f"meta reconstruct {capture_name}: {exc}")
-                        continue
-
-                # Download CSVs from processing runs.
-                session_runs = runs_by_session.get(sid, [])
-                for run in session_runs:
-                    for key in ("trimmed_csv_storage_path", "processed_csv_storage_path"):
-                        storage_path = str(run.get(key) or "")
-                        if not storage_path:
-                            continue
-                        # Derive local filename by stripping .gz suffix.
-                        remote_basename = os.path.basename(storage_path)
-                        if remote_basename.endswith(".gz"):
-                            local_name = remote_basename[:-3]
-                        else:
-                            local_name = remote_basename
-                        local_csv = os.path.join(local_dir, local_name)
-                        if os.path.isfile(local_csv):
-                            continue
-                        try:
-                            if remote_basename.endswith(".gz"):
-                                ok = repo.download_csv_gunzipped(storage_path, local_csv)
-                            else:
-                                ok = repo.download_file(storage_path, local_csv)
-                            if ok:
-                                downloaded += 1
-                        except Exception as exc:
-                            errors.append(f"download {storage_path}: {exc}")
-
-                # Update local meta with processing run info if we downloaded new files.
-                if session_runs and os.path.isfile(local_meta):
-                    try:
-                        with open(local_meta, "r", encoding="utf-8") as fh:
-                            meta = json.load(fh) or {}
-                        changed = False
-                        for run in session_runs:
-                            if bool(run.get("is_baseline")):
-                                baseline = meta.get("processed_baseline")
-                                if not isinstance(baseline, dict):
-                                    baseline = {}
-                                trimmed_sp = str(run.get("trimmed_csv_storage_path") or "")
-                                processed_sp = str(run.get("processed_csv_storage_path") or "")
-                                if trimmed_sp:
-                                    name = os.path.basename(trimmed_sp)
-                                    if name.endswith(".gz"):
-                                        name = name[:-3]
-                                    if not baseline.get("trimmed_csv"):
-                                        baseline["trimmed_csv"] = name
-                                        changed = True
-                                if processed_sp:
-                                    name = os.path.basename(processed_sp)
-                                    if name.endswith(".gz"):
-                                        name = name[:-3]
-                                    if not baseline.get("processed_off"):
-                                        baseline["processed_off"] = name
-                                        changed = True
-                                if changed:
-                                    meta["processed_baseline"] = baseline
-                        if changed:
-                            with open(local_meta, "w", encoding="utf-8") as fh:
-                                json.dump(meta, fh, indent=2, sort_keys=True)
-                    except Exception:
-                        pass
-
-                # --- Repair: create trimmed CSV from raw if missing ---
-                if capture_name and os.path.isfile(local_meta):
-                    try:
-                        with open(local_meta, "r", encoding="utf-8") as fh:
-                            meta = json.load(fh) or {}
-                        baseline = meta.get("processed_baseline")
-                        if not isinstance(baseline, dict):
-                            baseline = {}
-                        has_trimmed = bool(baseline.get("trimmed_csv"))
-                        trimmed_on_disk = False
-                        if has_trimmed:
-                            trimmed_on_disk = os.path.isfile(
-                                os.path.join(local_dir, str(baseline.get("trimmed_csv") or ""))
-                            )
-                        if not has_trimmed or not trimmed_on_disk:
-                            raw_csv = os.path.join(local_dir, f"{capture_name}.csv")
-                            if os.path.isfile(raw_csv):
-                                import time as _time
-                                trimmed_stem = capture_name.replace("temp-raw-", "temp-trimmed-")
-                                trimmed_csv = os.path.join(local_dir, f"{trimmed_stem}.csv")
-                                if not os.path.isfile(trimmed_csv):
-                                    try:
-                                        from ...app_services.repositories.csv_transform_repository import CsvTransformRepository
-                                        CsvTransformRepository().downsample_csv_to_50hz(raw_csv, trimmed_csv)
-                                    except Exception:
-                                        trimmed_csv = ""
-                                if trimmed_csv and os.path.isfile(trimmed_csv):
-                                    baseline["trimmed_csv"] = f"{trimmed_stem}.csv"
-                                    baseline["updated_at_ms"] = int(_time.time() * 1000)
-                                    meta["processed_baseline"] = baseline
-                                    with open(local_meta, "w", encoding="utf-8") as fh:
-                                        json.dump(meta, fh, indent=2, sort_keys=True)
-                                    downloaded += 1
-                    except Exception:
-                        pass
-
+            result = sync_down_device(repo, self.device_id, self.local_dir)
+            self.finished_with_result.emit(result)
         except Exception as exc:
             import logging
             logging.getLogger(__name__).warning("SupabaseSyncDownWorker failed: %s", exc)
-            errors.append(str(exc))
-
-        self.finished_with_result.emit({"downloaded": downloaded, "errors": errors})
+            self.finished_with_result.emit({"downloaded": 0, "errors": [str(exc)]})
 
 
 class BackgroundSyncWorker(QtCore.QThread):
@@ -1121,6 +1032,12 @@ class BackgroundSyncWorker(QtCore.QThread):
                     _log.info("BackgroundSync: organized %d misplaced files", org["moved"])
             except Exception as exc:
                 _log.debug("BackgroundSync: organize pass failed: %s", exc)
+            try:
+                cre = _create_missing_meta_files(root)
+                if cre.get("created"):
+                    _log.info("BackgroundSync: created %d missing meta files", cre["created"])
+            except Exception as exc:
+                _log.debug("BackgroundSync: create-missing-meta pass failed: %s", exc)
             try:
                 rep = _repair_temp_files(root)
                 if rep.get("trimmed_created") or rep.get("avg_temp_filled"):
@@ -1244,140 +1161,18 @@ class BackgroundSyncWorker(QtCore.QThread):
                 remote_device_ids = repo.list_all_device_ids()
             except Exception:
                 remote_device_ids = []
-            # Merge with local device dirs so we don't miss anything.
             local_device_ids = {os.path.basename(d) for d in _listdir_dirs(root)}
             all_device_ids = sorted(local_device_ids | set(remote_device_ids))
 
             for device_id in all_device_ids:
                 device_dir = os.path.join(root, device_id)
                 try:
-                    sessions = repo.list_sessions_for_device(device_id)
-                    if not sessions:
-                        continue
-
-                    # Filter out sessions we already uploaded this run — they're in sync.
-                    sessions = [
-                        s for s in sessions
-                        if str(s.get("capture_name") or "") not in uploaded_captures
-                    ]
-                    if not sessions:
-                        continue
-
                     self.sync_progress.emit(f"Downloading {device_id} tests\u2026", "info")
-
-                    # Batch-fetch processing runs for all sessions so we
-                    # can download trimmed CSVs alongside meta reconstruction.
-                    session_map: dict = {}
-                    session_ids: list = []
-                    for s in sessions:
-                        sid = str(s.get("id") or "")
-                        if sid:
-                            session_ids.append(sid)
-                            session_map[sid] = s
-                    runs = repo.list_runs_for_sessions(session_ids) if session_ids else []
-                    runs_by_session: dict = {}
-                    for r in runs:
-                        sid = str(r.get("session_id") or "")
-                        runs_by_session.setdefault(sid, []).append(r)
-
-                    for s in sessions:
-                        sid = str(s.get("id") or "")
-                        capture_name = str(s.get("capture_name") or "")
-                        if not capture_name:
-                            continue
-                        local_meta = os.path.join(device_dir, f"{capture_name}.meta.json")
-
-                        # --- Reconstruct meta.json if missing ---
-                        if not os.path.isfile(local_meta):
-                            meta = {
-                                "device_id": device_id,
-                                "capture_name": capture_name,
-                                "model_id": s.get("model_id"),
-                                "tester_name": s.get("tester_name"),
-                                "body_weight_n": s.get("body_weight_n"),
-                                "avg_temp": s.get("avg_temp"),
-                                "short_label": s.get("short_label"),
-                                "date": s.get("date"),
-                                "started_at_ms": s.get("started_at_ms"),
-                                "synced_at_ms": int(_time.time() * 1000),
-                            }
-                            meta = {k: v for k, v in meta.items() if v is not None}
-                            os.makedirs(device_dir, exist_ok=True)
-                            with open(local_meta, "w", encoding="utf-8") as fh:
-                                json.dump(meta, fh, indent=2, sort_keys=True)
-                            downloaded += 1
-
-                        # --- Download trimmed CSVs from processing runs ---
-                        for run in runs_by_session.get(sid, []):
-                            storage_path = str(run.get("trimmed_csv_storage_path") or "")
-                            if not storage_path:
-                                continue
-                            remote_basename = os.path.basename(storage_path)
-                            local_name = remote_basename[:-3] if remote_basename.endswith(".gz") else remote_basename
-                            local_csv = os.path.join(device_dir, local_name)
-                            if os.path.isfile(local_csv):
-                                continue
-                            try:
-                                if remote_basename.endswith(".gz"):
-                                    ok = repo.download_csv_gunzipped(storage_path, local_csv)
-                                else:
-                                    ok = repo.download_file(storage_path, local_csv)
-                                if ok:
-                                    _log.info("BackgroundSync: downloaded trimmed CSV %s", local_name)
-                                    downloaded += 1
-                                    # Update local meta with trimmed CSV info.
-                                    try:
-                                        with open(local_meta, "r", encoding="utf-8") as fh:
-                                            lm = json.load(fh) or {}
-                                        bl = lm.get("processed_baseline")
-                                        if not isinstance(bl, dict):
-                                            bl = {}
-                                        if not bl.get("trimmed_csv"):
-                                            bl["trimmed_csv"] = local_name
-                                            bl.setdefault("updated_at_ms", int(_time.time() * 1000))
-                                            lm["processed_baseline"] = bl
-                                            with open(local_meta, "w", encoding="utf-8") as fh:
-                                                json.dump(lm, fh, indent=2, sort_keys=True)
-                                    except Exception:
-                                        pass
-                            except Exception as exc:
-                                _log.debug("BackgroundSync: CSV download failed %s: %s", storage_path, exc)
-
-                        # --- Repair: create trimmed CSV from raw if not downloaded ---
-                        if capture_name and os.path.isfile(local_meta):
-                            try:
-                                with open(local_meta, "r", encoding="utf-8") as fh:
-                                    lm = json.load(fh) or {}
-                                bl = lm.get("processed_baseline")
-                                if not isinstance(bl, dict):
-                                    bl = {}
-                                has_trimmed = bool(bl.get("trimmed_csv"))
-                                trimmed_on_disk = False
-                                if has_trimmed:
-                                    trimmed_on_disk = os.path.isfile(
-                                        os.path.join(device_dir, str(bl.get("trimmed_csv") or ""))
-                                    )
-                                if not has_trimmed or not trimmed_on_disk:
-                                    raw_csv = os.path.join(device_dir, f"{capture_name}.csv")
-                                    if os.path.isfile(raw_csv):
-                                        trimmed_stem = capture_name.replace("temp-raw-", "temp-trimmed-")
-                                        trimmed_csv = os.path.join(device_dir, f"{trimmed_stem}.csv")
-                                        if not os.path.isfile(trimmed_csv):
-                                            try:
-                                                from ...app_services.repositories.csv_transform_repository import CsvTransformRepository
-                                                CsvTransformRepository().downsample_csv_to_50hz(raw_csv, trimmed_csv)
-                                                _log.info("BackgroundSync: created trimmed CSV for downloaded session %s", capture_name)
-                                            except Exception:
-                                                trimmed_csv = ""
-                                        if trimmed_csv and os.path.isfile(trimmed_csv):
-                                            bl["trimmed_csv"] = f"{trimmed_stem}.csv"
-                                            bl.setdefault("updated_at_ms", int(_time.time() * 1000))
-                                            lm["processed_baseline"] = bl
-                                            with open(local_meta, "w", encoding="utf-8") as fh:
-                                                json.dump(lm, fh, indent=2, sort_keys=True)
-                                            downloaded += 1
-                            except Exception as exc:
-                                _log.debug("BackgroundSync: trim-repair failed for downloaded %s: %s", capture_name, exc)
+                    result = sync_down_device(
+                        repo, device_id, device_dir,
+                        skip_captures=uploaded_captures, log=_log,
+                    )
+                    downloaded += int(result.get("downloaded", 0))
                 except Exception as exc:
                     _log.debug("BackgroundSync: sync-down failed for %s: %s", device_id, exc)
 
@@ -1647,6 +1442,90 @@ def _organize_temp_files(root: str) -> dict:
             errors.append(f"move orphan {csv_path}: {exc}")
 
     return {"moved": moved, "errors": errors}
+
+
+def _create_missing_meta_files(root: str) -> dict:
+    """Auto-generate ``.meta.json`` for orphan ``temp-raw-*.csv`` files.
+
+    Parses the filename to extract ``device_id`` and timestamp, then
+    estimates ``avg_temp`` from the CSV data.  Returns
+    ``{"created": int, "errors": list[str]}``.
+    """
+    import json
+    import logging
+    import re
+    import time as _time
+
+    _log = logging.getLogger(__name__)
+    created = 0
+    errors: List[str] = []
+
+    if not os.path.isdir(root):
+        return {"created": created, "errors": errors}
+
+    # Pattern: temp-raw-<device_id>-<YYYYMMDD>-<HHMMSS>.csv
+    # device_id can contain dots/hex, e.g. "06.00000042"
+    fn_re = re.compile(
+        r"^temp-raw-(.+)-(\d{8})-(\d{6})\.csv$", re.IGNORECASE
+    )
+
+    for device_dir_name in os.listdir(root):
+        device_dir = os.path.join(root, device_dir_name)
+        if not os.path.isdir(device_dir):
+            continue
+        for fname in os.listdir(device_dir):
+            if not fname.lower().startswith("temp-raw-") or not fname.lower().endswith(".csv"):
+                continue
+            meta_name = fname[:-4] + ".meta.json"  # temp-raw-X.csv → temp-raw-X.meta.json
+            meta_path = os.path.join(device_dir, meta_name)
+            if os.path.isfile(meta_path):
+                continue  # already has meta
+
+            csv_path = os.path.join(device_dir, fname)
+            stem = fname[:-4]  # strip .csv
+
+            m = fn_re.match(fname)
+            if not m:
+                errors.append(f"unparseable filename: {fname}")
+                continue
+
+            device_id = m.group(1)
+            date_str = m.group(2)  # YYYYMMDD
+            time_str = m.group(3)  # HHMMSS
+
+            # Build started_at_ms from timestamp.
+            try:
+                import datetime
+                dt = datetime.datetime.strptime(
+                    f"{date_str}{time_str}", "%Y%m%d%H%M%S"
+                )
+                started_at_ms = int(dt.timestamp() * 1000)
+            except Exception:
+                started_at_ms = None
+
+            date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+            avg_temp = _estimate_avg_temp(csv_path)
+
+            meta = {
+                "capture_name": stem,
+                "device_id": device_id,
+                "date": date_formatted,
+                "avg_temp": avg_temp,
+                "session_type": "temperature_test",
+            }
+            if started_at_ms is not None:
+                meta["started_at_ms"] = started_at_ms
+
+            try:
+                with open(meta_path, "w", encoding="utf-8") as fh:
+                    json.dump(meta, fh, indent=2, sort_keys=True)
+                created += 1
+                _log.info("Created missing meta for %s", stem)
+            except Exception as exc:
+                errors.append(f"write meta {stem}: {exc}")
+
+    return {"created": created, "errors": errors}
 
 
 def _repair_temp_files(root: str) -> dict:
