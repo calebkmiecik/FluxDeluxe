@@ -12,6 +12,7 @@ from ..presenters.grid_presenter import GridPresenter
 from .temp_test_controller_actions import TempTestControllerActionsMixin
 from .temp_test_workers import (
     BackgroundSyncWorker,
+    BatchProcessBaselineWorker,
     BiasComputeWorker,
     PlateTypeAutoSearchWorker,
     PlateTypeDistinctCoefsWorker,
@@ -606,6 +607,33 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         Start background bias compute for the given device (room-temp baseline bias).
         """
         self._start_bias_compute(str(device_id or ""))
+
+    def process_baselines_for_plate_type(self) -> None:
+        """Process baseline (temp-off) CSVs for all tests of the current plate type group."""
+        plate_type = self.current_plate_type()
+        if not plate_type:
+            self.processing_status.emit({"status": "error", "message": "Missing plate type (no device selected)."})
+            return
+
+        if getattr(self, "_baseline_worker", None) and self._baseline_worker.isRunning():
+            self.processing_status.emit({"status": "error", "message": "Baseline processing already running"})
+            return
+
+        worker = BatchProcessBaselineWorker(self.testing, [plate_type])
+        self._baseline_worker = worker
+        worker.progress.connect(self.processing_status.emit)
+        worker.finished.connect(lambda: setattr(self, "_baseline_worker", None))
+        worker.finished_with_result.connect(self._on_baseline_batch_done)
+        worker.start()
+
+    def _on_baseline_batch_done(self, result: dict) -> None:
+        processed = result.get("processed", 0)
+        skipped = result.get("skipped", 0)
+        errors = result.get("errors", [])
+        msg = f"Baseline processing complete: {processed} processed, {skipped} skipped"
+        if errors:
+            msg += f", {len(errors)} errors"
+        self.processing_status.emit({"status": "completed", "message": msg})
 
     def run_coefs_across_plate_type(self, coefs: dict, mode: str) -> None:
         """

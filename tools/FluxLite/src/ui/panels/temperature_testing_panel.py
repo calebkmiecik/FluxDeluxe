@@ -842,10 +842,18 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             "Keeps raw CSVs and their meta files. Next sync re-trims and re-uploads."
         )
 
+        self.btn_process_baselines = QtWidgets.QPushButton("Process Baselines")
+        self.btn_process_baselines.setToolTip(
+            "Process baseline (temp-off) CSVs for all tests of this plate type group.\n"
+            "Groups: 06 | 07+11 | 08+12 | 10\n"
+            "Required before running analysis scripts on a new machine."
+        )
+
         btn_row1 = QtWidgets.QHBoxLayout()
         btn_row1.setSpacing(4)
         btn_row1.addWidget(self.btn_run, 1)
         btn_row1.addWidget(self.btn_run_plate_type, 1)
+        btn_row1.addWidget(self.btn_process_baselines, 1)
         left_col.addLayout(btn_row1)
 
         self.btn_thermal_drift = QtWidgets.QPushButton("Thermal Drift")
@@ -922,6 +930,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         self.btn_refresh.clicked.connect(self._on_refresh_clicked)
         self.btn_run.clicked.connect(self._on_run_clicked)
         self.btn_run_plate_type.clicked.connect(self._on_run_plate_type_clicked)
+        self.btn_process_baselines.clicked.connect(self._on_process_baselines_clicked)
         self.btn_add_tests.clicked.connect(self._on_add_tests_clicked)
         self.btn_reset_local.clicked.connect(self._on_reset_local_clicked)
         self.btn_thermal_drift.clicked.connect(self._on_thermal_drift_clicked)
@@ -1079,6 +1088,29 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, "Batch Rollup", str(exc))
             except Exception:
                 pass
+
+    def _on_process_baselines_clicked(self) -> None:
+        """Process baseline CSVs for all tests of the current plate type group."""
+        if not self.controller:
+            return
+        from ..controllers.temp_test_workers import BatchProcessBaselineWorker
+        pt = str(self.controller.current_plate_type() or "").strip()
+        if not pt:
+            QtWidgets.QMessageBox.warning(self, "Process Baselines", "No plate type selected (select a device first).")
+            return
+        group = BatchProcessBaselineWorker.SIZE_GROUPS.get(pt, [pt])
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Process Baselines",
+            f"Process baseline (temp-off) CSVs for all tests of plate type(s): {', '.join(group)}?\n\n"
+            "This requires the DynamoPy backend to be running.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+        self.metrics_widget.set_big_picture_status("Processing baselines…")
+        self.controller.process_baselines_for_plate_type()
 
     def _on_reset_top3_clicked(self) -> None:
         """
