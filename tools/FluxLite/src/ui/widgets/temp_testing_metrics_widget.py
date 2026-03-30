@@ -159,6 +159,27 @@ class TempTestingMetricsWidget(QtWidgets.QWidget):
         self.lbl_big_status = QtWidgets.QLabel("—")
         big_layout.addWidget(self.lbl_big_status)
 
+        # Search progress bars (hidden until search is running)
+        self._search_progress_frame = QtWidgets.QFrame()
+        sp_layout = QtWidgets.QGridLayout(self._search_progress_frame)
+        sp_layout.setContentsMargins(0, 0, 0, 0)
+        sp_layout.setSpacing(3)
+
+        sp_layout.addWidget(QtWidgets.QLabel("Devices:"), 0, 0)
+        self._prog_devices = QtWidgets.QProgressBar()
+        self._prog_devices.setTextVisible(True)
+        self._prog_devices.setFixedHeight(18)
+        sp_layout.addWidget(self._prog_devices, 0, 1)
+
+        sp_layout.addWidget(QtWidgets.QLabel("Tests:"), 1, 0)
+        self._prog_tests = QtWidgets.QProgressBar()
+        self._prog_tests.setTextVisible(True)
+        self._prog_tests.setFixedHeight(18)
+        sp_layout.addWidget(self._prog_tests, 1, 1)
+
+        self._search_progress_frame.setVisible(False)
+        big_layout.addWidget(self._search_progress_frame)
+
         # Post-processing correction controls
         corr_row = QtWidgets.QHBoxLayout()
         corr_row.setSpacing(6)
@@ -297,6 +318,20 @@ class TempTestingMetricsWidget(QtWidgets.QWidget):
     def set_big_picture_status(self, text: str) -> None:
         try:
             self.lbl_big_status.setText(str(text or "—"))
+        except Exception:
+            pass
+
+    def set_search_progress(self, *, device_index: int = 0, device_total: int = 0,
+                            test_index: int = 0, test_total: int = 0, visible: bool = True) -> None:
+        try:
+            self._search_progress_frame.setVisible(visible)
+            if visible:
+                self._prog_devices.setMaximum(max(device_total, 1))
+                self._prog_devices.setValue(device_index)
+                self._prog_devices.setFormat(f"%v / {device_total} devices")
+                self._prog_tests.setMaximum(max(test_total, 1))
+                self._prog_tests.setValue(test_index)
+                self._prog_tests.setFormat(f"%v / {test_total} tests")
         except Exception:
             pass
 

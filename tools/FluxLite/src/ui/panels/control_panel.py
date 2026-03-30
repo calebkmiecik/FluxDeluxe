@@ -507,9 +507,19 @@ class ControlPanel(QtWidgets.QWidget):
         self.state.display_mode = "single"
         self.config_changed.emit()
 
+    @staticmethod
+    def _camel_to_snake(name: str) -> str:
+        import re
+        s = re.sub(r"(?<=[a-z])([A-Z])", r"_\1", name)
+        s = re.sub(r"(?<=[a-zA-Z])(\d)", r"_\1", s)
+        return s.lower()
+
     def load_backend_config(self, config: dict) -> None:
         """Load backend config into UI controls."""
         try:
+            # Normalize camelCase keys from Dynamo to snake_case used by UI
+            config = {self._camel_to_snake(k): v for k, v in config.items()}
+
             # On first load, apply FluxLite defaults to backend
             if not self._config_loaded:
                 self.apply_fluxlite_defaults()

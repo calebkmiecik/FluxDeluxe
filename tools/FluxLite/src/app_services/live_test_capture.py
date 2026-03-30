@@ -48,6 +48,7 @@ class TemperatureLiveCaptureManager:
 
         # Configure backend capture settings prior to session (legacy behavior).
         try:
+            self._hw.update_dynamo_config("useTemperatureCorrection", False)
             self._hw.update_dynamo_config("autoSaveCsvs", True)
             self._hw.update_dynamo_config("csvSaveDirectory", str(resolved_dir))
             self._hw.update_dynamo_config("captureDetail", "allTemp")

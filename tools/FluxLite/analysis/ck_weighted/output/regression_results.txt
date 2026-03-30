@@ -1,0 +1,66 @@
+============================================================
+  All plates
+============================================================
+  64 test-stage points
+
+  Temp buckets (5F):
+     -35.0F: n= 4, avg_err=+8.66%, weight=0.250
+     -25.0F: n= 4, avg_err=+4.42%, weight=0.250
+     -20.0F: n=10, avg_err=+2.71%, weight=0.100
+     -15.0F: n= 8, avg_err=+1.04%, weight=0.125
+     -10.0F: n= 2, avg_err=+1.84%, weight=0.500
+      -5.0F: n= 4, avg_err=+0.31%, weight=0.250
+      +0.0F: n= 2, avg_err=+0.30%, weight=0.500
+      +5.0F: n=24, avg_err=+0.84%, weight=0.042
+     +10.0F: n= 4, avg_err=-2.36%, weight=0.250
+     +15.0F: n= 2, avg_err=+5.92%, weight=0.500
+
+  C+K model (weighted):
+    c = 0.001545
+    k = 0.000860
+    R2 = 0.0967
+
+  C-only model (weighted):
+    c = 0.001540
+    R2 = 0.0472
+
+  R2 improvement from k: +0.0495
+
+  Mean |error|:
+    No correction:  2.95%
+    After c:        2.29%
+    After c+k:      2.26%
+============================================================
+
+============================================================
+  Excluding 06.00000025
+============================================================
+  54 test-stage points
+
+  Temp buckets (5F):
+     -35.0F: n= 2, avg_err=+7.79%, weight=0.500
+     -25.0F: n= 4, avg_err=+4.42%, weight=0.250
+     -20.0F: n= 8, avg_err=+1.79%, weight=0.125
+     -15.0F: n= 8, avg_err=+1.04%, weight=0.125
+     -10.0F: n= 2, avg_err=+1.84%, weight=0.500
+      -5.0F: n= 4, avg_err=+0.31%, weight=0.250
+      +0.0F: n= 2, avg_err=+0.30%, weight=0.500
+      +5.0F: n=20, avg_err=-0.75%, weight=0.050
+     +10.0F: n= 4, avg_err=-2.36%, weight=0.250
+
+  C+K model (weighted):
+    c = 0.001855
+    k = 0.000156
+    R2 = 0.6689
+
+  C-only model (weighted):
+    c = 0.001854
+    R2 = 0.6664
+
+  R2 improvement from k: +0.0025
+
+  Mean |error|:
+    No correction:  2.03%
+    After c:        1.44%
+    After c+k:      1.44%
+============================================================

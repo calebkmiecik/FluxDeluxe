@@ -492,7 +492,10 @@ def assemble_dist(embedded_python: Path) -> None:
         print(f"  Copying tools -> {dest_tools}")
         shutil.copytree(
             src_tools, dest_tools,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns(
+                ".git", "__pycache__", "*.pyc",
+                "temp_testing", "discrete_temp_testing", "live_test_logs",
+            ),
         )
 
     # Copy .env (Supabase credentials etc.) into dist root so that

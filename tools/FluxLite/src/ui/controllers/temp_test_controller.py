@@ -24,6 +24,7 @@ from .temp_test_workers import (
     TemperatureAnalysisWorker,
     TemperatureAutoUpdateWorker,
     TemperatureImportWorker,
+    ThermalDriftWorker,
 )
 
 class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
@@ -57,6 +58,8 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
     auto_update_done = QtCore.Signal(dict)
     # Background sync progress: (message, level)
     bg_sync_status = QtCore.Signal(str, str)
+    # Thermal drift plot data
+    thermal_drift_ready = QtCore.Signal(dict)
 
     def __init__(self, testing_service: TestingService, hardware_service: HardwareService):
         super().__init__()
@@ -86,6 +89,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self._auto_search_worker: Optional[QtCore.QThread] = None
         self._import_worker: Optional[QtCore.QThread] = None
         self._auto_update_worker: Optional[QtCore.QThread] = None
+        self._thermal_drift_worker: Optional[ThermalDriftWorker] = None
 
         # Clear any retained state
         self._last_analysis_payload = None
@@ -663,7 +667,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             msg = str(payload.get("message") or "")
             if msg:
                 try:
-                    self.auto_search_status.emit({"status": "completed" if ok else "error", "message": msg})
+                    self.auto_search_status.emit({"status": "completed" if ok else "error", "message": msg, "search_done": True})
                 except Exception:
                     pass
 
@@ -718,4 +722,21 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             self.rollup_ready.emit(dict(res or {}))
         except Exception:
             pass
+
+    def plot_thermal_drift(self, device_id: str = None) -> None:
+        """Launch a worker to gather signed error vs temperature for the current plate type."""
+        plate_type = self.current_plate_type()
+        if not plate_type:
+            self.processing_status.emit({"status": "error", "message": "No plate type selected."})
+            return
+        if self._thermal_drift_worker and self._thermal_drift_worker.isRunning():
+            self.processing_status.emit({"status": "error", "message": "Thermal drift analysis already running."})
+            return
+
+        worker = ThermalDriftWorker(self.testing, plate_type, device_id=device_id)
+        self._thermal_drift_worker = worker
+        worker.progress.connect(lambda msg: self.processing_status.emit({"status": "running", "message": msg}))
+        worker.result_ready.connect(self.thermal_drift_ready.emit)
+        worker.finished.connect(lambda: setattr(self, "_thermal_drift_worker", None))
+        worker.start()
 

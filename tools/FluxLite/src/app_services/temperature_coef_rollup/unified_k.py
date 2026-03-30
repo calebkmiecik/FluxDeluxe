@@ -107,7 +107,13 @@ def evaluate_unified_k_bias_metrics(
     # Build a run-like list for eligibility filtering (device_id + temp_f).
     run_like = []
     for e in eval_entries or []:
-        run_like.append({"device_id": e.get("device_id"), "temp_f": (e.get("meta") or {}).get("temp_f")})
+        meta = e.get("meta") or {}
+        temp_f = meta.get("temp_f") or meta.get("avg_temp") or meta.get("room_temperature_f")
+        try:
+            temp_f = float(temp_f) if temp_f is not None else None
+        except (TypeError, ValueError):
+            temp_f = None
+        run_like.append({"device_id": e.get("device_id"), "temp_f": temp_f})
     eligible_devices, _eligible, _temps = eligible_runs_by_device_and_temp(runs=run_like, min_distinct_temps_per_device=2)
     if eligible_devices < 2:
         return None

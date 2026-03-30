@@ -10,6 +10,7 @@ from ..analysis.temperature_analyzer import TemperatureAnalyzer
 from ..repositories.test_file_repository import TestFileRepository
 from ..temperature_baseline_bias_service import TemperatureBaselineBiasService
 from ..temperature_processing_service import TemperatureProcessingService
+from .scoring import score_run_against_bias
 from .unified_k import compute_c_and_k_from_stage_split_rows, evaluate_unified_k_bias_metrics, save_cache
 
 
@@ -141,6 +142,12 @@ def _ensure_eval_scores_for_coef(
     return selected_scores
 
 
+_SEED_COEFS: Dict[str, float] = {
+    "06": 0.002, "07": 0.0025, "08": 0.0009,
+    "10": 0.002, "11": 0.0025, "12": 0.0009,
+}
+
+
 def _best_unified_coef_for_test_stage_mae(
     *,
     repo: TestFileRepository,
@@ -156,19 +163,34 @@ def _best_unified_coef_for_test_stage_mae(
     eval_cache: dict,
 ) -> Dict[str, object]:
     """
-    Find best unified coef (x=y=z) for a single test+stage by minimizing mean_abs.
-
-    Assumption: MAE is unimodal over the coef range, so we can narrow the search interval
-    when MAE gets worse (golden-section style). We still quantize candidates to 0.0001.
+    Find best unified coef (x=y=z) for a single test+stage by bisecting on
+    mean_signed error.  Signed error is monotonically decreasing in coef, so
+    we just bracket the zero crossing and bisect.
 
     Strategy:
-      - Golden-section search over 0.0000..0.0200 (quantized to 0.0001)
+      - Seed from known plate-type coefs (e.g. 0.002 for type 06)
+      - Coarse steps (0.0005) to bracket the sign flip
+      - Linear-interpolation + bisection to refine to 0.0001
     """
     sk = str(stage_key or "").strip().lower()
     if sk not in ("db", "bw"):
         raise ValueError(f"Unsupported stage_key: {stage_key}")
 
-    def _score_for(c: float) -> Optional[float]:
+    plate_type = str(device_id or "")[:2]
+    seed = _SEED_COEFS.get(plate_type, 0.002)
+
+    min_c = 0.0
+    max_c = 0.005
+    coarse_step = 0.0005
+    fine_step = 0.0001
+
+    # Track every evaluated point: coef -> (mean_signed, mean_abs)
+    evaluated: Dict[float, Tuple[float, float]] = {}
+
+    def _eval(c: float) -> Optional[Tuple[float, float]]:
+        c = max(min_c, min(max_c, _quantize(c, fine_step)))
+        if c in evaluated:
+            return evaluated[c]
         scores = _ensure_eval_scores_for_coef(
             repo=repo,
             analyzer=analyzer,
@@ -184,122 +206,96 @@ def _best_unified_coef_for_test_stage_mae(
         )
         if not isinstance(scores, dict):
             return None
-        s = scores.get(sk) if isinstance(scores.get(sk), dict) else None
+        s = scores.get(sk)
         if not isinstance(s, dict):
             return None
         try:
-            return float(s.get("mean_abs"))
-        except Exception:
+            signed = float(s["mean_signed"])
+            mae = float(s["mean_abs"])
+        except (KeyError, TypeError, ValueError):
             return None
+        evaluated[c] = (signed, mae)
+        return (signed, mae)
 
-    best_c: Optional[float] = None
-    best_mae: Optional[float] = None
+    def _best_result() -> Dict[str, object]:
+        if not evaluated:
+            return {"ok": False, "best_coef": None, "best_mean_abs": None}
+        best_c, (_, best_mae) = min(evaluated.items(), key=lambda x: abs(x[1][0]))
+        return {"ok": True, "best_coef": float(best_c), "best_mean_abs": float(best_mae)}
 
-    # Golden-section search (discrete, quantized)
-    min_c = 0.0
-    max_c = 0.02
-    step = 0.0001
-
-    lo = _quantize(min_c, step)
-    hi = _quantize(max_c, step)
-
-    # Golden ratio conjugate (~0.618) for interval shrinking.
-    gr = 0.6180339887498949
-
-    evaluated: set[float] = set()
-
-    def _eval_c(c: float) -> Optional[float]:
-        cc = max(min_c, min(max_c, _quantize(c, step)))
-        if cc in evaluated:
-            return None  # caller can decide whether to search neighbor
-        evaluated.add(cc)
-        mae = _score_for(cc)
-        nonlocal best_c, best_mae
-        if mae is not None:
-            if best_mae is None or float(mae) < float(best_mae):
-                best_mae = float(mae)
-                best_c = float(cc)
-        return mae
-
-    def _nearest_unevaluated(start: float, lo_b: float, hi_b: float) -> Optional[float]:
-        # Scan outward by 0.0001 for an unevaluated point.
-        start_q = _quantize(start, step)
-        if lo_b <= start_q <= hi_b and start_q not in evaluated:
-            return start_q
-        max_steps = int(round((hi_b - lo_b) / step))
-        for j in range(1, max_steps + 1):
-            a = _quantize(start_q - j * step, step)
-            b = _quantize(start_q + j * step, step)
-            if a >= lo_b and a <= hi_b and a not in evaluated:
-                return a
-            if b >= lo_b and b <= hi_b and b not in evaluated:
-                return b
-        return None
-
-    # Evaluate endpoints once (guards against minimum at the boundary).
-    _eval_c(lo)
-    _eval_c(hi)
-
-    # Initialize two interior points.
-    x1 = _quantize(hi - gr * (hi - lo), step)
-    x2 = _quantize(lo + gr * (hi - lo), step)
-
-    # Ensure distinct points.
-    if x1 == x2:
-        x2 = _quantize(x1 + step, step)
-
-    # Evaluate interior points.
-    x1n = _nearest_unevaluated(x1, lo, hi)
-    if x1n is not None:
-        _eval_c(x1n)
-        x1 = x1n
-    x2n = _nearest_unevaluated(x2, lo, hi)
-    if x2n is not None:
-        _eval_c(x2n)
-        x2 = x2n
-
-    # Iterate until interval is tight.
-    for _ in range(120):
-        if (hi - lo) <= step:
-            break
-
-        f1 = _score_for(x1)
-        f2 = _score_for(x2)
-        # If scores are missing (e.g. no data), try to move to nearby points.
-        if f1 is None:
-            alt = _nearest_unevaluated(x1, lo, hi)
-            if alt is None:
-                break
-            x1 = alt
-            f1 = _eval_c(x1)
-        if f2 is None:
-            alt = _nearest_unevaluated(x2, lo, hi)
-            if alt is None:
-                break
-            x2 = alt
-            f2 = _eval_c(x2)
-
-        if f1 is None or f2 is None:
-            break
-
-        # Narrow towards the smaller MAE side (unimodal assumption).
-        if float(f1) > float(f2):
-            lo = x1
-            x1 = x2
-            x2 = _quantize(lo + gr * (hi - lo), step)
-            x2 = _nearest_unevaluated(x2, lo, hi) or x2
-            _eval_c(x2)
-        else:
-            hi = x2
-            x2 = x1
-            x1 = _quantize(hi - gr * (hi - lo), step)
-            x1 = _nearest_unevaluated(x1, lo, hi) or x1
-            _eval_c(x1)
-
-    if best_c is None:
+    # --- Phase 1: Evaluate seed ---
+    r = _eval(seed)
+    if r is None:
         return {"ok": False, "best_coef": None, "best_mean_abs": None}
+    s_seed = r[0]
 
-    return {"ok": True, "best_coef": float(best_c), "best_mean_abs": float(best_mae) if best_mae is not None else None}
+    if abs(s_seed) < 0.05:
+        return _best_result()
+
+    # --- Phase 2: Bracket the zero crossing with coarse steps ---
+    lo_c: Optional[float] = None
+    lo_s: Optional[float] = None
+    hi_c: Optional[float] = None
+    hi_s: Optional[float] = None
+
+    if s_seed > 0:
+        # Signed error positive → need larger coef. Step upward.
+        lo_c, lo_s = seed, s_seed
+        c = _quantize(seed + coarse_step, fine_step)
+        while c <= max_c:
+            r = _eval(c)
+            if r is not None:
+                if r[0] <= 0:
+                    hi_c, hi_s = c, r[0]
+                    break
+                lo_c, lo_s = c, r[0]
+            c = _quantize(c + coarse_step, fine_step)
+        else:
+            # No sign flip. Also try the boundary.
+            r = _eval(max_c)
+            if r is not None and r[0] <= 0:
+                hi_c, hi_s = max_c, r[0]
+    else:
+        # Signed error negative → need smaller coef. Step downward.
+        hi_c, hi_s = seed, s_seed
+        c = _quantize(seed - coarse_step, fine_step)
+        while c >= min_c:
+            r = _eval(c)
+            if r is not None:
+                if r[0] >= 0:
+                    lo_c, lo_s = c, r[0]
+                    break
+                hi_c, hi_s = c, r[0]
+            c = _quantize(c - coarse_step, fine_step)
+        else:
+            r = _eval(min_c)
+            if r is not None and r[0] >= 0:
+                lo_c, lo_s = min_c, r[0]
+
+    if lo_c is None or hi_c is None:
+        return _best_result()
+
+    # --- Phase 3: Bisect within bracket ---
+    for _ in range(10):
+        if hi_c - lo_c <= fine_step:
+            break
+        # Linear interpolation to estimate zero crossing.
+        if lo_s != hi_s:
+            mid = lo_c + (hi_c - lo_c) * lo_s / (lo_s - hi_s)
+            mid = _quantize(mid, fine_step)
+            mid = max(lo_c + fine_step, min(hi_c - fine_step, mid))
+        else:
+            mid = _quantize((lo_c + hi_c) / 2, fine_step)
+
+        r = _eval(mid)
+        if r is None:
+            break
+        if r[0] > 0:
+            lo_c, lo_s = mid, r[0]
+        else:
+            hi_c, hi_s = mid, r[0]
+
+    return _best_result()
 
 
 def export_stage_split_per_test_report(
@@ -379,10 +375,28 @@ def export_stage_split_per_test_report(
     errors: List[str] = []
     dumbbell_weight_n = float(getattr(config, "STABILIZER_45LB_WEIGHT_N", 206.3))
 
-    for di, device_id in enumerate(devices):
+    # Pre-count non-baseline tests per device for progress reporting.
+    _device_tests: List[Tuple[str, List[str]]] = []
+    for device_id in devices:
+        _bl_entries = repo.list_temperature_room_baseline_tests(device_id, min_temp_f=tmin, max_temp_f=tmax) or []
+        _bl_csvs = {str(e.get("csv_path") or "") for e in _bl_entries if str(e.get("csv_path") or "")}
+        _all_tests = repo.list_temperature_tests(device_id)
+        _non_bl = [t for t in _all_tests if t not in _bl_csvs]
+        if _non_bl:
+            _device_tests.append((device_id, _non_bl))
+
+    for di, (device_id, non_baseline_tests) in enumerate(_device_tests):
         if status_cb is not None:
             try:
-                status_cb({"status": "running", "message": f"Stage-split MAE: device {di+1}/{len(devices)} {device_id}", "progress": 1})
+                status_cb({
+                    "status": "running",
+                    "message": f"Stage-split MAE: device {di+1}/{len(_device_tests)} {device_id}",
+                    "progress": 1,
+                    "device_index": di,
+                    "device_total": len(_device_tests),
+                    "test_index": 0,
+                    "test_total": len(non_baseline_tests),
+                })
             except Exception:
                 pass
 
@@ -397,13 +411,7 @@ def export_stage_split_per_test_report(
             errors.append(f"{device_id}: bias cache missing bias map")
             continue
 
-        baseline_entries = repo.list_temperature_room_baseline_tests(device_id, min_temp_f=tmin, max_temp_f=tmax) or []
-        baseline_csvs = {str(e.get("csv_path") or "") for e in baseline_entries if str(e.get("csv_path") or "")}
-
-        tests = repo.list_temperature_tests(device_id)
-        for raw_csv in tests:
-            if raw_csv in baseline_csvs:
-                continue
+        for ti, raw_csv in enumerate(non_baseline_tests):
             meta = repo.load_temperature_meta_for_csv(raw_csv)
             if not meta:
                 continue
@@ -465,6 +473,19 @@ def export_stage_split_per_test_report(
                     "db_mean_abs": db_best.get("best_mean_abs"),
                 }
             )
+            if status_cb is not None:
+                try:
+                    status_cb({
+                        "status": "running",
+                        "message": f"{device_id}: {ti+1}/{len(non_baseline_tests)} tests",
+                        "device_index": di,
+                        "device_total": len(_device_tests),
+                        "test_index": ti + 1,
+                        "test_total": len(non_baseline_tests),
+                    })
+                except Exception:
+                    pass
+
             eval_entries.append(
                 {
                     "device_id": device_id,
