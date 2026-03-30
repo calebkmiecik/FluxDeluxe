@@ -883,14 +883,16 @@ def sync_down_device(
 
     os.makedirs(local_dir, exist_ok=True)
 
-    sessions = repo.list_sessions_for_device(device_id)
-    if not sessions:
+    all_sessions = repo.list_sessions_for_device(device_id)
+    if not all_sessions:
         return {"downloaded": 0, "errors": []}
 
+    # Build full lookup before filtering (needed by orphan-meta pass).
+    all_sessions_by_capture = {str(s.get("capture_name") or ""): s for s in all_sessions}
+
+    sessions = all_sessions
     if skip:
         sessions = [s for s in sessions if str(s.get("capture_name") or "") not in skip]
-    if not sessions:
-        return {"downloaded": 0, "errors": []}
 
     for s in sessions:
         capture_name = str(s.get("capture_name") or "")
@@ -938,6 +940,48 @@ def sync_down_device(
                         downloaded += 1
                 except Exception as exc:
                     errors.append(f"download {storage_path}: {exc}")
+
+    # --- Orphan-meta pass: local metas that are missing their CSV ---
+    for fname in os.listdir(local_dir):
+        if not fname.endswith(".meta.json"):
+            continue
+        meta_path = os.path.join(local_dir, fname)
+        try:
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh) or {}
+        except Exception:
+            continue
+
+        capture_name = str(meta.get("capture_name") or "")
+        if not capture_name:
+            continue
+
+        # Check if at least a raw or trimmed CSV exists locally.
+        trimmed_name = capture_name.replace("temp-raw-", "temp-trimmed-")
+        raw_csv = os.path.join(local_dir, f"{capture_name}.csv")
+        trimmed_csv = os.path.join(local_dir, f"{trimmed_name}.csv")
+        if os.path.isfile(raw_csv) or os.path.isfile(trimmed_csv):
+            continue
+
+        # No CSV on disk — try to download from Supabase.
+        s = all_sessions_by_capture.get(capture_name)
+        if not s:
+            continue
+        storage_path = str(s.get("trimmed_csv_storage_path") or "")
+        if not storage_path:
+            continue
+        remote_basename = os.path.basename(storage_path)
+        local_name = remote_basename[:-3] if remote_basename.endswith(".gz") else remote_basename
+        local_csv = os.path.join(local_dir, local_name)
+        if os.path.isfile(local_csv):
+            continue
+        try:
+            ok = repo.download_csv_gunzipped(storage_path, local_csv)
+            if ok:
+                _log.info("sync_down_device: recovered missing CSV %s", local_name)
+                downloaded += 1
+        except Exception as exc:
+            errors.append(f"recover CSV {capture_name}: {exc}")
 
     return {"downloaded": downloaded, "errors": errors}
 
@@ -1036,16 +1080,26 @@ class BackgroundSyncWorker(QtCore.QThread):
                 cre = _create_missing_meta_files(root)
                 if cre.get("created"):
                     _log.info("BackgroundSync: created %d missing meta files", cre["created"])
+                    self.sync_progress.emit(f"Created {cre['created']} missing meta files", "info")
             except Exception as exc:
                 _log.debug("BackgroundSync: create-missing-meta pass failed: %s", exc)
             try:
                 rep = _repair_temp_files(root)
-                if rep.get("trimmed_created") or rep.get("avg_temp_filled"):
+                if rep.get("trimmed_created") or rep.get("avg_temp_filled") or rep.get("date_filled"):
                     _log.info(
-                        "BackgroundSync: repaired %d trimmed CSVs, %d avg_temp values",
+                        "BackgroundSync: repaired %d trimmed CSVs, %d avg_temp, %d date values",
                         rep.get("trimmed_created", 0),
                         rep.get("avg_temp_filled", 0),
+                        rep.get("date_filled", 0),
                     )
+                    parts = []
+                    if rep.get("trimmed_created"):
+                        parts.append(f"{rep['trimmed_created']} trimmed CSVs")
+                    if rep.get("avg_temp_filled"):
+                        parts.append(f"{rep['avg_temp_filled']} temps")
+                    if rep.get("date_filled"):
+                        parts.append(f"{rep['date_filled']} dates")
+                    self.sync_progress.emit(f"Repaired: {', '.join(parts)}", "info")
             except Exception as exc:
                 _log.debug("BackgroundSync: repair pass failed: %s", exc)
 
@@ -1056,6 +1110,13 @@ class BackgroundSyncWorker(QtCore.QThread):
                 remote_captures = repo.list_all_capture_names()
             except Exception:
                 remote_captures = set()
+
+            # Also fetch soft-deleted capture names so we never re-upload
+            # sessions that were intentionally trashed.
+            try:
+                deleted_captures = repo.list_deleted_capture_names()
+            except Exception:
+                deleted_captures = set()
 
             uploaded_captures: set = set()  # track what we upload → skip in download pass
             for device_dir in _listdir_dirs(root):
@@ -1073,12 +1134,28 @@ class BackgroundSyncWorker(QtCore.QThread):
 
                     capture_name = str(meta.get("capture_name") or "")
 
+                    # Skip soft-deleted sessions — don't re-upload trashed tests.
+                    if capture_name and capture_name in deleted_captures:
+                        uploaded_captures.add(capture_name)
+                        _log.debug("BackgroundSync: %s is soft-deleted — skipping upload", capture_name)
+                        continue
+
                     # Fast path: already marked synced locally and file unchanged.
+                    # But only skip the download pass if we actually have a CSV
+                    # on disk — orphaned metas still need their CSV recovered.
                     synced_at = meta.get("synced_at_ms")
                     if synced_at:
                         file_mtime_ms = int(os.path.getmtime(meta_path) * 1000)
                         if file_mtime_ms <= int(synced_at):
-                            uploaded_captures.add(capture_name)
+                            # Check if CSV exists before skipping download
+                            _cn = capture_name
+                            _tn = _cn.replace("temp-raw-", "temp-trimmed-")
+                            has_csv = (
+                                os.path.isfile(os.path.join(device_dir, f"{_cn}.csv"))
+                                or os.path.isfile(os.path.join(device_dir, f"{_tn}.csv"))
+                            )
+                            if has_csv:
+                                uploaded_captures.add(capture_name)
                             continue
 
                     # Check Supabase: if the session already exists remotely
@@ -1091,7 +1168,15 @@ class BackgroundSyncWorker(QtCore.QThread):
                                 json.dump(meta, fh, indent=2, sort_keys=True)
                         except Exception:
                             pass
-                        uploaded_captures.add(capture_name)
+                        # Only mark as uploaded (skip download) if CSV exists locally
+                        _cn = capture_name
+                        _tn = _cn.replace("temp-raw-", "temp-trimmed-")
+                        has_csv = (
+                            os.path.isfile(os.path.join(device_dir, f"{_cn}.csv"))
+                            or os.path.isfile(os.path.join(device_dir, f"{_tn}.csv"))
+                        )
+                        if has_csv:
+                            uploaded_captures.add(capture_name)
                         _log.debug("BackgroundSync: %s already in Supabase — stamped synced_at_ms", capture_name)
                         continue
 
@@ -1548,10 +1633,15 @@ def _repair_temp_files(root: str) -> dict:
     _log = logging.getLogger(__name__)
     trimmed_created = 0
     avg_temp_filled = 0
+    date_filled = 0
     errors: List[str] = []
 
     if not os.path.isdir(root):
-        return {"trimmed_created": trimmed_created, "avg_temp_filled": avg_temp_filled, "errors": errors}
+        return {"trimmed_created": trimmed_created, "avg_temp_filled": avg_temp_filled, "date_filled": date_filled, "errors": errors}
+
+    # For parsing date from capture_name: temp-raw-<device>-YYYYMMDD-HHMMSS
+    import re
+    _capture_date_re = re.compile(r"-(\d{8})-(\d{6})$")
 
     meta_files = glob.glob(os.path.join(root, "**", "*.meta.json"), recursive=True)
     for meta_path in meta_files:
@@ -1618,6 +1708,15 @@ def _repair_temp_files(root: str) -> dict:
                     meta_dirty = True
                     avg_temp_filled += 1
 
+        # --- Ensure date exists ---
+        if not meta.get("date") and capture_name:
+            dm = _capture_date_re.search(capture_name)
+            if dm:
+                ds = dm.group(1)  # YYYYMMDD
+                meta["date"] = f"{ds[:4]}-{ds[4:6]}-{ds[6:8]}"
+                meta_dirty = True
+                date_filled += 1
+
         # Write back if changed
         if meta_dirty:
             try:
@@ -1626,7 +1725,7 @@ def _repair_temp_files(root: str) -> dict:
             except Exception as exc:
                 errors.append(f"meta write {capture_name}: {exc}")
 
-    return {"trimmed_created": trimmed_created, "avg_temp_filled": avg_temp_filled, "errors": errors}
+    return {"trimmed_created": trimmed_created, "avg_temp_filled": avg_temp_filled, "date_filled": date_filled, "errors": errors}
 
 
 def _estimate_avg_temp(csv_path: str, sample_size: int = 100) -> Optional[float]:
@@ -1672,6 +1771,357 @@ def _estimate_avg_temp(csv_path: str, sample_size: int = 100) -> Optional[float]
             return sum(reservoir) / float(len(reservoir))
     except Exception:
         return None
+
+
+def _estimate_body_weight_n(csv_path: str) -> Optional[float]:
+    """Estimate body weight in Newtons from a temp CSV.
+
+    Prefers ``Fz`` (calibrated) when available, otherwise falls back to
+    ``sum-z`` (raw sensor sum).  The qualifying window is scale-dependent:
+    - **Fz** (calibrated):  400–1500 N
+    - **sum-z** (raw):      450–1200 N
+
+    Returns the median of qualifying samples, or None if insufficient data.
+    """
+    import csv as _csv
+
+    if not os.path.isfile(csv_path):
+        return None
+    try:
+        with open(csv_path, "r", newline="", encoding="utf-8") as fh:
+            reader = _csv.DictReader(fh)
+            header_lower = {h.strip().lower(): h for h in (reader.fieldnames or [])}
+
+            # Prefer calibrated Fz, fall back to raw sum-z
+            fz_col = None
+            is_calibrated = False
+            if "fz" in header_lower:
+                fz_col = header_lower["fz"]
+                is_calibrated = True
+            else:
+                for candidate in ("sum-z", "sum_z", "sumz"):
+                    if candidate in header_lower:
+                        fz_col = header_lower[candidate]
+                        break
+            if fz_col is None:
+                return None
+
+            bw_lo = 400.0 if is_calibrated else 450.0
+            bw_hi = 1500.0 if is_calibrated else 1200.0
+
+            bw_samples: list[float] = []
+            for row in reader:
+                try:
+                    fz = float(row.get(fz_col) or 0)
+                except (TypeError, ValueError):
+                    continue
+                if bw_lo < fz < bw_hi:
+                    bw_samples.append(fz)
+
+            if len(bw_samples) < 100:
+                return None
+            bw_samples.sort()
+            mid = len(bw_samples) // 2
+            return bw_samples[mid]
+    except Exception:
+        return None
+
+
+def _infer_missing_tester_and_weight(root: str) -> dict:
+    """Cross-reference meta files to fill missing ``body_weight_n`` and ``tester_name``.
+
+    For each meta missing these fields, estimates body weight from the raw
+    CSV's Fz data, then searches all other metas (any plate) for a test
+    on the same or nearby date with a known tester whose weight is within
+    100 N.  If a match is found, copies both ``body_weight_n`` and
+    ``tester_name`` from the match.
+
+    Returns ``{"filled": int, "errors": list[str]}``.
+    """
+    import datetime
+    import glob
+    import json
+    import logging
+
+    _log = logging.getLogger(__name__)
+    filled = 0
+    errors: list[str] = []
+
+    if not os.path.isdir(root):
+        return {"filled": filled, "errors": errors}
+
+    # --- Build a lookup of known testers: list of (date, weight, tester_name) ---
+    known: list[tuple[str, float, str]] = []  # (YYYY-MM-DD, weight_n, name)
+    all_metas = glob.glob(os.path.join(root, "**", "*.meta.json"), recursive=True)
+
+    meta_cache: dict[str, dict] = {}
+    for mp in all_metas:
+        try:
+            with open(mp, "r", encoding="utf-8") as fh:
+                m = json.load(fh) or {}
+            meta_cache[mp] = m
+        except Exception:
+            continue
+
+    for mp, m in meta_cache.items():
+        bw = m.get("body_weight_n")
+        tn = m.get("tester_name")
+        dt = m.get("date")
+        if bw and tn and dt:
+            try:
+                known.append((str(dt), float(bw), str(tn)))
+            except (TypeError, ValueError):
+                pass
+
+    if not known:
+        return {"filled": filled, "errors": errors}
+
+    def _parse_date(d: str) -> Optional[datetime.date]:
+        for fmt in ("%Y-%m-%d", "%m-%d-%Y"):
+            try:
+                return datetime.datetime.strptime(d, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    # --- Find metas missing body_weight_n or tester_name ---
+    for mp, m in meta_cache.items():
+        if m.get("body_weight_n") and m.get("tester_name"):
+            continue
+        capture_name = str(m.get("capture_name") or "")
+        if not capture_name:
+            continue
+
+        # Estimate body weight — prefer processed (calibrated Fz) > trimmed > raw
+        parent_dir = os.path.dirname(mp)
+        estimated_bw = None
+        # Try processed baseline first
+        pb = m.get("processed_baseline") or {}
+        if isinstance(pb, dict) and pb.get("processed_off"):
+            processed_csv = os.path.join(parent_dir, pb["processed_off"])
+            if os.path.isfile(processed_csv):
+                estimated_bw = _estimate_body_weight_n(processed_csv)
+        if estimated_bw is None:
+            trimmed_name = capture_name.replace("temp-raw-", "temp-trimmed-")
+            trimmed_csv = os.path.join(parent_dir, f"{trimmed_name}.csv")
+            if os.path.isfile(trimmed_csv):
+                estimated_bw = _estimate_body_weight_n(trimmed_csv)
+        if estimated_bw is None:
+            raw_csv = os.path.join(parent_dir, f"{capture_name}.csv")
+            estimated_bw = _estimate_body_weight_n(raw_csv)
+        if estimated_bw is None:
+            continue
+
+        # Parse this file's date
+        file_date = _parse_date(str(m.get("date") or ""))
+
+        # Search for a matching known tester (within 100N, prefer same date)
+        best_match: Optional[tuple[float, str]] = None  # (weight, name)
+        best_date_dist = 9999
+
+        for kd, kw, kn in known:
+            if abs(kw - estimated_bw) > 100.0:
+                continue
+            kdate = _parse_date(kd)
+            if file_date and kdate:
+                dist = abs((file_date - kdate).days)
+            else:
+                dist = 9999
+            if dist < best_date_dist:
+                best_date_dist = dist
+                best_match = (kw, kn)
+
+        if best_match is None:
+            continue
+
+        matched_weight, matched_name = best_match
+
+        # Use the matched tester's weight from the closest date
+        dirty = False
+        if not m.get("body_weight_n"):
+            m["body_weight_n"] = matched_weight
+            dirty = True
+        if not m.get("tester_name"):
+            m["tester_name"] = matched_name
+            dirty = True
+
+        if dirty:
+            try:
+                with open(mp, "w", encoding="utf-8") as fh:
+                    json.dump(m, fh, indent=2, sort_keys=True)
+                filled += 1
+                _log.info(
+                    "Inferred tester=%s weight=%.0fN for %s (estimated Fz=%.0fN, date_dist=%d days)",
+                    matched_name, matched_weight, capture_name, estimated_bw, best_date_dist,
+                )
+            except Exception as exc:
+                errors.append(f"write {capture_name}: {exc}")
+
+    return {"filled": filled, "errors": errors}
+
+
+class ThermalDriftWorker(QtCore.QThread):
+    """Gather signed error vs temperature for all tests of a plate type.
+
+    For each test:
+    1. Ensure processed-off CSV exists (generates if needed)
+    2. Run ``analyze_single_processed_csv`` to extract per-cell measurements
+    3. Collect ``(avg_temp, stage_key, row, col, signed_pct, mean_n, device_id)``
+
+    Emits ``result_ready`` with a dict containing ``"points"`` (list of dicts)
+    and ``"errors"`` (list of strings).
+    """
+
+    result_ready = QtCore.Signal(dict)
+    progress = QtCore.Signal(str)
+
+    def __init__(self, service: TestingService, plate_type: str, device_id: str = None):
+        super().__init__()
+        self.service = service
+        self.plate_type = str(plate_type or "").strip()
+        self.device_id = str(device_id).strip() if device_id else None
+
+    def run(self) -> None:
+        import json
+        import logging
+
+        _log = logging.getLogger(__name__)
+        points: List[dict] = []
+        errors: List[str] = []
+
+        try:
+            repo = self.service.repo
+            analyzer = self.service.analyzer
+            processing = self.service._temp_processing
+
+            if self.device_id:
+                devices = [self.device_id]
+            else:
+                devices = [
+                    d for d in (repo.list_temperature_devices() or [])
+                    if d.split(".", 1)[0] == self.plate_type
+                ]
+            if not devices:
+                self.result_ready.emit({"points": [], "errors": [f"No devices for plate type {self.plate_type}"]})
+                return
+
+            total_tests = 0
+            processed_count = 0
+
+            for device_id in devices:
+                tests = repo.list_temperature_tests(device_id)
+                total_tests += len(tests)
+
+            self.progress.emit(f"Found {total_tests} tests across {len(devices)} devices")
+
+            # Pre-load bias caches per device for bias-adjusted error
+            bias_caches: dict[str, dict] = {}
+            for device_id in devices:
+                try:
+                    bc = repo.load_temperature_bias_cache(device_id)
+                    if isinstance(bc, dict) and (bc.get("bias_db") or bc.get("bias_bw")):
+                        bias_caches[device_id] = bc
+                except Exception:
+                    pass
+
+            for device_id in devices:
+                tests = repo.list_temperature_tests(device_id)
+                bias_cache = bias_caches.get(device_id) or {}
+                bias_db = bias_cache.get("bias_db")  # rows x cols matrix or None
+                bias_bw = bias_cache.get("bias_bw")
+
+                for raw_csv in tests:
+                    processed_count += 1
+                    basename = os.path.basename(raw_csv)
+                    capture = os.path.splitext(basename)[0]
+
+                    # Load meta
+                    meta_path = os.path.join(os.path.dirname(raw_csv), f"{capture}.meta.json")
+                    if not os.path.isfile(meta_path):
+                        continue
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as fh:
+                            meta = json.load(fh) or {}
+                    except Exception:
+                        continue
+
+                    avg_temp = meta.get("avg_temp")
+                    body_weight = meta.get("body_weight_n")
+                    if avg_temp is None:
+                        errors.append(f"{capture}: missing avg_temp")
+                        continue
+                    if body_weight is None:
+                        errors.append(f"{capture}: missing body_weight_n")
+                        continue
+
+                    # Ensure processed-off CSV exists
+                    try:
+                        processed_path = processing.ensure_temp_off_processed(
+                            folder=os.path.dirname(raw_csv),
+                            device_id=device_id,
+                            csv_path=raw_csv,
+                        )
+                    except Exception as exc:
+                        errors.append(f"{capture}: processing failed: {exc}")
+                        continue
+
+                    if not processed_path or not os.path.isfile(processed_path):
+                        errors.append(f"{capture}: no processed CSV")
+                        continue
+
+                    # Analyze
+                    try:
+                        result = analyzer.analyze_single_processed_csv(processed_path, meta)
+                    except Exception as exc:
+                        errors.append(f"{capture}: analysis failed: {exc}")
+                        continue
+
+                    data = result.get("data") or {}
+                    stages = data.get("stages") or {}
+
+                    for stage_key, stage_data in stages.items():
+                        cells = stage_data.get("cells") or []
+                        target_n = stage_data.get("target_n")
+                        bmap = bias_db if stage_key == "db" else bias_bw
+                        for cell in cells:
+                            row = cell.get("row")
+                            col = cell.get("col")
+                            mean_n = cell.get("mean_n")
+
+                            # Compute bias-adjusted error if bias map available
+                            bias_adj_pct = None
+                            if bmap and isinstance(bmap, list) and mean_n is not None and target_n:
+                                try:
+                                    bias_frac = bmap[row][col]
+                                    adj_target = target_n * (1.0 + bias_frac)
+                                    if adj_target != 0:
+                                        bias_adj_pct = ((mean_n - adj_target) / adj_target) * 100.0
+                                except (IndexError, TypeError):
+                                    pass
+
+                            points.append({
+                                "temp_f": float(avg_temp),
+                                "stage": stage_key,
+                                "row": row,
+                                "col": col,
+                                "signed_pct": cell.get("signed_pct"),
+                                "bias_adj_pct": bias_adj_pct,
+                                "mean_n": mean_n,
+                                "target_n": target_n,
+                                "device_id": device_id,
+                                "capture": capture,
+                            })
+
+                    if processed_count % 5 == 0:
+                        self.progress.emit(f"Analyzed {processed_count}/{total_tests} tests...")
+
+            self.progress.emit(f"Done: {len(points)} measurement points from {processed_count} tests")
+
+        except Exception as exc:
+            _log.warning("ThermalDriftWorker failed: %s", exc)
+            errors.append(str(exc))
+
+        self.result_ready.emit({"points": points, "errors": errors, "device_id": self.device_id})
 
 
 def _listdir_dirs(root: str) -> List[str]:

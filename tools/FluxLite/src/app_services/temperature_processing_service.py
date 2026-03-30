@@ -3,7 +3,20 @@ from __future__ import annotations
 import os
 from typing import Callable, Dict, Optional
 
+import numpy as np
+import pandas as pd
+
 from .backend_csv_processor import process_csv_via_backend
+
+# Dynamo stage-1 per-axis temperature correction coefficients (1/°F)
+_TEMP_COEFS: dict[str, float] = {
+    "06": 0.002,
+    "07": 0.0025,
+    "08": 0.0009,
+    "10": 0.002,
+    "11": 0.0025,
+    "12": 0.0009,
+}
 
 
 class TemperatureProcessingService:
@@ -217,3 +230,80 @@ class TemperatureProcessingService:
         )
 
 
+def revert_baked_temp_correction(
+    trimmed_path: str,
+    device_id: str,
+    room_temp_f: float = 76.0,
+    *,
+    undo: bool = False,
+) -> None:
+    """Revert (or re-apply) Dynamo stage-1 temperature correction baked into a trimmed CSV.
+
+    When *undo* is False, recovers true raw sensor values::
+
+        raw = csv_value / (1 - (room - T) * coef)
+
+    When *undo* is True, re-applies the correction (reverses a prior revert)::
+
+        corrected = csv_value * (1 - (room - T) * coef)
+
+    Modifies the file in-place.
+    """
+    dev_type = str(device_id or "")[:2]
+    coef = _TEMP_COEFS.get(dev_type)
+    if coef is None:
+        raise ValueError(f"No temperature coefficient for device type '{dev_type}'")
+
+    df = pd.read_csv(trimmed_path, dtype={"device_id": str})
+
+    # Discover sensor groups: columns ending in '-t' with matching '-x', '-y', '-z'.
+    temp_cols = [c for c in df.columns if c.endswith("-t") and c != "sum-t"]
+    if not temp_cols:
+        raise ValueError("No per-sensor temperature columns found in CSV")
+
+    for tc in temp_cols:
+        prefix = tc[:-2]  # e.g. "front-left-outer"
+        xc, yc, zc = f"{prefix}-x", f"{prefix}-y", f"{prefix}-z"
+        missing = [c for c in (xc, yc, zc) if c not in df.columns]
+        if missing:
+            raise ValueError(f"Missing sensor columns for {prefix}: {missing}")
+
+        t = df[tc].to_numpy(dtype=np.float64)
+        factor = 1.0 - (room_temp_f - t) * coef
+
+        if undo:
+            # Re-apply: raw → corrected
+            for ac in (xc, yc, zc):
+                df[ac] = df[ac].to_numpy(dtype=np.float64) * factor
+        else:
+            # Revert: corrected → raw
+            for ac in (xc, yc, zc):
+                df[ac] = df[ac].to_numpy(dtype=np.float64) / factor
+
+    # Adjust sum columns by the cumulative delta (preserves tare offsets).
+    for axis in ("x", "y", "z"):
+        sum_col = f"sum-{axis}"
+        if sum_col not in df.columns:
+            continue
+        axis_cols = [c for c in df.columns if c.endswith(f"-{axis}") and c != sum_col]
+        if not axis_cols:
+            continue
+        # delta = sum of (new_value - old_value) across all sensors for this axis
+        delta = np.zeros(len(df), dtype=np.float64)
+        for tc in temp_cols:
+            prefix = tc[:-2]
+            ac = f"{prefix}-{axis}"
+            if ac not in df.columns:
+                continue
+            t = df[tc].to_numpy(dtype=np.float64)
+            factor = 1.0 - (room_temp_f - t) * coef
+            old_vals = df[ac].to_numpy(dtype=np.float64)
+            if undo:
+                # We already multiplied by factor above; original was old / factor
+                delta += old_vals - (old_vals / factor)
+            else:
+                # We already divided by factor above; original was old * factor
+                delta += old_vals - (old_vals * factor)
+        df[sum_col] = df[sum_col].to_numpy(dtype=np.float64) + delta
+
+    df.to_csv(trimmed_path, index=False)

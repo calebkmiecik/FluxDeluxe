@@ -1,0 +1,271 @@
+diff --git a/tools/FluxLite/src/ui/fluxlite_page.py b/tools/FluxLite/src/ui/fluxlite_page.py
+index 3378e33..3ba58d9 100644
+--- a/tools/FluxLite/src/ui/fluxlite_page.py
++++ b/tools/FluxLite/src/ui/fluxlite_page.py
+@@ -98,9 +98,9 @@ class DeviceTempTracker:
+         return self._stable_since if self.trend == "stable" else None
+ 
+ 
+-class FluxLitePage(QtWidgets.QWidget):
++class FluxLitePage(QtWidgets.QMainWindow):
+     """
+-    FluxLite tool UI as a QWidget, suitable for hosting inside FluxDeluxe.
++    FluxLite tool UI as a QMainWindow with dockable panels.
+ 
+     This contains all FluxLite-specific controllers, state, and UI wiring.
+     """
+@@ -150,6 +150,7 @@ class FluxLitePage(QtWidgets.QWidget):
+         # Temperature live-testing CSV/raw capture lifecycle (backend-driven)
+         self._temp_live_capture = TemperatureLiveCaptureManager(self.controller.hardware)
+         self._temp_live_capture_ctx: CaptureContext | None = None
++        self._pending_post_capture_ctx: CaptureContext | None = None
+         self._post_capture_sync_worker: PostCaptureAutoSyncWorker | None = None
+         # Temperature test stage switch dialog
+         self._stage_switch_dialog: StageSwitchPromptDialog | None = None
+@@ -476,9 +477,13 @@ class FluxLitePage(QtWidgets.QWidget):
+             QtCore.QTimer.singleShot(7000, lambda: self._set_live_status_bar_state(mode="idle", text="", pct=None))
+ 
+     def _setup_ui(self) -> None:
+-        outer = QtWidgets.QVBoxLayout(self)
+-        outer.setContentsMargins(6, 6, 6, 6)
+-        outer.setSpacing(6)
++        # QMainWindow requires a central widget; use a minimal placeholder
++        # since all real content lives in QDockWidgets.
++        _central = QtWidgets.QWidget()
++        _central.setMaximumSize(0, 0)
++        self.setCentralWidget(_central)
++
++        # ── Create child widgets (same as before) ──────────────────────
+ 
+         self.canvas_left = WorldCanvas(self.state, backend_address_provider=self.controller.hardware.backend_http_address)
+         self.canvas_right = WorldCanvas(self.state, backend_address_provider=self.controller.hardware.backend_http_address)
+@@ -495,7 +500,6 @@ class FluxLitePage(QtWidgets.QWidget):
+         try:
+             self._cell_details_left.setFixedWidth(260)
+             self._cell_details_right.setFixedWidth(260)
+-            # Border + top padding for a cleaner card look
+             style = (
+                 "QGroupBox {"
+                 "  background: #1A1A1A;"
+@@ -524,7 +528,7 @@ class FluxLitePage(QtWidgets.QWidget):
+         self._cell_details_wrap_right = QtWidgets.QWidget()
+         self._cell_details_wrap_left.setContentsMargins(0, 0, 0, 0)
+         self._cell_details_wrap_right.setContentsMargins(0, 0, 0, 0)
+-        
++
+         wl = QtWidgets.QVBoxLayout(self._cell_details_wrap_left)
+         wr = QtWidgets.QVBoxLayout(self._cell_details_wrap_right)
+         wl.setContentsMargins(0, 0, 0, 0)
+@@ -533,7 +537,6 @@ class FluxLitePage(QtWidgets.QWidget):
+         wr.addWidget(self._cell_details_right)
+         wl.addStretch(1)
+         wr.addStretch(1)
+-        # Start collapsed so it "pops out" on click.
+         try:
+             self._cell_details_wrap_left.setFixedWidth(0)
+             self._cell_details_wrap_right.setFixedWidth(0)
+@@ -554,51 +557,15 @@ class FluxLitePage(QtWidgets.QWidget):
+         pr.addWidget(self.canvas_right, 1)
+         pr.addWidget(self._cell_details_wrap_right, 0)
+ 
+-        # Control Panel (Bottom)
+-        self.controls = ControlPanel(self.state, self.controller)
+-
+-        self.top_tabs_left = QtWidgets.QTabWidget()
+-        self.top_tabs_right = QtWidgets.QTabWidget()
+-
+-        # Left Tabs
+-        self.top_tabs_left.addTab(plate_left, "Plate View")
+-
+-        sensor_left = QtWidgets.QWidget()
+-        sll = QtWidgets.QVBoxLayout(sensor_left)
+-        sll.setContentsMargins(0, 0, 0, 0)
+         self.sensor_plot_left = ForcePlotWidget()
+-        sll.addWidget(self.sensor_plot_left)
+-        self.top_tabs_left.addTab(sensor_left, "Force View")
+-
+-        moments_left = MomentsViewWidget()
+-        self.moments_view_left = moments_left
+-        self.top_tabs_left.addTab(moments_left, "Moments View")
+-
+-        # Right Tabs
+-        self.top_tabs_right.addTab(plate_right, "Plate View")
+-        self.pane_switcher.register_tab(self.top_tabs_right, plate_right, "plate_view_right")
+-
+-        sensor_right = QtWidgets.QWidget()
+-        srl = QtWidgets.QVBoxLayout(sensor_right)
+-        srl.setContentsMargins(0, 0, 0, 0)
+         self.sensor_plot_right = ForcePlotWidget()
+-        srl.addWidget(self.sensor_plot_right)
+-        self.top_tabs_right.addTab(sensor_right, "Force View")
+ 
+-        moments_right = MomentsViewWidget()
+-        self.moments_view_right = moments_right
+-        self.top_tabs_right.addTab(moments_right, "Moments View")
++        self.moments_view_left = MomentsViewWidget()
++        self.moments_view_right = MomentsViewWidget()
+ 
+-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+-        self.splitter.addWidget(self.top_tabs_left)
+-        self.splitter.addWidget(self.top_tabs_right)
+-
+-        self.top_tabs_left.setMovable(True)
+-        self.top_tabs_right.setMovable(True)
+-
+-        outer.addWidget(self.splitter, 1)
++        self.controls = ControlPanel(self.state, self.controller)
+ 
+-        # Live-testing status bar (bottom). Keep it minimal and non-intrusive.
++        # Live-testing status bar
+         status_wrap = QtWidgets.QFrame()
+         try:
+             status_wrap.setObjectName("live_status_bar")
+@@ -622,21 +589,79 @@ class FluxLitePage(QtWidgets.QWidget):
+         status_layout.addWidget(self.lbl_live_status_text, 0)
+         status_layout.addWidget(self.lbl_live_status_pct, 0)
+         status_layout.addStretch(1)
+-        outer.addWidget(status_wrap, 0)
+ 
+-        outer.addWidget(self.controls, 1)
++        # ── Build dock contents ────────────────────────────────────────
++
++        # Plate dock: both canvases side-by-side
++        plate_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
++        plate_splitter.addWidget(plate_left)
++        plate_splitter.addWidget(plate_right)
++        plate_splitter.setSizes([400, 400])
++
++        # Force dock: both force plots side-by-side
++        force_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
++        force_splitter.addWidget(self.sensor_plot_left)
++        force_splitter.addWidget(self.sensor_plot_right)
++        force_splitter.setSizes([400, 400])
++
++        # Moments dock: both moments views side-by-side
++        moments_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
++        moments_splitter.addWidget(self.moments_view_left)
++        moments_splitter.addWidget(self.moments_view_right)
++        moments_splitter.setSizes([400, 400])
++
++        # Controls dock: status bar + control panel
++        controls_container = QtWidgets.QWidget()
++        ctrl_layout = QtWidgets.QVBoxLayout(controls_container)
++        ctrl_layout.setContentsMargins(0, 0, 0, 0)
++        ctrl_layout.setSpacing(2)
++        ctrl_layout.addWidget(status_wrap, 0)
++        ctrl_layout.addWidget(self.controls, 1)
++
++        # ── Create QDockWidgets ────────────────────────────────────────
++
++        dock_features = (
++            QtWidgets.QDockWidget.DockWidgetMovable
++            | QtWidgets.QDockWidget.DockWidgetFloatable
++            | QtWidgets.QDockWidget.DockWidgetClosable
++        )
++
++        self.dock_plates = QtWidgets.QDockWidget("Plate View", self)
++        self.dock_plates.setWidget(plate_splitter)
++        self.dock_plates.setFeatures(dock_features)
+ 
+-        # Initial sizing
+-        self.splitter.setSizes([800, 800])
++        self.dock_force = QtWidgets.QDockWidget("Force View", self)
++        self.dock_force.setWidget(force_splitter)
++        self.dock_force.setFeatures(dock_features)
+ 
+-        # Initial pane layout: Left=Plate(0), Right=Sensor(1)
+-        self.top_tabs_left.setCurrentIndex(0)
+-        self.top_tabs_right.setCurrentIndex(1)
++        self.dock_moments = QtWidgets.QDockWidget("Moments View", self)
++        self.dock_moments.setWidget(moments_splitter)
++        self.dock_moments.setFeatures(dock_features)
++
++        self.dock_controls = QtWidgets.QDockWidget("Controls", self)
++        self.dock_controls.setWidget(controls_container)
++        self.dock_controls.setFeatures(dock_features)
++
++        # ── Arrange docks: Controls LEFT, Viz stacked RIGHT ───────────
++
++        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.dock_controls)
++        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.dock_plates)
++        self.splitDockWidget(self.dock_plates, self.dock_force, QtCore.Qt.Vertical)
++        self.splitDockWidget(self.dock_force, self.dock_moments, QtCore.Qt.Vertical)
++
++        # Initial proportions: controls ~35%, visualization ~65%
++        self.resizeDocks(
++            [self.dock_controls, self.dock_plates],
++            [350, 650],
++            QtCore.Qt.Horizontal,
++        )
++
++        # ── Final initialization ───────────────────────────────────────
+ 
+         # Clear canvases AND overlays
+         self.canvas_left.clear_live_colors()
+         self.canvas_right.clear_live_colors()
+-        self.canvas_left.hide_live_grid()  # Ensure overlay is hidden
++        self.canvas_left.hide_live_grid()
+         self.canvas_right.hide_live_grid()
+         self.canvas_left.repaint()
+         self.canvas_right.repaint()
+@@ -681,6 +706,7 @@ class FluxLitePage(QtWidgets.QWidget):
+         self.controller.hardware.active_devices_updated.connect(self._auto_select_active_device)
+ 
+         # Mound group signals
++        self.controller.hardware.stop_capture_confirmed.connect(self._on_stop_capture_confirmed)
+         self.controller.hardware.mound_group_created.connect(self._on_mound_group_ready)
+         self.controller.hardware.mound_group_found.connect(self._on_mound_group_ready)
+         self.controller.hardware.mound_group_error.connect(
+@@ -1209,6 +1235,15 @@ class FluxLitePage(QtWidgets.QWidget):
+             ctx = self._temp_live_capture_ctx
+             if ctx is not None and str(getattr(ctx, "group_id", "") or "").strip():
+                 _log.info("Session ended — stopping capture (group_id=%s, capture=%s)", ctx.group_id, ctx.capture_name)
++                # Write a minimal meta.json synchronously so it exists on
++                # disk even if the background worker never runs (offline,
++                # crash, bug).  The worker will load and augment it later.
++                self._write_capture_meta_json(ctx)
++                # Show immediate feedback while backend flushes the CSV.
++                self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
++                # Stash context — the post-capture worker will start when
++                # the backend confirms the CSV is written (stopCaptureStatus).
++                self._pending_post_capture_ctx = ctx
+                 # Stop our specific group so it processes data and saves the CSV.
+                 try:
+                     self._temp_live_capture.stop(group_id=str(ctx.group_id))
+@@ -1223,14 +1258,6 @@ class FluxLitePage(QtWidgets.QWidget):
+                     self.controller.hardware.cancel_all_captures()
+                 except Exception:
+                     pass
+-                # Write a minimal meta.json synchronously so it exists on
+-                # disk even if the background worker never runs (offline,
+-                # crash, bug).  The worker will load and augment it later.
+-                self._write_capture_meta_json(ctx)
+-                # Show immediate feedback while backend flushes the CSV.
+-                self._set_live_status_bar_state(mode="syncing", text="Saving…", pct=None)
+-                # Kick off background auto-sync (trim + upload) before clearing ctx.
+-                self._start_post_capture_sync(ctx)
+             else:
+                 _log.warning("Session ended but no capture context — skipping post-capture sync (ctx=%s)", ctx)
+         except Exception:
+@@ -1251,6 +1278,21 @@ class FluxLitePage(QtWidgets.QWidget):
+         except Exception:
+             pass
+ 
++    def _on_stop_capture_confirmed(self, data: dict) -> None:
++        """Backend confirmed CSV is written to disk — safe to trim + upload."""
++        status = str((data or {}).get("status") or "").lower()
++        if status != "success":
++            _log.warning("stopCaptureStatus returned non-success: %s", data)
++            self._set_live_status_bar_state(mode="error", text="Capture save failed", pct=None)
++            self._pending_post_capture_ctx = None
++            return
++        ctx = self._pending_post_capture_ctx
++        self._pending_post_capture_ctx = None
++        if ctx is None:
++            return
++        _log.info("Backend confirmed CSV written — starting post-capture sync for %s", getattr(ctx, "capture_name", "?"))
++        self._start_post_capture_sync(ctx)
++
+     def _write_capture_meta_json(self, ctx: CaptureContext) -> None:
+         """Write a minimal meta.json for the just-finished capture.
+ 

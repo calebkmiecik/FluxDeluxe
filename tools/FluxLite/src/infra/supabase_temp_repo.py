@@ -154,13 +154,14 @@ class SupabaseTempRepository:
     # ------------------------------------------------------------------
 
     def list_all_device_ids(self) -> List[str]:
-        """Return distinct device_ids from ``temp_test_sessions``."""
+        """Return distinct device_ids from ``temp_test_sessions`` (excluding soft-deleted)."""
         if self._sb is None:
             return []
         try:
             resp = (
                 self._sb.table("temp_test_sessions")
                 .select("device_id")
+                .is_("deleted_at", "null")
                 .execute()
             )
             ids = sorted({str(r.get("device_id") or "") for r in (resp.data or [])})
@@ -170,18 +171,35 @@ class SupabaseTempRepository:
             return []
 
     def list_all_capture_names(self) -> set:
-        """Return the set of all ``capture_name`` values in ``temp_test_sessions``."""
+        """Return the set of all active ``capture_name`` values (excluding soft-deleted)."""
         if self._sb is None:
             return set()
         try:
             resp = (
                 self._sb.table("temp_test_sessions")
                 .select("capture_name")
+                .is_("deleted_at", "null")
                 .execute()
             )
             return {str(r.get("capture_name") or "") for r in (resp.data or [])} - {""}
         except Exception as exc:
             _logger.warning("list_all_capture_names failed: %s", exc)
+            return set()
+
+    def list_deleted_capture_names(self) -> set:
+        """Return the set of soft-deleted ``capture_name`` values."""
+        if self._sb is None:
+            return set()
+        try:
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("capture_name")
+                .not_.is_("deleted_at", "null")
+                .execute()
+            )
+            return {str(r.get("capture_name") or "") for r in (resp.data or [])} - {""}
+        except Exception as exc:
+            _logger.warning("list_deleted_capture_names failed: %s", exc)
             return set()
 
     def delete_sessions_by_capture_names(self, capture_names: List[str]) -> int:
@@ -200,11 +218,11 @@ class SupabaseTempRepository:
         return deleted
 
     def delete_session_fully(self, capture_name: str) -> bool:
-        """Delete a session row AND its storage file from Supabase."""
+        """Soft-delete a session: set ``deleted_at`` and move storage to trash."""
         if self._sb is None or not capture_name:
             return False
         try:
-            # First, fetch the session to get the storage path.
+            # Fetch the session to get the storage path.
             resp = (
                 self._sb.table("temp_test_sessions")
                 .select("trimmed_csv_storage_path")
@@ -215,25 +233,50 @@ class SupabaseTempRepository:
             if resp.data:
                 storage_path = str(resp.data[0].get("trimmed_csv_storage_path") or "")
 
-            # Delete storage file if present.
+            # Move storage file to trash/ prefix if present.
             if storage_path:
                 try:
-                    self._sb.storage.from_("temp-testing-csvs").remove([storage_path])
+                    trash_path = f"trash/{storage_path}"
+                    data = self._sb.storage.from_("temp-testing-csvs").download(storage_path)
+                    if data:
+                        self._sb.storage.from_("temp-testing-csvs").upload(
+                            path=trash_path,
+                            file=data,
+                            file_options={"content-type": "application/gzip", "upsert": "true"},
+                        )
+                        self._sb.storage.from_("temp-testing-csvs").remove([storage_path])
+                        _logger.info("Moved storage %s → %s", storage_path, trash_path)
                 except Exception as exc:
-                    _logger.warning("delete storage %s failed: %s", storage_path, exc)
+                    _logger.warning("move storage to trash failed for %s: %s", storage_path, exc)
 
-            # Delete the DB row.
-            self._sb.table("temp_test_sessions").delete().eq(
-                "capture_name", capture_name
-            ).execute()
-            _logger.info("Fully deleted session %s", capture_name)
+            # Soft-delete: set deleted_at timestamp.
+            self._sb.table("temp_test_sessions").update(
+                {"deleted_at": "now()"}
+            ).eq("capture_name", capture_name).execute()
+            _logger.info("Soft-deleted session %s", capture_name)
             return True
         except Exception as exc:
             _logger.warning("delete_session_fully failed for %s: %s", capture_name, exc)
             return False
 
+    def is_deleted(self, capture_name: str) -> bool:
+        """Check if a capture_name has been soft-deleted."""
+        if self._sb is None or not capture_name:
+            return False
+        try:
+            resp = (
+                self._sb.table("temp_test_sessions")
+                .select("deleted_at")
+                .eq("capture_name", capture_name)
+                .not_.is_("deleted_at", "null")
+                .execute()
+            )
+            return bool(resp.data)
+        except Exception:
+            return False
+
     def list_sessions_for_device(self, device_id: str) -> List[dict]:
-        """Query ``temp_test_sessions`` filtered by *device_id*."""
+        """Query ``temp_test_sessions`` filtered by *device_id* (excluding soft-deleted)."""
         if self._sb is None or not device_id:
             return []
         try:
@@ -241,6 +284,7 @@ class SupabaseTempRepository:
                 self._sb.table("temp_test_sessions")
                 .select("*")
                 .eq("device_id", device_id)
+                .is_("deleted_at", "null")
                 .execute()
             )
             return list(resp.data or [])

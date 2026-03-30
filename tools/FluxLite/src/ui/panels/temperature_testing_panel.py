@@ -61,8 +61,9 @@ class ProcessedRunItemWidget(QtWidgets.QWidget):
 class TestFilesDialog(QtWidgets.QDialog):
     """Inspector dialog showing file status and editable meta for a temperature test."""
 
-    def __init__(self, raw_csv_path: str, parent=None):
+    def __init__(self, raw_csv_path: str, parent=None, testing_service=None):
         super().__init__(parent)
+        self._testing_service = testing_service
         self._raw_csv_path = raw_csv_path
         self._device_dir = os.path.dirname(raw_csv_path)
         self._filename = os.path.basename(raw_csv_path)
@@ -77,6 +78,7 @@ class TestFilesDialog(QtWidgets.QDialog):
         self._meta_path = os.path.join(self._device_dir, f"{self._capture_name}.meta.json")
         self._trimmed_path = os.path.join(self._device_dir, f"temp-trimmed-{base}.csv")
         self._raw_path = raw_csv_path
+        self._processed_path = ""  # resolved from meta in _load()
 
         self.setWindowTitle(f"Files — {self._capture_name}")
         self.setMinimumWidth(500)
@@ -96,21 +98,56 @@ class TestFilesDialog(QtWidgets.QDialog):
         self._btn_plot_raw = QtWidgets.QPushButton("Plot")
         self._btn_plot_raw.setFixedWidth(60)
         self._btn_plot_raw.clicked.connect(lambda: self._plot_csv(self._raw_path, "Raw"))
+        self._btn_trim_raw = QtWidgets.QPushButton("Trim")
+        self._btn_trim_raw.setFixedWidth(60)
+        self._btn_trim_raw.setToolTip("Interactively select a region to keep, discarding the rest")
+        self._btn_trim_raw.clicked.connect(self._trim_raw_csv)
+        raw_btn_layout = QtWidgets.QHBoxLayout()
+        raw_btn_layout.setSpacing(4)
+        raw_btn_layout.setContentsMargins(0, 0, 0, 0)
+        raw_btn_layout.addWidget(self._btn_plot_raw)
+        raw_btn_layout.addWidget(self._btn_trim_raw)
         files_layout.addWidget(QtWidgets.QLabel("Raw CSV:"), 0, 0)
         files_layout.addWidget(self._lbl_raw, 0, 1)
-        files_layout.addWidget(self._btn_plot_raw, 0, 2)
+        files_layout.addLayout(raw_btn_layout, 0, 2)
 
         self._lbl_trimmed = QtWidgets.QLabel()
         self._btn_plot_trimmed = QtWidgets.QPushButton("Plot")
         self._btn_plot_trimmed.setFixedWidth(60)
         self._btn_plot_trimmed.clicked.connect(lambda: self._plot_csv(self._trimmed_path, "Trimmed"))
+        self._btn_trim_trimmed = QtWidgets.QPushButton("Trim")
+        self._btn_trim_trimmed.setFixedWidth(60)
+        self._btn_trim_trimmed.setToolTip("Trim the trimmed CSV and reprocess baseline")
+        self._btn_trim_trimmed.clicked.connect(lambda: self._trim_csv(self._trimmed_path, "trimmed"))
+        trimmed_btn_layout = QtWidgets.QHBoxLayout()
+        trimmed_btn_layout.setSpacing(4)
+        trimmed_btn_layout.setContentsMargins(0, 0, 0, 0)
+        trimmed_btn_layout.addWidget(self._btn_plot_trimmed)
+        trimmed_btn_layout.addWidget(self._btn_trim_trimmed)
         files_layout.addWidget(QtWidgets.QLabel("Trimmed CSV:"), 1, 0)
         files_layout.addWidget(self._lbl_trimmed, 1, 1)
-        files_layout.addWidget(self._btn_plot_trimmed, 1, 2)
+        files_layout.addLayout(trimmed_btn_layout, 1, 2)
+
+        self._lbl_processed = QtWidgets.QLabel()
+        self._btn_plot_processed = QtWidgets.QPushButton("Plot")
+        self._btn_plot_processed.setFixedWidth(60)
+        self._btn_plot_processed.clicked.connect(lambda: self._plot_csv(self._processed_path, "Processed"))
+        files_layout.addWidget(QtWidgets.QLabel("Processed CSV:"), 2, 0)
+        files_layout.addWidget(self._lbl_processed, 2, 1)
+        files_layout.addWidget(self._btn_plot_processed, 2, 2)
 
         self._lbl_meta = QtWidgets.QLabel()
-        files_layout.addWidget(QtWidgets.QLabel("Meta JSON:"), 2, 0)
-        files_layout.addWidget(self._lbl_meta, 2, 1)
+        files_layout.addWidget(QtWidgets.QLabel("Meta JSON:"), 3, 0)
+        files_layout.addWidget(self._lbl_meta, 3, 1)
+
+        # --- Temperature correction revert toggle ---
+        self._chk_revert_temp = QtWidgets.QCheckBox("Revert baked temp correction")
+        self._chk_revert_temp.setToolTip(
+            "Undo Dynamo stage-1 temperature correction that was baked into the raw CSV during capture.\n"
+            "Modifies the trimmed CSV, deletes processed files, and reprocesses baseline."
+        )
+        self._chk_revert_temp.clicked.connect(self._on_revert_temp_toggled)
+        files_layout.addWidget(self._chk_revert_temp, 4, 0, 1, 3)
 
         layout.addWidget(files_box)
 
@@ -145,11 +182,15 @@ class TestFilesDialog(QtWidgets.QDialog):
 
         # --- Buttons ---
         btn_row = QtWidgets.QHBoxLayout()
+        self._btn_infer = QtWidgets.QPushButton("Infer Tester")
+        self._btn_infer.setToolTip("Estimate body weight from Fz data and match against known testers")
+        self._btn_infer.clicked.connect(self._infer_tester)
         self._btn_save = QtWidgets.QPushButton("Save Meta")
         self._btn_save.clicked.connect(self._save_meta)
         btn_close = QtWidgets.QPushButton("Close")
         btn_close.clicked.connect(self.accept)
         btn_row.addStretch()
+        btn_row.addWidget(self._btn_infer)
         btn_row.addWidget(self._btn_save)
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
@@ -158,7 +199,23 @@ class TestFilesDialog(QtWidgets.QDialog):
         """Populate file status labels and meta fields."""
         # File status.
         self._update_file_label(self._lbl_raw, self._btn_plot_raw, self._raw_path)
+        self._btn_trim_raw.setEnabled(os.path.isfile(self._raw_path))
         self._update_file_label(self._lbl_trimmed, self._btn_plot_trimmed, self._trimmed_path)
+        self._btn_trim_trimmed.setEnabled(os.path.isfile(self._trimmed_path))
+
+        # Resolve processed baseline path from meta.
+        self._processed_path = ""
+        if os.path.isfile(self._meta_path):
+            try:
+                with open(self._meta_path, "r", encoding="utf-8") as fh:
+                    _m = json.load(fh) or {}
+                pb = _m.get("processed_baseline") or {}
+                pf = pb.get("processed_off", "")
+                if pf:
+                    self._processed_path = os.path.join(self._device_dir, pf)
+            except Exception:
+                pass
+        self._update_file_label(self._lbl_processed, self._btn_plot_processed, self._processed_path)
 
         if os.path.isfile(self._meta_path):
             size_kb = os.path.getsize(self._meta_path) / 1024
@@ -167,6 +224,20 @@ class TestFilesDialog(QtWidgets.QDialog):
         else:
             self._lbl_meta.setText("Missing")
             self._lbl_meta.setStyleSheet("color: red;")
+
+        # Revert-temp checkbox state from meta.
+        self._chk_revert_temp.blockSignals(True)
+        reverted = False
+        if os.path.isfile(self._meta_path):
+            try:
+                with open(self._meta_path, "r", encoding="utf-8") as fh:
+                    _rm = json.load(fh) or {}
+                reverted = bool(_rm.get("temp_correction_reverted", False))
+            except Exception:
+                pass
+        self._chk_revert_temp.setChecked(reverted)
+        self._chk_revert_temp.setEnabled(os.path.isfile(self._trimmed_path))
+        self._chk_revert_temp.blockSignals(False)
 
         # Meta fields.
         meta = {}
@@ -234,12 +305,412 @@ class TestFilesDialog(QtWidgets.QDialog):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Error", f"Failed to save: {exc}")
 
+    def _ensure_processed(self) -> bool:
+        """Ensure the processed-off CSV exists, generating it if needed.
+
+        Returns True if the processed file is available after the call.
+        Updates ``self._processed_path`` as a side-effect.
+        """
+        if self._processed_path and os.path.isfile(self._processed_path):
+            return True
+        if not self._testing_service:
+            return False
+        try:
+            svc = self._testing_service._temp_processing
+            device_id = os.path.basename(self._device_dir)
+            processed_path = svc.ensure_temp_off_processed(
+                folder=self._device_dir,
+                device_id=device_id,
+                csv_path=self._raw_csv_path,
+            )
+            if processed_path and os.path.isfile(processed_path):
+                self._processed_path = processed_path
+                return True
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "Processing Error",
+                f"Failed to generate processed CSV:\n{exc}",
+            )
+        return False
+
+    def _on_revert_temp_toggled(self) -> None:
+        """Revert or re-apply baked temperature correction on the trimmed CSV."""
+        import glob as _glob
+        from ...app_services.temperature_processing_service import revert_baked_temp_correction
+
+        want_reverted = self._chk_revert_temp.isChecked()
+        action = "Revert" if want_reverted else "Undo revert of"
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Temp Correction",
+            f"{action} baked temperature correction?\n\n"
+            "This will modify the trimmed CSV, delete processed files, and reprocess baseline.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            self._chk_revert_temp.blockSignals(True)
+            self._chk_revert_temp.setChecked(not want_reverted)
+            self._chk_revert_temp.blockSignals(False)
+            return
+
+        device_id = os.path.basename(self._device_dir)
+        try:
+            revert_baked_temp_correction(
+                self._trimmed_path,
+                device_id,
+                room_temp_f=76.0,
+                undo=not want_reverted,
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Error", f"Failed to modify trimmed CSV:\n{exc}")
+            self._chk_revert_temp.blockSignals(True)
+            self._chk_revert_temp.setChecked(not want_reverted)
+            self._chk_revert_temp.blockSignals(False)
+            return
+
+        # Delete all processed / scalar variant files so baseline gets regenerated.
+        suffix = self._capture_name.replace("temp-raw-", "", 1)
+        for pattern in (f"temp-processed-{suffix}.csv", f"temp-scalar-*-{suffix}.csv"):
+            for fp in _glob.glob(os.path.join(self._device_dir, pattern)):
+                try:
+                    os.remove(fp)
+                except Exception:
+                    pass
+
+        # Clear cached processed path so _ensure_processed will regenerate.
+        self._processed_path = ""
+
+        # Update meta flag.
+        meta = {}
+        if os.path.isfile(self._meta_path):
+            try:
+                with open(self._meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
+            except Exception:
+                meta = {}
+        meta["temp_correction_reverted"] = want_reverted
+        meta.pop("synced_at_ms", None)
+        # Clear processed_baseline so it gets rebuilt.
+        meta.pop("processed_baseline", None)
+        try:
+            with open(self._meta_path, "w", encoding="utf-8") as fh:
+                json.dump(meta, fh, indent=2, sort_keys=True)
+        except Exception:
+            pass
+
+        # Regenerate baseline.
+        self._ensure_processed()
+
+        self._load()
+        QtWidgets.QMessageBox.information(
+            self, "Done",
+            f"Trimmed CSV {'reverted' if want_reverted else 'restored'} and baseline reprocessed.",
+        )
+
+    def _infer_tester(self) -> None:
+        """Estimate body weight from calibrated Fz in the processed CSV."""
+        import datetime as _dt
+        from ..controllers.temp_test_workers import _estimate_body_weight_n
+
+        # Ensure we have a processed file with calibrated Fz
+        if not self._ensure_processed():
+            QtWidgets.QMessageBox.warning(
+                self, "Infer Tester",
+                "Could not generate processed CSV — cannot estimate body weight.",
+            )
+            return
+        self._load()  # refresh labels since processed file may have just been created
+
+        est = _estimate_body_weight_n(self._processed_path)
+        if est is None:
+            QtWidgets.QMessageBox.warning(self, "Infer Tester", "Could not estimate body weight from processed CSV data.")
+            return
+
+        # Build known tester lookup from all meta files in temp_testing root
+        root = os.path.dirname(self._device_dir)  # temp_testing/
+        known: list[tuple[str, float, str]] = []  # (date, weight, name)
+        import glob
+        for mp in glob.glob(os.path.join(root, "**", "*.meta.json"), recursive=True):
+            try:
+                with open(mp, "r", encoding="utf-8") as fh:
+                    m = json.load(fh) or {}
+                bw = m.get("body_weight_n")
+                tn = m.get("tester_name")
+                dt = m.get("date")
+                if bw and tn and dt:
+                    known.append((str(dt), float(bw), str(tn)))
+            except Exception:
+                continue
+
+        if not known:
+            QtWidgets.QMessageBox.warning(self, "Infer Tester", f"Estimated BW: {est:.0f} N\n\nNo known testers found in other meta files to match against.")
+            return
+
+        def _parse_date(d: str):
+            for fmt in ("%Y-%m-%d", "%m-%d-%Y"):
+                try:
+                    return _dt.datetime.strptime(d, fmt).date()
+                except ValueError:
+                    continue
+            return None
+
+        file_date = _parse_date(self._meta_fields["date"].text().strip())
+
+        # Find matches within 100N, prefer closest date
+        matches: list[tuple[int, float, str]] = []  # (date_dist, weight, name)
+        for kd, kw, kn in known:
+            if abs(kw - est) > 100.0:
+                continue
+            kdate = _parse_date(kd)
+            dist = abs((file_date - kdate).days) if file_date and kdate else 9999
+            matches.append((dist, kw, kn))
+
+        if not matches:
+            QtWidgets.QMessageBox.information(self, "Infer Tester", f"Estimated BW: {est:.0f} N\n\nNo matching tester found within 100 N.")
+            return
+
+        # Sort by date distance, then show best match
+        matches.sort(key=lambda x: x[0])
+        best_dist, best_weight, best_name = matches[0]
+
+        # Deduplicate match names for display
+        seen = set()
+        unique_matches = []
+        for dist, w, n in matches:
+            if n not in seen:
+                seen.add(n)
+                unique_matches.append((dist, w, n))
+
+        if len(unique_matches) == 1:
+            detail = f"Match: {best_name} ({best_weight:.0f} N, {best_dist}d away)"
+        else:
+            lines = [f"  • {n} ({w:.0f} N, {d}d away)" for d, w, n in unique_matches[:5]]
+            detail = "Candidates:\n" + "\n".join(lines) + f"\n\nBest: {best_name}"
+
+        reply = QtWidgets.QMessageBox.question(
+            self, "Infer Tester",
+            f"Estimated BW from Fz: {est:.0f} N\n\n{detail}\n\nApply {best_name} / {best_weight:.0f} N?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            self._meta_fields["tester_name"].setText(best_name)
+            self._meta_fields["body_weight_n"].setText(str(best_weight))
+
+    def _trim_raw_csv(self) -> None:
+        """Trim the raw CSV interactively."""
+        self._trim_csv(self._raw_path, "raw")
+
+    def _trim_csv(self, csv_path: str, which: str) -> None:
+        """Open an interactive plot to select a time range, then trim *csv_path* in-place.
+
+        *which* is ``"raw"`` or ``"trimmed"`` and controls post-trim cleanup:
+        - **raw**: overwrites raw CSV, deletes trimmed + processed CSVs.
+        - **trimmed**: overwrites trimmed CSV in-place, deletes processed CSV
+          so the baseline gets reprocessed on next sync.
+        """
+        if not os.path.isfile(csv_path):
+            return
+        try:
+            from ..widgets.temp_stage_plotter import _load_csv_data
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
+            from matplotlib.figure import Figure
+            from matplotlib.widgets import SpanSelector
+
+            times, fz = _load_csv_data(csv_path)
+            if not times:
+                QtWidgets.QMessageBox.warning(self, "Trim", "No data in CSV.")
+                return
+
+            t0 = times[0] if times and times[0] == times[0] else 0.0
+            times_rel = [(t - t0) if (t == t) else t for t in times]
+
+            # Build a proper QDialog with embedded matplotlib canvas
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(f"Trim: {os.path.basename(csv_path)}")
+            dlg.resize(1200, 500)
+            dlg_layout = QtWidgets.QVBoxLayout(dlg)
+            dlg_layout.setContentsMargins(4, 4, 4, 4)
+
+            fig = Figure(figsize=(14, 5))
+            canvas = FigureCanvas(fig)
+            toolbar = NavToolbar(canvas, dlg)
+            dlg_layout.addWidget(toolbar)
+            dlg_layout.addWidget(canvas)
+
+            # Confirm button at bottom
+            btn_row = QtWidgets.QHBoxLayout()
+            lbl_info = QtWidgets.QLabel("Drag on the plot to select the region to KEEP.")
+            btn_confirm = QtWidgets.QPushButton("Confirm Selection")
+            btn_confirm.setEnabled(False)
+            btn_cancel = QtWidgets.QPushButton("Cancel")
+            btn_row.addWidget(lbl_info, 1)
+            btn_row.addWidget(btn_confirm)
+            btn_row.addWidget(btn_cancel)
+            dlg_layout.addLayout(btn_row)
+
+            btn_cancel.clicked.connect(dlg.reject)
+            btn_confirm.clicked.connect(dlg.accept)
+
+            ax = fig.add_subplot(111)
+            ax.plot(times_rel, fz, "b-", linewidth=0.6, alpha=0.7)
+            ax.set_title("Drag to select the region to KEEP")
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("Force Z (N)")
+            ax.grid(True, alpha=0.3)
+
+            selection = {}
+
+            def on_select(xmin, xmax):
+                selection["xmin"] = xmin
+                selection["xmax"] = xmax
+                btn_confirm.setEnabled(True)
+                lbl_info.setText(f"Selected: {xmin:.0f} \u2013 {xmax:.0f} ms")
+
+            span = SpanSelector(
+                ax, on_select, "horizontal",
+                useblit=True,
+                props=dict(alpha=0.3, facecolor="green"),
+                interactive=True,
+                drag_from_anywhere=True,
+            )
+            # prevent GC
+            canvas._span_selector = span
+
+            fig.tight_layout()
+            canvas.draw()
+
+            if dlg.exec() != QtWidgets.QDialog.Accepted:
+                return
+            if "xmin" not in selection:
+                return
+
+            xmin_abs = selection["xmin"] + t0
+            xmax_abs = selection["xmax"] + t0
+
+            # Count rows that will be kept
+            import csv as _csv
+            with open(csv_path, "r", newline="", encoding="utf-8") as fh:
+                reader = _csv.DictReader(fh)
+                header_lower = {h.strip().lower(): h for h in (reader.fieldnames or [])}
+                time_col = None
+                for k in ("time", "time_ms", "elapsed_time"):
+                    if k in header_lower:
+                        time_col = header_lower[k]
+                        break
+                total = 0
+                kept = 0
+                for row in reader:
+                    total += 1
+                    try:
+                        t = float(row.get(time_col) or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if xmin_abs <= t <= xmax_abs:
+                        kept += 1
+
+            if which == "raw":
+                detail = "This will overwrite the raw CSV and delete the trimmed/processed CSVs\nso they get regenerated on next sync."
+            else:
+                detail = "This will overwrite the trimmed CSV and delete the processed CSV\nso the baseline gets reprocessed on next sync."
+
+            reply = QtWidgets.QMessageBox.question(
+                self, f"Trim {which.title()} CSV",
+                f"Keep {kept:,} of {total:,} rows ({kept*100//max(total,1)}%)?\n\n"
+                f"Time range: {selection['xmin']:.0f} \u2013 {selection['xmax']:.0f} ms\n\n"
+                f"{detail}",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+
+            # Read all rows, filter, write back
+            with open(csv_path, "r", newline="", encoding="utf-8") as fh:
+                reader = _csv.DictReader(fh)
+                fieldnames = reader.fieldnames
+                rows_to_keep = []
+                for row in reader:
+                    try:
+                        t = float(row.get(time_col) or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if xmin_abs <= t <= xmax_abs:
+                        rows_to_keep.append(row)
+
+            with open(csv_path, "w", newline="", encoding="utf-8") as fh:
+                writer = _csv.DictWriter(fh, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows_to_keep)
+
+            # Post-trim cleanup depends on which file was trimmed
+            if which == "raw":
+                # Delete trimmed and processed so they get regenerated
+                for path in (self._trimmed_path, self._processed_path):
+                    if path and os.path.isfile(path):
+                        try:
+                            os.remove(path)
+                        except Exception:
+                            pass
+            else:
+                # Trimmed was edited — delete processed so baseline gets reprocessed
+                if self._processed_path and os.path.isfile(self._processed_path):
+                    try:
+                        os.remove(self._processed_path)
+                    except Exception:
+                        pass
+
+            # Clear synced_at_ms so it re-uploads, and update avg_temp
+            if os.path.isfile(self._meta_path):
+                try:
+                    with open(self._meta_path, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh) or {}
+                    meta.pop("synced_at_ms", None)
+                    # If we trimmed raw or trimmed, also clear processed_baseline
+                    # references so the pipeline regenerates them
+                    if which == "raw":
+                        baseline = meta.get("processed_baseline")
+                        if isinstance(baseline, dict):
+                            baseline.pop("trimmed_csv", None)
+                            baseline.pop("processed_off", None)
+                            baseline.pop("updated_at_ms", None)
+                    elif which == "trimmed":
+                        baseline = meta.get("processed_baseline")
+                        if isinstance(baseline, dict):
+                            baseline.pop("processed_off", None)
+                            baseline.pop("updated_at_ms", None)
+                    # Update avg_temp from the source of truth (trimmed if exists, else raw)
+                    from ..controllers.temp_test_workers import _estimate_avg_temp
+                    temp_source = self._trimmed_path if os.path.isfile(self._trimmed_path) else self._raw_path
+                    new_temp = _estimate_avg_temp(temp_source)
+                    if new_temp is not None:
+                        meta["avg_temp"] = new_temp
+                    with open(self._meta_path, "w", encoding="utf-8") as fh:
+                        json.dump(meta, fh, indent=2, sort_keys=True)
+                except Exception:
+                    pass
+
+            if which == "raw":
+                msg = f"Kept {kept:,} rows. Trimmed/processed CSVs deleted for regeneration."
+            else:
+                # Trimmed was edited — immediately reprocess baseline
+                if self._ensure_processed():
+                    msg = f"Kept {kept:,} rows. Baseline reprocessed."
+                else:
+                    msg = f"Kept {kept:,} rows. Processed CSV deleted \u2014 baseline will reprocess on next sync."
+            QtWidgets.QMessageBox.information(self, "Trimmed", msg)
+            self._load()
+
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Trim Error", str(exc))
+
     def _plot_csv(self, csv_path: str, label: str) -> None:
         if not os.path.isfile(csv_path):
             return
         try:
             from ..widgets.temp_stage_plotter import _load_csv_data
-            import matplotlib.pyplot as plt
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
+            from matplotlib.figure import Figure
 
             times, fz = _load_csv_data(csv_path)
             if not times:
@@ -249,16 +720,34 @@ class TestFilesDialog(QtWidgets.QDialog):
             t0 = times[0] if times and times[0] == times[0] else 0.0
             times = [(t - t0) if (t == t) else t for t in times]
 
-            fig, ax = plt.subplots(figsize=(12, 5))
-            fig.canvas.manager.set_window_title(f"{label}: {os.path.basename(csv_path)}")
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle(f"{label}: {os.path.basename(csv_path)}")
+            dlg.resize(1100, 500)
+            dlg_layout = QtWidgets.QVBoxLayout(dlg)
+            dlg_layout.setContentsMargins(4, 4, 4, 4)
+
+            fig = Figure(figsize=(12, 5))
+            canvas = FigureCanvas(fig)
+            toolbar = NavToolbar(canvas, dlg)
+            dlg_layout.addWidget(toolbar)
+            dlg_layout.addWidget(canvas)
+
+            ax = fig.add_subplot(111)
             ax.plot(times, fz, "b-", linewidth=0.8, alpha=0.8)
-            ax.set_title(f"{label} — {os.path.basename(csv_path)}")
+            ax.set_title(f"{label} \u2014 {os.path.basename(csv_path)}")
             ax.set_xlabel("Time (ms)")
             ax.set_ylabel("Force Z (N)")
             ax.grid(True, alpha=0.3)
             ax.axhline(0, color="k", linewidth=0.5)
-            plt.tight_layout()
-            plt.show()
+            fig.tight_layout()
+            canvas.draw()
+
+            dlg.show()
+            # Keep a reference so the dialog isn't garbage-collected
+            if not hasattr(self, "_plot_dialogs"):
+                self._plot_dialogs = []
+            self._plot_dialogs.append(dlg)
+            dlg.finished.connect(lambda: self._plot_dialogs.remove(dlg) if dlg in self._plot_dialogs else None)
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Plot", f"Failed to plot: {exc}")
 
@@ -312,6 +801,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         lbl_tests.setStyleSheet("font-weight: bold; margin-top: 2px;")
         left_col.addWidget(lbl_tests)
         self.test_list = QtWidgets.QListWidget()
+        self.test_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.test_list.setFont(QtGui.QFont("Consolas", 9))
         self.test_list.installEventFilter(self)
         self.test_list.viewport().installEventFilter(self)
@@ -358,10 +848,17 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         btn_row1.addWidget(self.btn_run_plate_type, 1)
         left_col.addLayout(btn_row1)
 
+        self.btn_thermal_drift = QtWidgets.QPushButton("Thermal Drift")
+        self.btn_thermal_drift.setToolTip(
+            "Plot signed error vs temperature for all tests of this plate type.\n"
+            "Shows the raw shape of thermal drift before correction."
+        )
+
         btn_row2 = QtWidgets.QHBoxLayout()
         btn_row2.setSpacing(4)
         btn_row2.addWidget(self.btn_add_tests, 1)
         btn_row2.addWidget(self.btn_reset_local, 1)
+        btn_row2.addWidget(self.btn_thermal_drift, 1)
         left_col.addLayout(btn_row2)
 
         self.chk_auto_sync = QtWidgets.QCheckBox("Auto-sync")
@@ -427,6 +924,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         self.btn_run_plate_type.clicked.connect(self._on_run_plate_type_clicked)
         self.btn_add_tests.clicked.connect(self._on_add_tests_clicked)
         self.btn_reset_local.clicked.connect(self._on_reset_local_clicked)
+        self.btn_thermal_drift.clicked.connect(self._on_thermal_drift_clicked)
         self.test_list.currentItemChanged.connect(self._emit_test_changed)
         self.test_list.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.test_list.customContextMenuRequested.connect(self._on_test_list_context_menu)
@@ -500,7 +998,11 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
                 self.controller.auto_update_done.connect(self._on_auto_update_done)
             except Exception:
                 pass
-            
+            try:
+                self.controller.thermal_drift_ready.connect(self._on_thermal_drift_ready)
+            except Exception:
+                pass
+
             # IMPORTANT: Do NOT auto-select and auto-run analysis on app startup.
             # We still allow explicit user-driven refresh via the Refresh button.
             self.chk_auto_sync.toggled.connect(self._on_auto_sync_toggled)
@@ -642,6 +1144,7 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
             pass
         try:
             self.metrics_widget.set_big_picture_status("Auto search running…")
+            self.metrics_widget.set_search_progress(visible=True)
         except Exception:
             pass
         self.controller.run_auto_search_for_current_plate_type(search_mode=mode, mode="scalar")
@@ -655,7 +1158,23 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
                 self.metrics_widget.set_big_picture_status(msg)
             except Exception:
                 pass
-        if status in ("completed", "error"):
+        # Update progress bars if present in payload.
+        if "device_total" in payload:
+            try:
+                self.metrics_widget.set_search_progress(
+                    device_index=int(payload.get("device_index", 0)),
+                    device_total=int(payload.get("device_total", 0)),
+                    test_index=int(payload.get("test_index", 0)),
+                    test_total=int(payload.get("test_total", 0)),
+                    visible=True,
+                )
+            except Exception:
+                pass
+        if status in ("completed", "error") and payload.get("search_done"):
+            try:
+                self.metrics_widget.set_search_progress(visible=False)
+            except Exception:
+                pass
             try:
                 self.metrics_widget.btn_auto_search.setEnabled(True)
             except Exception:
@@ -939,6 +1458,131 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         if self.controller:
             self.controller._auto_sync_enabled = checked
 
+    def _on_thermal_drift_clicked(self) -> None:
+        if not self.controller:
+            return
+        current_dev = self.device_combo.currentText().strip() if self.device_combo.currentIndex() >= 0 else ""
+        if current_dev:
+            items = ["All devices", current_dev]
+            choice, ok = QtWidgets.QInputDialog.getItem(
+                self, "Thermal Drift", "Scope:", items, 0, False)
+            if not ok:
+                return
+            if choice == current_dev:
+                self.controller.plot_thermal_drift(device_id=current_dev)
+                return
+        self.controller.plot_thermal_drift()
+
+    @staticmethod
+    def _aggregate_per_test(points: list, stage: str, key: str) -> tuple:
+        """Average *key* across cells for each (capture, device) test.
+
+        Returns ``(temps, means)`` — one value per test.
+        """
+        from collections import defaultdict
+        buckets: dict[str, list] = defaultdict(list)  # capture → [values]
+        temp_for: dict[str, float] = {}
+        for p in points:
+            if p["stage"] != stage or p.get(key) is None:
+                continue
+            c = p["capture"]
+            buckets[c].append(p[key])
+            temp_for[c] = p["temp_f"]
+        temps, means = [], []
+        for c, vals in buckets.items():
+            temps.append(temp_for[c])
+            means.append(sum(vals) / len(vals))
+        return temps, means
+
+    def _on_thermal_drift_ready(self, payload: dict) -> None:
+        """Plot per-test mean signed error vs temperature with trend lines."""
+        import numpy as np
+
+        points = payload.get("points") or []
+        errors = payload.get("errors") or []
+
+        if errors:
+            import logging
+            logging.getLogger(__name__).warning("Thermal drift errors: %s", errors[:10])
+
+        if not points:
+            QtWidgets.QMessageBox.warning(self, "Thermal Drift", "No measurement points found.")
+            return
+
+        try:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+            from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavToolbar
+            from matplotlib.figure import Figure
+
+            dlg = QtWidgets.QDialog(self)
+            plate = self._current_plate_type or "?"
+            single_dev = payload.get("device_id")
+            title_scope = f"Device {single_dev}" if single_dev else f"Plate Type {plate}"
+            dlg.setWindowTitle(f"Thermal Drift \u2014 {title_scope}")
+            dlg.resize(1300, 800)
+            layout = QtWidgets.QVBoxLayout(dlg)
+            layout.setContentsMargins(4, 4, 4, 4)
+
+            fig = Figure(figsize=(14, 9))
+            canvas = FigureCanvas(fig)
+            toolbar = NavToolbar(canvas, dlg)
+            layout.addWidget(toolbar)
+            layout.addWidget(canvas)
+
+            # 2x2: left=raw, right=bias-adjusted; top=DB, bottom=BW
+            ax_db_raw = fig.add_subplot(2, 2, 1)
+            ax_db_adj = fig.add_subplot(2, 2, 2, sharey=ax_db_raw)
+            ax_bw_raw = fig.add_subplot(2, 2, 3, sharex=ax_db_raw)
+            ax_bw_adj = fig.add_subplot(2, 2, 4, sharex=ax_db_adj, sharey=ax_bw_raw)
+
+            def _plot_with_trend(ax, temps, means, color, title):
+                from scipy import stats as sp_stats
+                n = len(temps)
+                if n > 0:
+                    ax.scatter(temps, means, s=30, alpha=0.7, c=color, edgecolors="none", zorder=2)
+                    if n >= 2:
+                        t_arr = np.array(temps)
+                        m_arr = np.array(means)
+                        coeffs = np.polyfit(t_arr, m_arr, 1)
+                        r_val, p_val = sp_stats.pearsonr(t_arr, m_arr) if n >= 3 else (float("nan"), float("nan"))
+                        r_sq = r_val ** 2
+                        t_line = np.linspace(t_arr.min(), t_arr.max(), 100)
+                        ax.plot(t_line, np.polyval(coeffs, t_line), color="k",
+                                linewidth=1.5, linestyle="--", alpha=0.8, zorder=3,
+                                label=f"slope={coeffs[0]:.3f} %/\u00b0F\nr={r_val:.3f}  R\u00b2={r_sq:.3f}  p={p_val:.2e}")
+                        ax.legend(fontsize=8, loc="best")
+                ax.axhline(0, color="k", linewidth=0.5)
+                ax.set_title(f"{title}  ({n} tests)")
+                ax.grid(True, alpha=0.3)
+
+            # Per-test averages
+            db_raw_t, db_raw_m = self._aggregate_per_test(points, "db", "signed_pct")
+            db_adj_t, db_adj_m = self._aggregate_per_test(points, "db", "bias_adj_pct")
+            bw_raw_t, bw_raw_m = self._aggregate_per_test(points, "bw", "signed_pct")
+            bw_adj_t, bw_adj_m = self._aggregate_per_test(points, "bw", "bias_adj_pct")
+
+            _plot_with_trend(ax_db_raw, db_raw_t, db_raw_m, "tab:blue", "DB \u2014 Raw")
+            _plot_with_trend(ax_db_adj, db_adj_t, db_adj_m, "tab:cyan", "DB \u2014 Bias Adjusted")
+            _plot_with_trend(ax_bw_raw, bw_raw_t, bw_raw_m, "tab:orange", "BW \u2014 Raw")
+            _plot_with_trend(ax_bw_adj, bw_adj_t, bw_adj_m, "tab:red", "BW \u2014 Bias Adjusted")
+
+            ax_db_raw.set_ylabel("Mean Signed Error (%)")
+            ax_bw_raw.set_ylabel("Mean Signed Error (%)")
+            ax_bw_raw.set_xlabel("Temperature (\u00b0F)")
+            ax_bw_adj.set_xlabel("Temperature (\u00b0F)")
+
+            fig.tight_layout()
+            canvas.draw()
+
+            dlg.show()
+            if not hasattr(self, "_drift_dialogs"):
+                self._drift_dialogs = []
+            self._drift_dialogs.append(dlg)
+            dlg.finished.connect(lambda: self._drift_dialogs.remove(dlg) if dlg in self._drift_dialogs else None)
+
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "Thermal Drift", f"Plot failed: {exc}")
+
     def _on_reset_local_clicked(self) -> None:
         """Delete derived files and orphan metas. Keep raw CSVs + their metas."""
         reply = QtWidgets.QMessageBox.question(
@@ -1194,16 +1838,55 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         if not raw_path:
             return
 
+        selected = self.test_list.selectedItems()
+        multi = len(selected) > 1
+
         menu = QtWidgets.QMenu(self)
-        act_files = menu.addAction("Files...")
-        act_delete = menu.addAction("Delete Test")
+        if not multi:
+            act_files = menu.addAction("Files...")
+        else:
+            act_files = None
+        act_revert = menu.addAction(
+            f"Revert Temp Correction ({len(selected)})" if multi
+            else "Revert Temp Correction"
+        )
+        act_undo_revert = menu.addAction(
+            f"Undo Temp Correction Revert ({len(selected)})" if multi
+            else "Undo Temp Correction Revert"
+        )
+        menu.addSeparator()
+        act_delete = menu.addAction(
+            f"Delete Tests ({len(selected)})" if multi else "Delete Test"
+        )
+
         chosen = menu.exec_(self.test_list.viewport().mapToGlobal(pos))
+        if chosen is None:
+            return
         if chosen == act_files:
-            dlg = TestFilesDialog(raw_path, parent=self)
+            svc = getattr(self.controller, "testing", None) if self.controller else None
+            dlg = TestFilesDialog(raw_path, parent=self, testing_service=svc)
             dlg.setAttribute(QtCore.Qt.WA_DeleteOnClose)
             dlg.show()
+        elif chosen == act_revert:
+            paths = [str(it.data(QtCore.Qt.UserRole) or "") for it in selected]
+            self._batch_revert_temp_correction([p for p in paths if p], undo=False)
+        elif chosen == act_undo_revert:
+            paths = [str(it.data(QtCore.Qt.UserRole) or "") for it in selected]
+            self._batch_revert_temp_correction([p for p in paths if p], undo=True)
         elif chosen == act_delete:
-            self._delete_test(raw_path)
+            if multi:
+                paths = [str(it.data(QtCore.Qt.UserRole) or "") for it in selected]
+                reply = QtWidgets.QMessageBox.question(
+                    self, "Delete Tests",
+                    f"Permanently delete {len(paths)} tests?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                )
+                if reply == QtWidgets.QMessageBox.Yes:
+                    for p in paths:
+                        if p:
+                            self._delete_test(p, confirm=False)
+            else:
+                self._delete_test(raw_path)
 
     def _plot_test_z_axis(self, raw_csv_path: str) -> None:
         """Plot Z-axis force data from the processed-off CSV for a test."""
@@ -1261,22 +1944,106 @@ class TemperatureTestingPanel(QtWidgets.QWidget):
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "Plot", f"Failed to plot: {exc}")
 
-    def _delete_test(self, raw_csv_path: str) -> None:
+    def _batch_revert_temp_correction(self, raw_paths: list[str], *, undo: bool = False) -> None:
+        """Revert (or undo revert of) baked temp correction for multiple tests."""
+        import glob as _glob
+        from ...app_services.temperature_processing_service import revert_baked_temp_correction
+
+        action = "Undo revert" if undo else "Revert"
+        reply = QtWidgets.QMessageBox.question(
+            self, "Batch Temp Correction",
+            f"{action} baked temperature correction for {len(raw_paths)} test(s)?\n\n"
+            "This modifies each trimmed CSV, deletes processed files, and reprocesses baselines.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        ok_count = 0
+        errors: list[str] = []
+        for raw_path in raw_paths:
+            filename = os.path.basename(raw_path)
+            device_dir = os.path.dirname(raw_path)
+            device_id = os.path.basename(device_dir)
+            capture_name = os.path.splitext(filename)[0]
+
+            if filename.startswith("temp-raw-"):
+                base = filename[len("temp-raw-"):-4] if filename.lower().endswith(".csv") else filename[len("temp-raw-"):]
+            else:
+                base = os.path.splitext(filename)[0]
+            trimmed_path = os.path.join(device_dir, f"temp-trimmed-{base}.csv")
+            meta_path = os.path.join(device_dir, f"{capture_name}.meta.json")
+
+            if not os.path.isfile(trimmed_path):
+                errors.append(f"{base}: no trimmed CSV")
+                continue
+
+            # Check current flag to avoid double-revert.
+            meta = {}
+            if os.path.isfile(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as fh:
+                        meta = json.load(fh) or {}
+                except Exception:
+                    meta = {}
+            already_reverted = bool(meta.get("temp_correction_reverted", False))
+            if not undo and already_reverted:
+                errors.append(f"{base}: already reverted")
+                continue
+            if undo and not already_reverted:
+                errors.append(f"{base}: not reverted")
+                continue
+
+            try:
+                revert_baked_temp_correction(trimmed_path, device_id, room_temp_f=76.0, undo=undo)
+            except Exception as exc:
+                errors.append(f"{base}: {exc}")
+                continue
+
+            # Delete processed / scalar files.
+            suffix = capture_name.replace("temp-raw-", "", 1)
+            for pattern in (f"temp-processed-{suffix}.csv", f"temp-scalar-*-{suffix}.csv"):
+                for fp in _glob.glob(os.path.join(device_dir, pattern)):
+                    try:
+                        os.remove(fp)
+                    except Exception:
+                        pass
+
+            # Update meta.
+            meta["temp_correction_reverted"] = not undo
+            meta.pop("synced_at_ms", None)
+            meta.pop("processed_baseline", None)
+            try:
+                with open(meta_path, "w", encoding="utf-8") as fh:
+                    json.dump(meta, fh, indent=2, sort_keys=True)
+            except Exception:
+                pass
+
+            ok_count += 1
+
+        # Summary.
+        msg = f"{action} complete: {ok_count}/{len(raw_paths)} succeeded."
+        if errors:
+            msg += "\n\nSkipped/failed:\n" + "\n".join(f"  • {e}" for e in errors)
+        QtWidgets.QMessageBox.information(self, "Batch Temp Correction", msg)
+
+    def _delete_test(self, raw_csv_path: str, *, confirm: bool = True) -> None:
         """Delete a test locally and from Supabase."""
         import glob as _glob
 
         capture_name = os.path.splitext(os.path.basename(raw_csv_path))[0]
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Delete Test",
-            f"Permanently delete '{capture_name}' locally and from Supabase?\n\n"
-            "This removes the raw CSV, all derived files, meta, and the Supabase record.\n"
-            "This cannot be undone.",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if reply != QtWidgets.QMessageBox.Yes:
-            return
+        if confirm:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Delete Test",
+                f"Permanently delete '{capture_name}' locally and from Supabase?\n\n"
+                "This removes the raw CSV, all derived files, meta, and the Supabase record.\n"
+                "This cannot be undone.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
 
         device_dir = os.path.dirname(raw_csv_path)
         # Derive all related local file patterns.

@@ -71,7 +71,6 @@ excludes = [
     "pkg_resources",  # not used by our code; prevents jaraco.text crash from runtime hook
     # Never needed
     "tkinter",
-    "matplotlib",
     "IPython",
     "jupyter",
     "notebook",

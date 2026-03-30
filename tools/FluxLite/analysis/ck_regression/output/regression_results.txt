@@ -1,0 +1,58 @@
+============================================================
+  All plates
+============================================================
+  549 cells across 32 tests
+
+  Stage 1 -- Fit c (10 temp buckets of 5.0F):
+    c (bucketed)   = 0.001484
+    c (unbucketed) = 0.001537
+    R2 (bucketed)  = 0.1188
+      bucket  -35.0F: avg_err=+8.62%, n=2
+      bucket  -25.0F: avg_err=+4.44%, n=2
+      bucket  -20.0F: avg_err=+2.70%, n=5
+      bucket  -15.0F: avg_err=+0.99%, n=4
+      bucket  -10.0F: avg_err=+1.84%, n=1
+      bucket   -5.0F: avg_err=+0.42%, n=2
+      bucket   +0.0F: avg_err=+0.24%, n=1
+      bucket   +5.0F: avg_err=+0.83%, n=12
+      bucket  +10.0F: avg_err=-2.38%, n=2
+      bucket  +15.0F: avg_err=+5.60%, n=1
+
+  Stage 2 -- Fit k (cell-level residual after c):
+    k = 0.000829
+    R2 of k fit = -0.0586
+
+  Mean |error| per test:
+    No correction:  3.38%
+    After c:        2.71%
+    After c+k:      2.69%
+============================================================
+
+============================================================
+  Excluding 06.00000025
+============================================================
+  463 cells across 27 tests
+
+  Stage 1 -- Fit c (9 temp buckets of 5.0F):
+    c (bucketed)   = 0.001761
+    c (unbucketed) = 0.001502
+    R2 (bucketed)  = 0.8746
+      bucket  -35.0F: avg_err=+7.72%, n=1
+      bucket  -25.0F: avg_err=+4.44%, n=2
+      bucket  -20.0F: avg_err=+1.78%, n=4
+      bucket  -15.0F: avg_err=+0.99%, n=4
+      bucket  -10.0F: avg_err=+1.84%, n=1
+      bucket   -5.0F: avg_err=+0.42%, n=2
+      bucket   +0.0F: avg_err=+0.24%, n=1
+      bucket   +5.0F: avg_err=-0.77%, n=10
+      bucket  +10.0F: avg_err=-2.38%, n=2
+
+  Stage 2 -- Fit k (cell-level residual after c):
+    k = 0.000154
+    R2 of k fit = -0.0189
+
+  Mean |error| per test:
+    No correction:  2.54%
+    After c:        1.95%
+    After c+k:      1.93%
+============================================================
