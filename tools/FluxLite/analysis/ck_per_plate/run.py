@@ -1,28 +1,29 @@
 """
-C+K Per-Plate Weighted Regression
-==================================
+C+K Per-Plate Weighted Regression (with intercept)
+====================================================
 Derives c and k independently for each plate, then averages across plates
 of the same type.
 
-Key differences from ck_weighted:
-  - No bias correction: uses raw target_n directly. Per-plate fitting means
-    manufacturing bias is baked into the intercept, not the slope.
-  - No baseline exclusion: all tests included (including room-temp ones).
-    Temperature-bucket weighting already prevents room-temp tests from
-    dominating.
-  - Per-plate regression: each plate gets its own c and k, then we average.
-    This naturally handles plates with different temp sensors.
+Key design choices:
+  - No bias correction: each plate's manufacturing offset is absorbed by a
+    per-plate intercept (beta0).  c and k capture purely the thermal slope.
+  - No baseline exclusion: all tests included.  Temperature-bucket weighting
+    prevents room-temp tests from dominating.
+  - Per-plate regression: each plate gets its own c, k, and intercept.
+    Handles plates with different temp sensors naturally.
 
-Model (same as approach 4):
-  error_pct = beta1 * deltaT + beta2 * deltaT * (F - Fref) / Fref
+Model (with intercept):
+  error_pct = beta0 + beta1 * deltaT + beta2 * deltaT * (F - Fref) / Fref
   => c = -beta1 / 100,  k = -beta2 / 100
+  beta0 absorbs whatever baseline error the plate has at room temp.
 
 Outputs (in output/):
   - regression_results.txt          -- per-plate and averaged results
   - data.csv                        -- all test-stage data points
-  - per_plate_coefficients.csv      -- c and k per plate
-  - per_plate_panels.png            -- per-plate before/after correction
-  - averaged_summary.png            -- averaged correction across all plates
+  - per_plate_coefficients.csv      -- c, k, intercept per plate
+  - per_plate_panels.png            -- individual plates: BW/DB, 3 columns
+  - slope_overlay.png               -- all plates overlaid with intercepts
+                                       zeroed, using averaged c/k
 """
 import sys
 import os
@@ -65,7 +66,6 @@ for dev in pt_devices:
                 baseline_path = str(r.get("path") or "")
 
         if not (baseline_path and os.path.isfile(baseline_path)):
-            # Try processing; skip if still missing
             processing.run_temperature_processing(
                 folder=os.path.dirname(raw_csv),
                 device_id=dev,
@@ -98,7 +98,6 @@ for dev in pt_devices:
             if not cells:
                 continue
 
-            # No bias correction -- use target_n directly
             signed_errors = []
             for cell in cells:
                 mean_n = float(cell.get("mean_n", 0.0))
@@ -126,14 +125,14 @@ print(f"{len(df)} total test-stage data points across {len(pt_devices)} devices"
 
 
 # ---------------------------------------------------------------------------
-# 2. Per-plate weighted regression
+# 2. Per-plate weighted regression (WITH intercept)
 # ---------------------------------------------------------------------------
 def fit_plate(plate_df, device_id):
     """Run weighted regression for a single plate. Returns dict with results."""
     plate_df = plate_df.copy()
     n_points = len(plate_df)
 
-    if n_points < 3:
+    if n_points < 4:  # need at least 4 points for 3 parameters
         print(f"  {device_id}: only {n_points} points, skipping regression")
         return None
 
@@ -147,33 +146,36 @@ def fit_plate(plate_df, device_id):
     y = plate_df["avg_signed_pct"].values.astype(float)
     w = plate_df["weight"].values.astype(float)
 
-    # C+K model
+    # C+K model WITH intercept: error = beta0 + beta1*deltaT + beta2*deltaT*(F-Fref)/Fref
     X1 = delta_t
     X2 = delta_t * (force - FREF) / FREF
-    X = np.column_stack([X1, X2])
+    X = np.column_stack([np.ones_like(X1), X1, X2])
 
     sw = np.sqrt(w)
     Xw = X * sw[:, None]
     yw = y * sw
 
     beta = np.linalg.lstsq(Xw, yw, rcond=None)[0]
-    c_val = -beta[0] / 100.0
-    k_val = -beta[1] / 100.0
+    intercept = beta[0]
+    c_val = -beta[1] / 100.0
+    k_val = -beta[2] / 100.0
 
-    # C-only model
-    beta_c_only = np.linalg.lstsq((X1 * sw).reshape(-1, 1), yw, rcond=None)[0]
-    c_only = -beta_c_only[0] / 100.0
+    # C-only model WITH intercept: error = beta0 + beta1*deltaT
+    X_c = np.column_stack([np.ones_like(X1), X1])
+    beta_c_only = np.linalg.lstsq((X_c * sw[:, None]), yw, rcond=None)[0]
+    intercept_c = beta_c_only[0]
+    c_only = -beta_c_only[1] / 100.0
 
     # Weighted R2
     y_pred = X @ beta
-    y_pred_c_only = X1 * (-c_only * 100.0)
+    y_pred_c_only = X_c @ beta_c_only
     ss_res = np.sum(w * (y - y_pred) ** 2)
     ss_res_c = np.sum(w * (y - y_pred_c_only) ** 2)
     ss_tot = np.sum(w * (y - np.average(y, weights=w)) ** 2)
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
     r2_c_only = 1.0 - ss_res_c / ss_tot if ss_tot > 0 else 0.0
 
-    # Correction metrics
+    # Correction metrics (using per-plate c/k)
     corrected_c = y + delta_t * c_val * 100.0
     corrected_ck = y + (delta_t * c_val + delta_t * k_val * (force - FREF) / FREF) * 100.0
 
@@ -192,9 +194,11 @@ def fit_plate(plate_df, device_id):
         "temp_min_f": plate_df["temp_f"].min(),
         "temp_max_f": plate_df["temp_f"].max(),
         "temp_range_f": temp_range,
+        "intercept": intercept,
         "c": c_val,
         "k": k_val,
         "c_only": c_only,
+        "intercept_c": intercept_c,
         "r2_ck": r2,
         "r2_c_only": r2_c_only,
         "mean_abs_before": mean_abs_before,
@@ -212,11 +216,11 @@ for dev in sorted(pt_devices):
     result = fit_plate(plate_df, dev)
     if result:
         plate_results.append(result)
-        print(f"  c = {result['c']:.6f}, k = {result['k']:.6f}, "
+        print(f"  intercept = {result['intercept']:+.2f}%, "
+              f"c = {result['c']:.6f}, k = {result['k']:.6f}, "
               f"R2 = {result['r2_ck']:.4f}, "
               f"temp range = {result['temp_min_f']:.1f}-{result['temp_max_f']:.1f}F")
 
-# Also run excluding damaged device
 clean_results = [r for r in plate_results if r["device_id"] != DAMAGED_DEVICE]
 
 
@@ -240,6 +244,7 @@ def summarize(results, label):
         lines.append(f"  {r['device_id']}:")
         lines.append(f"    n={r['n_points']}, temp={r['temp_min_f']:.0f}-{r['temp_max_f']:.0f}F "
                       f"({r['n_buckets']} buckets, range={r['temp_range_f']:.0f}F)")
+        lines.append(f"    intercept = {r['intercept']:+.2f}%")
         lines.append(f"    c = {r['c']:.6f}, k = {r['k']:.6f}")
         lines.append(f"    R2(c+k) = {r['r2_ck']:.4f}, R2(c-only) = {r['r2_c_only']:.4f}")
         lines.append(f"    |error|: {r['mean_abs_before']:.2f}% -> c: {r['mean_abs_after_c']:.2f}% "
@@ -293,11 +298,11 @@ print("\n" + report_clean)
 # ---------------------------------------------------------------------------
 # 4. Save results
 # ---------------------------------------------------------------------------
-# Per-plate coefficients CSV
 coef_rows = []
 for r in plate_results:
     coef_rows.append({
         "device_id": r["device_id"],
+        "intercept": r["intercept"],
         "c": r["c"],
         "k": r["k"],
         "c_only": r["c_only"],
@@ -313,33 +318,31 @@ for r in plate_results:
     })
 pd.DataFrame(coef_rows).to_csv(os.path.join(OUT, "per_plate_coefficients.csv"), index=False)
 
-# Full data
 df.to_csv(os.path.join(OUT, "data.csv"), index=False)
 
-# Report
 with open(os.path.join(OUT, "regression_results.txt"), "w") as f:
     f.write(report_all + "\n\n" + report_clean)
 print(f"\nSaved regression_results.txt, per_plate_coefficients.csv, data.csv")
 
 
 # ---------------------------------------------------------------------------
-# 5. Plot: per-plate before/after panels
+# 5. Plot: individual plate panels (BW vs DB distinct)
+#    One row per plate, 3 columns: no correction / after c / after c+k
+#    BW = circles, DB = triangles
 # ---------------------------------------------------------------------------
-force_bands = [
-    ("DB ~200N", 100, 300, "tab:orange", "^"),
-    ("BW 600-750N", 500, 750, "tab:green", "o"),
-    ("BW 750-950N", 750, 950, "tab:blue", "s"),
-    ("BW 950-1100N", 950, 1200, "tab:red", "D"),
-]
+STAGE_STYLES = {
+    "bw": {"marker": "o", "color": "tab:blue", "label": "Body Weight"},
+    "db": {"marker": "^", "color": "tab:orange", "label": "Dumbbell"},
+}
 
 n_plates = len(clean_results)
 if n_plates > 0:
-    fig, axes = plt.subplots(n_plates, 3, figsize=(18, 5 * n_plates), squeeze=False, sharey=True)
+    fig, axes = plt.subplots(n_plates, 3, figsize=(18, 4.5 * n_plates), squeeze=False)
 
     for i, r in enumerate(clean_results):
         dev = r["device_id"]
         plate_df = df[df["device_id"] == dev].copy()
-        c_val, k_val = r["c"], r["k"]
+        c_val, k_val, intercept = r["c"], r["k"], r["intercept"]
 
         delta_t = plate_df["delta_t"].values.astype(float)
         force = plate_df["force_n"].values.astype(float)
@@ -350,92 +353,132 @@ if n_plates > 0:
 
         for j, (col, title) in enumerate([
             ("avg_signed_pct", "No correction"),
-            ("corrected_c", f"After c={c_val:.5f}"),
-            ("corrected_ck", f"After c={c_val:.5f} k={k_val:.6f}"),
+            ("corrected_c", f"After c = {c_val:.5f}"),
+            ("corrected_ck", f"After c = {c_val:.5f}, k = {k_val:.6f}"),
         ]):
             ax = axes[i][j]
-            for band_label, flo, fhi, color, marker in force_bands:
-                band = plate_df[(plate_df["force_n"] >= flo) & (plate_df["force_n"] < fhi)]
-                if band.empty:
+            for stage_key, style in STAGE_STYLES.items():
+                stage_data = plate_df[plate_df["stage"] == stage_key]
+                if stage_data.empty:
                     continue
-                ax.scatter(band["temp_f"], band[col], c=color, marker=marker,
-                           s=60, alpha=0.8, label=band_label, edgecolors="black", linewidths=0.5)
-                if len(band) >= 2:
-                    x = band["temp_f"].values.astype(float)
-                    yv = band[col].values.astype(float)
+                ax.scatter(
+                    stage_data["temp_f"], stage_data[col],
+                    marker=style["marker"], c=style["color"],
+                    s=60, alpha=0.8, label=style["label"],
+                    edgecolors="black", linewidths=0.5,
+                )
+                # Trend line
+                if len(stage_data) >= 2:
+                    x = stage_data["temp_f"].values.astype(float)
+                    yv = stage_data[col].values.astype(float)
                     z = np.polyfit(x, yv, 1)
                     x_line = np.linspace(x.min(), x.max(), 50)
-                    ax.plot(x_line, np.polyval(z, x_line), color=color, ls="--", lw=1.5, alpha=0.5)
+                    ax.plot(x_line, np.polyval(z, x_line),
+                            color=style["color"], ls="--", lw=1.5, alpha=0.5)
 
             ax.axhline(0, color="gray", ls=":", lw=0.8)
             ax.axvline(IDEAL_TEMP_F, color="gray", ls=":", lw=0.8, alpha=0.5)
             ax.set_xlabel("Temperature (F)")
             if j == 0:
-                ax.set_ylabel(f"{dev}\nAvg signed error (%)")
+                ax.set_ylabel(f"{dev}\nSigned error (%)")
             ax.set_title(title)
             if i == 0:
-                ax.legend(fontsize=6)
+                ax.legend(fontsize=8)
 
-    fig.suptitle(f"Type {PLATE_TYPE} -- Per-Plate Correction (excl. {DAMAGED_DEVICE})", fontsize=14)
+    fig.suptitle(
+        f"Type {PLATE_TYPE} -- Per-Plate Results (excl. {DAMAGED_DEVICE})\n"
+        f"Each plate fitted independently with intercept",
+        fontsize=13,
+    )
     plt.tight_layout()
-    fig.savefig(os.path.join(OUT, "per_plate_panels.png"))
+    fig.savefig(os.path.join(OUT, "per_plate_panels.png"), dpi=150)
     print("Saved per_plate_panels.png")
     plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
-# 6. Plot: averaged correction applied to all clean data
+# 6. Plot: slope overlay — all plates on same axes, intercepts zeroed
+#    Uses AVERAGED c/k so you can see how the type-wide coefficient performs
+#    across different plates.
+#    3 panels: no correction / after avg c / after avg c+k
 # ---------------------------------------------------------------------------
-if summary_clean:
+if summary_clean and clean_results:
     avg_c = summary_clean["avg_c"]
     avg_k = summary_clean["avg_k"]
+
+    # Build a lookup of per-plate intercepts
+    intercepts = {r["device_id"]: r["intercept"] for r in clean_results}
+
     clean_devs = {r["device_id"] for r in clean_results}
     cdf = df[df["device_id"].isin(clean_devs)].copy()
 
+    # Zero each plate's intercept: subtract its beta0 so all plates
+    # share the same "0 = room-temp performance"
+    cdf["zeroed"] = cdf["avg_signed_pct"] - cdf["device_id"].map(intercepts)
+
     delta_t = cdf["delta_t"].values.astype(float)
     force = cdf["force_n"].values.astype(float)
-    y = cdf["avg_signed_pct"].values.astype(float)
+    y_zeroed = cdf["zeroed"].values.astype(float)
 
-    cdf["corrected_c"] = y + delta_t * avg_c * 100.0
-    cdf["corrected_ck"] = y + (delta_t * avg_c + delta_t * avg_k * (force - FREF) / FREF) * 100.0
+    cdf["zeroed_after_c"] = y_zeroed + delta_t * avg_c * 100.0
+    cdf["zeroed_after_ck"] = y_zeroed + (delta_t * avg_c + delta_t * avg_k * (force - FREF) / FREF) * 100.0
 
-    # Bucket for cleaner plotting
-    cdf["temp_bucket"] = (cdf["delta_t"] / BUCKET_SIZE).round() * BUCKET_SIZE + IDEAL_TEMP_F
+    # Assign a distinct color per plate
+    plate_colors = {}
+    cmap = plt.cm.get_cmap("tab10")
+    for idx, dev in enumerate(sorted(clean_devs)):
+        plate_colors[dev] = cmap(idx)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6), sharey=True)
     for ax, col, title in [
-        (axes[0], "avg_signed_pct", "No correction"),
-        (axes[1], "corrected_c", f"After avg c={avg_c:.5f}"),
-        (axes[2], "corrected_ck", f"After avg c={avg_c:.5f} k={avg_k:.6f}"),
+        (axes[0], "zeroed", "No correction"),
+        (axes[1], "zeroed_after_c", f"After avg c = {avg_c:.5f}"),
+        (axes[2], "zeroed_after_ck", f"After avg c = {avg_c:.5f}, k = {avg_k:.6f}"),
     ]:
-        for band_label, flo, fhi, color, marker in force_bands:
-            band = cdf[(cdf["force_n"] >= flo) & (cdf["force_n"] < fhi)]
-            if band.empty:
-                continue
-            # Bucket-average for cleaner plotting
-            for bucket, grp in band.groupby("temp_bucket"):
-                ax.scatter(bucket, grp[col].mean(), c=color, marker=marker,
-                           s=80, alpha=0.8, edgecolors="black", linewidths=0.5,
-                           label=band_label if bucket == band["temp_bucket"].min() else "")
+        for dev in sorted(clean_devs):
+            plate = cdf[cdf["device_id"] == dev]
+            color = plate_colors[dev]
+            short = dev.split(".")[-1][-4:]  # last 4 chars for compact legend
+
+            for stage_key, style in STAGE_STYLES.items():
+                stage_data = plate[plate["stage"] == stage_key]
+                if stage_data.empty:
+                    continue
+                label = f"{short} {style['label']}" if ax == axes[0] else None
+                ax.scatter(
+                    stage_data["temp_f"], stage_data[col],
+                    marker=style["marker"], c=[color],
+                    s=50, alpha=0.7, label=label,
+                    edgecolors="black", linewidths=0.3,
+                )
+
+            # One trend line per plate (all stages combined)
+            if len(plate) >= 2:
+                x = plate["temp_f"].values.astype(float)
+                yv = plate[col].values.astype(float)
+                z = np.polyfit(x, yv, 1)
+                x_line = np.linspace(x.min(), x.max(), 50)
+                ax.plot(x_line, np.polyval(z, x_line),
+                        color=color, ls="-", lw=2, alpha=0.6)
 
         ax.axhline(0, color="gray", ls=":", lw=0.8)
         ax.axvline(IDEAL_TEMP_F, color="gray", ls=":", lw=0.8, alpha=0.5)
-        ax.set_xlabel(f"Temperature (F) -- {BUCKET_SIZE:.0f}F buckets")
-        ax.set_ylabel("Avg signed error (%)")
+        ax.set_xlabel("Temperature (F)")
+        ax.set_ylabel("Signed error (%, intercept zeroed)")
         ax.set_title(title)
-        ax.legend(fontsize=7)
+        if ax == axes[0]:
+            ax.legend(fontsize=6, ncol=2, loc="upper left")
 
     fig.suptitle(
-        f"Type {PLATE_TYPE} -- Averaged Per-Plate Coefficients (excl. {DAMAGED_DEVICE})\n"
-        f"c={avg_c:.6f} (std={summary_clean['std_c']:.6f}), "
-        f"k={avg_k:.6f} (std={summary_clean['std_k']:.6f})\n"
-        f"|error|: {summary_clean['mean_abs_before']:.2f}% -> c: {summary_clean['mean_abs_after_c']:.2f}% "
-        f"-> c+k: {summary_clean['mean_abs_after_ck']:.2f}%",
-        fontsize=11,
+        f"Type {PLATE_TYPE} -- Slope Overlay (excl. {DAMAGED_DEVICE})\n"
+        f"Per-plate intercepts removed. Averaged coefficients applied.\n"
+        f"c = {avg_c:.6f} (std {summary_clean['std_c']:.6f}), "
+        f"k = {avg_k:.6f} (std {summary_clean['std_k']:.6f})",
+        fontsize=12,
     )
     plt.tight_layout()
-    fig.savefig(os.path.join(OUT, "averaged_summary.png"))
-    print("Saved averaged_summary.png")
+    fig.savefig(os.path.join(OUT, "slope_overlay.png"), dpi=150)
+    print("Saved slope_overlay.png")
     plt.close(fig)
 
 

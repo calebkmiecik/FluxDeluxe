@@ -87,6 +87,85 @@ class BiasComputeWorker(QtCore.QThread):
             self.result_ready.emit({"ok": False, "message": str(exc), "errors": [str(exc)]})
 
 
+class BatchProcessBaselineWorker(QtCore.QThread):
+    """Process baseline (temp-off) CSVs for all tests of given plate types.
+
+    Iterates every device whose type prefix is in *plate_types*, finds all
+    temperature tests, and calls ``ensure_temp_off_processed`` for each.
+    Emits progress updates so the UI can show a status bar.
+    """
+
+    progress = QtCore.Signal(dict)   # {"status", "message", "current", "total"}
+    finished_with_result = QtCore.Signal(dict)  # {"processed": int, "skipped": int, "errors": list}
+
+    # Plate types that share a physical size and should be grouped together.
+    SIZE_GROUPS: dict[str, list[str]] = {
+        "06": ["06"],
+        "07": ["07", "11"],
+        "08": ["08", "12"],
+        "10": ["10"],
+        "11": ["07", "11"],
+        "12": ["08", "12"],
+    }
+
+    def __init__(self, service: TestingService, plate_types: list[str]):
+        super().__init__()
+        self.service = service
+        # Expand to include sibling types in the same size group.
+        expanded: set[str] = set()
+        for pt in plate_types:
+            expanded.update(self.SIZE_GROUPS.get(pt, [pt]))
+        self.plate_types = sorted(expanded)
+
+    def run(self) -> None:
+        import logging
+        _log = logging.getLogger(__name__)
+
+        repo = self.service.repo
+        processing = self.service._temp_processing
+
+        processed = 0
+        skipped = 0
+        errors: list[str] = []
+
+        # Discover all matching devices.
+        all_devices = repo.list_temperature_devices() or []
+        devices = [d for d in all_devices if d.split(".", 1)[0] in self.plate_types]
+
+        # Count total tests for progress reporting.
+        device_tests: list[tuple[str, list]] = []
+        for dev in devices:
+            tests = repo.list_temperature_tests(dev) or []
+            device_tests.append((dev, tests))
+        total = sum(len(ts) for _, ts in device_tests)
+
+        self.progress.emit({"status": "running", "message": f"Processing baselines for {len(devices)} devices, {total} tests...", "current": 0, "total": total})
+
+        current = 0
+        for dev, tests in device_tests:
+            device_dir = os.path.dirname(tests[0]) if tests else ""
+            for raw_csv in tests:
+                current += 1
+                short = os.path.basename(raw_csv)
+                self.progress.emit({"status": "running", "message": f"[{current}/{total}] {short}", "current": current, "total": total})
+                try:
+                    folder = os.path.dirname(raw_csv)
+                    processing.ensure_temp_off_processed(
+                        folder=folder,
+                        device_id=dev,
+                        csv_path=raw_csv,
+                    )
+                    processed += 1
+                except FileNotFoundError:
+                    skipped += 1  # no raw/trimmed CSV available
+                except Exception as exc:
+                    errors.append(f"{short}: {exc}")
+                    _log.debug("BatchProcessBaseline: %s failed: %s", short, exc)
+
+        self.progress.emit({"status": "completed", "message": f"Done: {processed} processed, {skipped} skipped, {len(errors)} errors", "current": total, "total": total})
+        self.finished_with_result.emit({"processed": processed, "skipped": skipped, "errors": errors})
+
+
 class PlateTypeRollupWorker(QtCore.QThread):
     """Background worker for batch rollup across a plate type."""
 
