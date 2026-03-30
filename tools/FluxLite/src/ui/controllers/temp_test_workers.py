@@ -884,8 +884,6 @@ def sync_down_device(
     os.makedirs(local_dir, exist_ok=True)
 
     all_sessions = repo.list_sessions_for_device(device_id)
-    if not all_sessions:
-        return {"downloaded": 0, "errors": []}
 
     # Build full lookup before filtering (needed by orphan-meta pass).
     all_sessions_by_capture = {str(s.get("capture_name") or ""): s for s in all_sessions}
@@ -982,6 +980,45 @@ def sync_down_device(
                 downloaded += 1
         except Exception as exc:
             errors.append(f"recover CSV {capture_name}: {exc}")
+
+    # --- Deletion pass: remove local files for remotely soft-deleted sessions ---
+    try:
+        deleted_captures = repo.list_deleted_capture_names()
+    except Exception:
+        deleted_captures = set()
+
+    if deleted_captures and os.path.isdir(local_dir):
+        import glob as _glob
+
+        for fname in list(os.listdir(local_dir)):
+            if not fname.endswith(".meta.json"):
+                continue
+            meta_path = os.path.join(local_dir, fname)
+            try:
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
+            except Exception:
+                continue
+
+            capture_name = str(meta.get("capture_name") or "")
+            if not capture_name or capture_name not in deleted_captures:
+                continue
+
+            # This session was deleted on another machine — clean up local files.
+            suffix = capture_name.replace("temp-raw-", "", 1)
+            for pattern in (
+                f"temp-raw-{suffix}.csv",
+                f"temp-raw-{suffix}.meta.json",
+                f"temp-trimmed-{suffix}.csv",
+                f"temp-processed-{suffix}.csv",
+                f"temp-scalar-*-{suffix}.csv",
+            ):
+                for fp in _glob.glob(os.path.join(local_dir, pattern)):
+                    try:
+                        os.remove(fp)
+                    except Exception:
+                        pass
+            _log.info("sync_down_device: cleaned up locally deleted session %s", capture_name)
 
     return {"downloaded": downloaded, "errors": errors}
 
@@ -1158,16 +1195,37 @@ class BackgroundSyncWorker(QtCore.QThread):
                                 uploaded_captures.add(capture_name)
                             continue
 
-                    # Check Supabase: if the session already exists remotely
-                    # and the local file hasn't been modified since its own
-                    # synced_at, just stamp synced_at_ms locally and skip.
+                    # Check Supabase: if the session already exists remotely,
+                    # re-upload the meta if it changed locally (mtime > synced_at),
+                    # otherwise just stamp synced_at_ms and skip.
                     if capture_name and capture_name in remote_captures:
-                        try:
-                            meta["synced_at_ms"] = int(_time.time() * 1000)
-                            with open(meta_path, "w", encoding="utf-8") as fh:
-                                json.dump(meta, fh, indent=2, sort_keys=True)
-                        except Exception:
-                            pass
+                        needs_reupload = False
+                        if synced_at:
+                            file_mtime_ms = int(os.path.getmtime(meta_path) * 1000)
+                            if file_mtime_ms > int(synced_at):
+                                needs_reupload = True
+
+                        if needs_reupload:
+                            # Meta was edited locally since last sync — push changes.
+                            try:
+                                repo.sync_session_from_meta(meta_path)
+                                meta["synced_at_ms"] = int(_time.time() * 1000)
+                                with open(meta_path, "w", encoding="utf-8") as fh:
+                                    json.dump(meta, fh, indent=2, sort_keys=True)
+                                uploaded += 1
+                                device_uploaded += 1
+                                _log.info("BackgroundSync: re-uploaded changed meta for %s", capture_name)
+                            except Exception as exc:
+                                _log.debug("BackgroundSync: re-upload failed for %s: %s", capture_name, exc)
+                        else:
+                            try:
+                                meta["synced_at_ms"] = int(_time.time() * 1000)
+                                with open(meta_path, "w", encoding="utf-8") as fh:
+                                    json.dump(meta, fh, indent=2, sort_keys=True)
+                            except Exception:
+                                pass
+                            _log.debug("BackgroundSync: %s already in Supabase — stamped synced_at_ms", capture_name)
+
                         # Only mark as uploaded (skip download) if CSV exists locally
                         _cn = capture_name
                         _tn = _cn.replace("temp-raw-", "temp-trimmed-")
@@ -1177,7 +1235,6 @@ class BackgroundSyncWorker(QtCore.QThread):
                         )
                         if has_csv:
                             uploaded_captures.add(capture_name)
-                        _log.debug("BackgroundSync: %s already in Supabase — stamped synced_at_ms", capture_name)
                         continue
 
                     if device_uploaded == 0:
