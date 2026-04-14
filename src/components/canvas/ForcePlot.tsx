@@ -4,11 +4,12 @@ import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { canvas as C } from '../../lib/theme'
 
-const WINDOW_SEC = 5
+const WINDOW_MS = 5000
 const MAX_SAMPLES = 3000
+const MS_PER_PIXEL_DEFAULT = 10 // 10ms per pixel = 5s across 500px
 
 interface Sample {
-  wallT: number  // performance.now() when this sample was placed on the timeline
+  time: number // backend Unix epoch ms
   fz: number
 }
 
@@ -48,70 +49,24 @@ export function ForcePlot() {
     const bufferSize = store.frameBuffer.size
     const selectedId = useDeviceStore.getState().selectedDeviceId
     const samples = samplesRef.current
-    const now = performance.now()
 
-    // --- Ingest new frames when buffer has grown ---
+    // --- Ingest new frames ---
     if (bufferSize !== lastBufferSizeRef.current) {
-      const allFrames = store.frameBuffer.toArray()
       lastBufferSizeRef.current = bufferSize
+      const allFrames = store.frameBuffer.toArray()
+      const lastTime = samples.length > 0 ? samples[samples.length - 1].time : 0
 
-      // Get new frames for the selected device
-      // Use _receivedAt as the base time, but spread frames within a batch
-      // using backend timestamps to give each a unique position
-      const newFrames = selectedId
-        ? allFrames.filter((f) => f.id === selectedId)
-        : allFrames
+      for (const f of allFrames) {
+        if (selectedId && f.id !== selectedId) continue
+        // Use backend timestamp (Unix epoch ms)
+        const t = f.time
+        if (!t || t <= lastTime) continue
+        samples.push({ time: t, fz: f.fz })
+      }
 
-      if (newFrames.length > 0) {
-        // Find frames newer than what we already have
-        const lastWallT = samples.length > 0 ? samples[samples.length - 1].wallT : 0
-
-        // Group by _receivedAt (batch detection)
-        let batchStart = 0
-        for (let i = 0; i < newFrames.length; i++) {
-          const f = newFrames[i]
-
-          // Spread frames within a batch:
-          // If multiple frames share the same _receivedAt, spread them
-          // evenly across a small time span (~16ms = one render frame)
-          let wallT = f._receivedAt
-
-          // Look ahead to count batch size
-          if (i === batchStart) {
-            let batchEnd = i + 1
-            while (batchEnd < newFrames.length && newFrames[batchEnd]._receivedAt === f._receivedAt) {
-              batchEnd++
-            }
-            const batchSize = batchEnd - batchStart
-            if (batchSize > 1) {
-              // Spread across ~16ms
-              const spread = 16
-              const idx = i - batchStart
-              wallT = f._receivedAt + (idx / (batchSize - 1)) * spread
-            }
-            if (i === batchEnd - 1) {
-              batchStart = batchEnd
-            }
-          } else {
-            // Mid-batch: find our position
-            let bs = i
-            while (bs > 0 && newFrames[bs - 1]._receivedAt === f._receivedAt) bs--
-            let be = i
-            while (be < newFrames.length - 1 && newFrames[be + 1]._receivedAt === f._receivedAt) be++
-            const batchSize = be - bs + 1
-            const idx = i - bs
-            wallT = f._receivedAt + (batchSize > 1 ? (idx / (batchSize - 1)) * 16 : 0)
-          }
-
-          if (wallT > lastWallT) {
-            samples.push({ wallT, fz: f.fz })
-          }
-        }
-
-        // Trim old samples
-        if (samples.length > MAX_SAMPLES) {
-          samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
-        }
+      // Trim
+      if (samples.length > MAX_SAMPLES) {
+        samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
       }
     }
 
@@ -131,14 +86,15 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Sliding window: right = now, left = now - WINDOW_SEC
-    const tMax = now
-    const tMin = now - WINDOW_SEC * 1000
+    // Current time = Date.now() (same epoch as backend timestamps)
+    const now = Date.now()
+    const msPerPixel = WINDOW_MS / plotW
 
-    // Y auto-scale from visible samples
+    // Y auto-scale
     let maxFz = 0
     for (let i = samples.length - 1; i >= 0; i--) {
-      if (samples[i].wallT < tMin) break
+      const age = now - samples[i].time
+      if (age > WINDOW_MS) break
       const abs = Math.abs(samples[i].fz)
       if (abs > maxFz) maxFz = abs
     }
@@ -161,6 +117,8 @@ export function ForcePlot() {
     }
 
     // V grid + X labels
+    ctx.strokeStyle = C.gridLine
+    ctx.lineWidth = 0.5
     for (let i = 0; i <= 5; i++) {
       const x = padding.left + (plotW * i) / 5
       ctx.beginPath()
@@ -177,7 +135,7 @@ export function ForcePlot() {
       ctx.fillText(`${sec.toFixed(1)}s`, x, height - 8)
     }
 
-    // Clip + draw
+    // Clip + draw force line
     ctx.save()
     ctx.beginPath()
     ctx.rect(padding.left, padding.top, plotW, plotH)
@@ -192,10 +150,12 @@ export function ForcePlot() {
     let started = false
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i]
-      if (s.wallT < tMin) continue
-      if (s.wallT > tMax) break
+      const age = now - s.time
+      if (age > WINDOW_MS) continue
+      if (age < 0) break // future sample (shouldn't happen)
 
-      const x = padding.left + ((s.wallT - tMin) / (tMax - tMin)) * plotW
+      // Flux3 formula: x = right edge - (age / msPerPixel)
+      const x = padding.left + plotW - (age / msPerPixel)
       const nFz = (s.fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - nFz)
 
@@ -217,3 +177,5 @@ export function ForcePlot() {
     </div>
   )
 }
+
+const WINDOW_SEC = WINDOW_MS / 1000
