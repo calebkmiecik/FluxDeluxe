@@ -22,6 +22,8 @@ export function ForcePlot() {
   const samplesRef = useRef<Sample[]>([])
   // Track the last frame count we processed to detect new data
   const lastProcessedRef = useRef(0)
+  // Offset: wallClock - backendTime (to map backend timestamps to performance.now() space)
+  const timeOffsetRef = useRef<number | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -68,9 +70,16 @@ export function ForcePlot() {
         // Filter to selected device
         if (selectedId && f.id !== selectedId) continue
         // Use backend timestamp; fall back to _receivedAt if missing
-        const t = f.time ?? f._receivedAt
-        if (t <= lastT) continue
-        samples.push({ t, fz: f.fz })
+        const backendT = f.time ?? f._receivedAt
+        if (backendT <= lastT) continue
+
+        // Compute/update offset between backend clock and wall clock
+        // so we can map backend timestamps into performance.now() space
+        if (timeOffsetRef.current === null) {
+          timeOffsetRef.current = performance.now() - backendT
+        }
+
+        samples.push({ t: backendT + timeOffsetRef.current, fz: f.fz })
       }
 
       // Trim to max samples
@@ -95,8 +104,9 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Time window: right edge = latest sample time, left edge = latest - WINDOW_SEC
-    const tMax = samples[samples.length - 1].t
+    // Time window: right edge = wall clock (moves smoothly at 60fps),
+    // points positioned by their mapped backend timestamps
+    const tMax = performance.now()
     const tMin = tMax - WINDOW_SEC * 1000
 
     // Y-axis auto-scale from visible samples
