@@ -4,26 +4,19 @@ import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { canvas as C } from '../../lib/theme'
 
-// How many seconds of trailing data to show
 const WINDOW_SEC = 5
-// Max samples to keep (bounded memory)
-const MAX_SAMPLES = 600
+const MAX_SAMPLES = 3000
 
-/** Lightweight sample stored in the plot's own buffer */
 interface Sample {
-  t: number // backend timestamp (ms)
+  wallT: number  // performance.now() when this sample was placed on the timeline
   fz: number
 }
 
 export function ForcePlot() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
-  // Plot's own sample buffer — decoupled from the store's ring buffer
   const samplesRef = useRef<Sample[]>([])
-  // Track the last frame count we processed to detect new data
-  const lastProcessedRef = useRef(0)
-  // Offset: wallClock - backendTime (to map backend timestamps to performance.now() space)
-  const timeOffsetRef = useRef<number | null>(null)
+  const lastBufferSizeRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -51,40 +44,74 @@ export function ForcePlot() {
     const dpr = devicePixelRatio
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    // --- Ingest new frames from the store ---
     const store = useLiveDataStore.getState()
-    const currentFrame = store.currentFrame
+    const bufferSize = store.frameBuffer.size
     const selectedId = useDeviceStore.getState().selectedDeviceId
     const samples = samplesRef.current
+    const now = performance.now()
 
-    // Check if there's a new frame to process
-    if (currentFrame && currentFrame._receivedAt !== lastProcessedRef.current) {
-      lastProcessedRef.current = currentFrame._receivedAt
-
-      // Get recent frames from buffer, filter to selected device
+    // --- Ingest new frames when buffer has grown ---
+    if (bufferSize !== lastBufferSizeRef.current) {
       const allFrames = store.frameBuffer.toArray()
-      // Find frames we haven't processed yet (newer than our last sample)
-      const lastT = samples.length > 0 ? samples[samples.length - 1].t : -Infinity
+      lastBufferSizeRef.current = bufferSize
 
-      for (const f of allFrames) {
-        // Filter to selected device
-        if (selectedId && f.id !== selectedId) continue
-        // Use backend timestamp; fall back to _receivedAt if missing
-        const backendT = f.time ?? f._receivedAt
-        if (backendT <= lastT) continue
+      // Get new frames for the selected device
+      // Use _receivedAt as the base time, but spread frames within a batch
+      // using backend timestamps to give each a unique position
+      const newFrames = selectedId
+        ? allFrames.filter((f) => f.id === selectedId)
+        : allFrames
 
-        // Compute/update offset between backend clock and wall clock
-        // so we can map backend timestamps into performance.now() space
-        if (timeOffsetRef.current === null) {
-          timeOffsetRef.current = performance.now() - backendT
+      if (newFrames.length > 0) {
+        // Find frames newer than what we already have
+        const lastWallT = samples.length > 0 ? samples[samples.length - 1].wallT : 0
+
+        // Group by _receivedAt (batch detection)
+        let batchStart = 0
+        for (let i = 0; i < newFrames.length; i++) {
+          const f = newFrames[i]
+
+          // Spread frames within a batch:
+          // If multiple frames share the same _receivedAt, spread them
+          // evenly across a small time span (~16ms = one render frame)
+          let wallT = f._receivedAt
+
+          // Look ahead to count batch size
+          if (i === batchStart) {
+            let batchEnd = i + 1
+            while (batchEnd < newFrames.length && newFrames[batchEnd]._receivedAt === f._receivedAt) {
+              batchEnd++
+            }
+            const batchSize = batchEnd - batchStart
+            if (batchSize > 1) {
+              // Spread across ~16ms
+              const spread = 16
+              const idx = i - batchStart
+              wallT = f._receivedAt + (idx / (batchSize - 1)) * spread
+            }
+            if (i === batchEnd - 1) {
+              batchStart = batchEnd
+            }
+          } else {
+            // Mid-batch: find our position
+            let bs = i
+            while (bs > 0 && newFrames[bs - 1]._receivedAt === f._receivedAt) bs--
+            let be = i
+            while (be < newFrames.length - 1 && newFrames[be + 1]._receivedAt === f._receivedAt) be++
+            const batchSize = be - bs + 1
+            const idx = i - bs
+            wallT = f._receivedAt + (batchSize > 1 ? (idx / (batchSize - 1)) * 16 : 0)
+          }
+
+          if (wallT > lastWallT) {
+            samples.push({ wallT, fz: f.fz })
+          }
         }
 
-        samples.push({ t: backendT + timeOffsetRef.current, fz: f.fz })
-      }
-
-      // Trim to max samples
-      if (samples.length > MAX_SAMPLES) {
-        samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
+        // Trim old samples
+        if (samples.length > MAX_SAMPLES) {
+          samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
+        }
       }
     }
 
@@ -104,44 +131,38 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Time window: right edge = wall clock (moves smoothly at 60fps),
-    // points positioned by their mapped backend timestamps
-    const tMax = performance.now()
-    const tMin = tMax - WINDOW_SEC * 1000
+    // Sliding window: right = now, left = now - WINDOW_SEC
+    const tMax = now
+    const tMin = now - WINDOW_SEC * 1000
 
-    // Y-axis auto-scale from visible samples
+    // Y auto-scale from visible samples
     let maxFz = 0
     for (let i = samples.length - 1; i >= 0; i--) {
-      if (samples[i].t < tMin) break
+      if (samples[i].wallT < tMin) break
       const abs = Math.abs(samples[i].fz)
       if (abs > maxFz) maxFz = abs
     }
-    maxFz = Math.max(maxFz * 1.15, 10) // 15% headroom, minimum ±10N
+    maxFz = Math.max(maxFz * 1.15, 10)
 
-    // Horizontal grid lines + Y labels
+    // H grid + Y labels
     ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
-    const gridLines = 5
-    for (let i = 0; i <= gridLines; i++) {
-      const y = padding.top + (plotH * i) / gridLines
+    for (let i = 0; i <= 5; i++) {
+      const y = padding.top + (plotH * i) / 5
       ctx.beginPath()
       ctx.moveTo(padding.left, y)
       ctx.lineTo(width - padding.right, y)
       ctx.stroke()
-
-      const forceVal = maxFz - (maxFz * 2 * i) / gridLines
+      const val = maxFz - (maxFz * 2 * i) / 5
       ctx.fillStyle = C.axisLabel
       ctx.font = '11px sans-serif'
       ctx.textAlign = 'right'
-      ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
+      ctx.fillText(`${val.toFixed(0)}N`, padding.left - 8, y + 4)
     }
 
-    // Vertical grid lines + X labels
-    const vGridCount = 5
-    ctx.strokeStyle = C.gridLine
-    ctx.lineWidth = 0.5
-    for (let i = 0; i <= vGridCount; i++) {
-      const x = padding.left + (plotW * i) / vGridCount
+    // V grid + X labels
+    for (let i = 0; i <= 5; i++) {
+      const x = padding.left + (plotW * i) / 5
       ctx.beginPath()
       ctx.moveTo(x, padding.top)
       ctx.lineTo(x, padding.top + plotH)
@@ -150,19 +171,18 @@ export function ForcePlot() {
     ctx.fillStyle = C.axisLabel
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
-    for (let i = 0; i <= vGridCount; i++) {
-      const x = padding.left + (plotW * i) / vGridCount
-      const sec = -WINDOW_SEC + (WINDOW_SEC * i) / vGridCount
+    for (let i = 0; i <= 5; i++) {
+      const x = padding.left + (plotW * i) / 5
+      const sec = -WINDOW_SEC + (WINDOW_SEC * i) / 5
       ctx.fillText(`${sec.toFixed(1)}s`, x, height - 8)
     }
 
-    // Clip to plot area
+    // Clip + draw
     ctx.save()
     ctx.beginPath()
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    // Draw force line using backend timestamps for X
     ctx.strokeStyle = C.dataLine
     ctx.lineWidth = 2
     ctx.lineJoin = 'round'
@@ -172,11 +192,12 @@ export function ForcePlot() {
     let started = false
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i]
-      if (s.t < tMin) continue
+      if (s.wallT < tMin) continue
+      if (s.wallT > tMax) break
 
-      const x = padding.left + ((s.t - tMin) / (tMax - tMin)) * plotW
-      const normalizedFz = (s.fz + maxFz) / (2 * maxFz)
-      const y = padding.top + plotH * (1 - normalizedFz)
+      const x = padding.left + ((s.wallT - tMin) / (tMax - tMin)) * plotW
+      const nFz = (s.fz + maxFz) / (2 * maxFz)
+      const y = padding.top + plotH * (1 - nFz)
 
       if (!started) {
         ctx.moveTo(x, y)
