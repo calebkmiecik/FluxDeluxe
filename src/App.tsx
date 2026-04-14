@@ -3,6 +3,7 @@ import { useUiStore } from './stores/uiStore'
 import { Sidebar } from './components/shared/Sidebar'
 import { Launcher } from './pages/Launcher'
 import { FluxLitePage } from './pages/fluxlite/FluxLitePage'
+import { ToastContainer } from './components/shared/Toast'
 
 export default function App() {
   useSocket()
@@ -15,6 +16,7 @@ export default function App() {
         {currentPage === 'launcher' && <Launcher />}
         {currentPage === 'fluxlite' && <FluxLitePage />}
       </main>
+      <ToastContainer />
     </div>
   )
 }
