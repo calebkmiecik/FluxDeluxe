@@ -29,6 +29,7 @@ function createWindow(): void {
   dynamo = new DynamoManager(mainWindow)
   dynamo.start()
 
+  ipcMain.removeHandler('app:version')
   ipcMain.handle('app:version', () => app.getVersion())
 }
 

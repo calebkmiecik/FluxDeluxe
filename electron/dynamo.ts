@@ -92,9 +92,9 @@ export class DynamoManager {
     this.process = null
   }
 
-  restart(): void {
-    this.stop()
-    setTimeout(() => this.start(), 500)
+  async restart(): Promise<void> {
+    await this.stop()
+    this.start()
   }
 
   private pushLog(line: string): void {
