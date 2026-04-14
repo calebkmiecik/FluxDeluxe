@@ -11,9 +11,9 @@
 // ── Colors ──────────────────────────────────────────────────────────
 export const colors = {
   // Backgrounds
-  background: '#1A1A1A',
+  background: '#141414',
   surface: '#242424',
-  surfaceDark: '#141414',
+  surfaceDark: '#1A1A1A',
 
   // Borders
   border: '#333333',
@@ -41,7 +41,7 @@ export const colors = {
   // Canvas-specific
   plateFill: '#AFB4BE',
   gridLine: '#333333',
-  canvasBg: '#1A1A1A',
+  canvasBg: '#141414',
 } as const
 
 // ── Typography ──────────────────────────────────────────────────────

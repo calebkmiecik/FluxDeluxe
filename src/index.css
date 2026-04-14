@@ -7,9 +7,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-background: #1A1A1A;
+  --color-background: #141414;
   --color-surface: #242424;
-  --color-surface-dark: #141414;
+  --color-surface-dark: #1A1A1A;
   --color-border: #333333;
   --color-border-accent: #0051BA;
   --color-text: #CECECE;
@@ -102,7 +102,7 @@
 }
 
 .dark {
-  --background: #1A1A1A;
+  --background: #141414;
   --foreground: #CECECE;
   --card: #242424;
   --card-foreground: #CECECE;
@@ -115,7 +115,7 @@
   --muted: #242424;
   --muted-foreground: #8E9FBC;
   --accent: #8E9FBC;
-  --accent-foreground: #1A1A1A;
+  --accent-foreground: #141414;
   --destructive: #FF5252;
   --destructive-foreground: #FFFFFF;
   --border: #333333;
