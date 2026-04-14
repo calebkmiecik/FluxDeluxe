@@ -1,0 +1,82 @@
+============================================================
+  STAGE 1: k from paired differences — Excluding {'06.00000025'}
+============================================================
+  43 paired tests
+
+  Temp buckets (5F):
+     -30.0F: n= 1, avg delta_error=+2.57%, weight=1.000
+     -25.0F: n= 2, avg delta_error=+0.46%, weight=0.500
+     -20.0F: n= 6, avg delta_error=-0.71%, weight=0.167
+     -15.0F: n= 4, avg delta_error=-0.39%, weight=0.250
+     -10.0F: n= 1, avg delta_error=-1.94%, weight=1.000
+      -5.0F: n= 6, avg delta_error=-0.76%, weight=0.167
+      -0.0F: n= 8, avg delta_error=-0.10%, weight=0.125
+      +5.0F: n= 7, avg delta_error=-1.62%, weight=0.143
+     +10.0F: n= 4, avg delta_error=-0.81%, weight=0.250
+     +15.0F: n= 4, avg delta_error=-2.47%, weight=0.250
+
+  Full model (a + b1*force_ratio + b2*deltaT*force_ratio):
+    a  (constant BW-DB offset)       = -1.4311%
+    b1 (force-dependent baseline)     = +0.2576
+    b2 (force-dependent thermal)      = -0.0630
+    k  = -b2/100                      = 0.000630
+    wR2                               = 0.2572
+
+  Without k (a + b1*force_ratio only):
+    wR2                               = 0.0007
+  Constant only (a):
+    wR2                               = 0.0000
+  R2 improvement from k:                +0.2564
+  R2 improvement from b1:               +0.0007
+
+  Force spread:
+    BW range: 628 - 1079 N
+    DB range: 206 - 206 N
+    Force diff range: 422 - 873 N
+============================================================
+
+============================================================
+  STAGE 2: c per plate (k = 0.000630 fixed) — Excluding {'06.00000025'}
+============================================================
+
+  07.00000051:
+    n=16, temp=44-91F (6 buckets)
+    intercept = -0.08%
+    c = 0.002109
+    wR2 = 0.7067
+    |error|: 2.70% -> c: 1.67% -> c+k: 1.65%
+
+  11.00000031:
+    n=18, temp=55-88F (6 buckets)
+    intercept = +0.12%
+    c = 0.001761
+    wR2 = 0.6611
+    |error|: 2.01% -> c: 0.89% -> c+k: 0.92%
+
+  11.00000033:
+    n=16, temp=55-90F (5 buckets)
+    intercept = +0.32%
+    c = 0.001735
+    wR2 = 0.5599
+    |error|: 2.51% -> c: 1.64% -> c+k: 1.78%
+
+  11.00000035:
+    n=18, temp=53-93F (6 buckets)
+    intercept = +0.40%
+    c = 0.001472
+    wR2 = 0.7767
+    |error|: 1.71% -> c: 1.02% -> c+k: 0.91%
+
+  11.0000003d:
+    n=18, temp=53-89F (8 buckets)
+    intercept = -0.61%
+    c = 0.002039
+    wR2 = 0.7983
+    |error|: 2.27% -> c: 1.15% -> c+k: 1.18%
+
+  Averaged c across 5 plates:
+    c = 0.001823  (std = 0.000256)
+
+  Averaged correction applied to all 86 points:
+    |error|: 2.22% -> c: 1.25% -> c+k: 1.27%
+============================================================

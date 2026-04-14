@@ -187,19 +187,8 @@ class TemperatureCoefRollupService:
                 errors.append(f"{device_id}: bias cache missing bias map")
                 continue
 
-            # IMPORTANT: exclude room-temp baseline raw tests from rollup scoring.
-            # Those tests are used to *learn* the bias baseline and will make top-3 look artificially good.
-            tmin = float(getattr(config, "TEMP_BASELINE_ROOM_TEMP_MIN_F", 71.0))
-            tmax = float(getattr(config, "TEMP_BASELINE_ROOM_TEMP_MAX_F", 77.0))
-            try:
-                baseline_csvs = baseline_csvs_for_devices(repo=self._repo, device_ids=[device_id], min_temp_f=tmin, max_temp_f=tmax)
-            except Exception:
-                baseline_csvs = set()
-
             tests = self._repo.list_temperature_tests(device_id)
             for ti, raw_csv in enumerate(tests):
-                if raw_csv in baseline_csvs:
-                    continue
                 meta = self._repo.load_temperature_meta_for_csv(raw_csv)
                 if not meta:
                     continue  # only tests with meta

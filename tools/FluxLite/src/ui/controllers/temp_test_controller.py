@@ -102,7 +102,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         self.testing.processing_status.connect(self._on_processing_status)
         
         self._worker = None # Keep reference to prevent GC
-        self._supabase_worker = None
+        self._supabase_workers: set = set()  # prevent GC of overlapping upload workers
         self._bulk_upload_worker = None
         self._sync_down_worker = None
         self._bg_sync_worker: BackgroundSyncWorker | None = None
@@ -319,11 +319,13 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             meta_path = self.testing.repo._temp._meta_path_for_csv(csv_path)
             if not meta_path or not os.path.isfile(meta_path):
                 return
-            self._supabase_worker = SupabaseUploadWorker(meta_path)
-            self._supabase_worker.finished.connect(
-                lambda: setattr(self, "_supabase_worker", None)
-            )
-            self._supabase_worker.start()
+            # Prune finished workers so the set doesn't grow unbounded.
+            self._supabase_workers = {w for w in self._supabase_workers if w.isRunning()}
+            worker = SupabaseUploadWorker(meta_path)
+            self._supabase_workers.add(worker)
+            worker.finished.connect(worker.deleteLater)
+            worker.finished.connect(lambda w=worker: self._supabase_workers.discard(w))
+            worker.start()
         except Exception:
             pass
 
@@ -340,7 +342,6 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             self.processing_status.emit({"status": "running", "message": f"Uploading to Supabase: {current}/{total}…"})
 
         def _on_done(result: dict) -> None:
-            self._bulk_upload_worker = None
             uploaded = int((result or {}).get("uploaded", 0))
             skipped = int((result or {}).get("skipped", 0))
             errs = list((result or {}).get("errors") or [])
@@ -351,6 +352,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
             self.processing_status.emit({"status": "completed", "message": msg})
 
         worker.progress.connect(_on_progress)
+        worker.finished.connect(worker.deleteLater)
         worker.finished_with_result.connect(_on_done)
         worker.start()
 
@@ -368,7 +370,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         local_dir = os.path.join(data_dir("temp_testing"), dev)
         worker = SupabaseSyncDownWorker(dev, local_dir)
         self._sync_down_worker = worker
-        worker.finished.connect(lambda: setattr(self, "_sync_down_worker", None))
+        worker.finished.connect(worker.deleteLater)
         worker.finished_with_result.connect(
             lambda result: self._on_sync_down_complete(result, dev)
         )
@@ -406,7 +408,7 @@ class TempTestController(TempTestControllerActionsMixin, QtCore.QObject):
         os.makedirs(root, exist_ok=True)
         worker = BackgroundSyncWorker(root)
         self._bg_sync_worker = worker
-        worker.finished.connect(lambda: setattr(self, "_bg_sync_worker", None))
+        worker.finished.connect(worker.deleteLater)
         worker.finished_with_result.connect(self._on_bg_sync_done)
         worker.sync_progress.connect(self.bg_sync_status.emit)
         worker.start()

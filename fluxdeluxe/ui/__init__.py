@@ -1,2 +1,0 @@
-"""FluxDeluxe Qt UI package."""
-

@@ -151,7 +151,7 @@ class FluxLitePage(QtWidgets.QWidget):
         self._temp_live_capture = TemperatureLiveCaptureManager(self.controller.hardware)
         self._temp_live_capture_ctx: CaptureContext | None = None
         self._pending_post_capture_ctx: CaptureContext | None = None
-        self._post_capture_sync_worker: PostCaptureAutoSyncWorker | None = None
+        self._post_capture_sync_workers: set = set()
         # Temperature test stage switch dialog
         self._stage_switch_dialog: StageSwitchPromptDialog | None = None
         self._stage_switch_pending: bool = False
@@ -1356,14 +1356,12 @@ class FluxLitePage(QtWidgets.QWidget):
             except Exception:
                 _log.exception("PostCaptureSync: failed to read session metadata")
             _log.info("PostCaptureSync: starting worker for capture=%s csv_dir=%s", capture_name, csv_dir)
+            self._post_capture_sync_workers = {w for w in self._post_capture_sync_workers if w.isRunning()}
             worker = PostCaptureAutoSyncWorker(capture_name, csv_dir, device_id, session_meta)
-            self._post_capture_sync_worker = worker
+            self._post_capture_sync_workers.add(worker)
             worker.sync_status.connect(self._on_post_capture_sync_status)
-            # Use a weak check so worker1's finished signal doesn't clear worker2's ref.
-            worker.finished.connect(lambda w=worker: (
-                setattr(self, "_post_capture_sync_worker", None)
-                if self._post_capture_sync_worker is w else None
-            ))
+            worker.finished.connect(worker.deleteLater)
+            worker.finished.connect(lambda w=worker: self._post_capture_sync_workers.discard(w))
             worker.start()
         except Exception:
             _log.exception("PostCaptureSync: failed to start worker")
