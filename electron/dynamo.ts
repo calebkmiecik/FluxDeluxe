@@ -51,18 +51,23 @@ export class DynamoManager {
     const pythonPath = this.getPythonPath()
     const scriptPath = this.getScriptPath()
 
-    // DynamoPy uses `from app.` imports — cwd must be the DynamoPy root
-    const cwd = path.dirname(path.dirname(scriptPath)) // .../DynamoPy/
+    // DynamoPy root (for PYTHONPATH so `from app.` imports work)
+    const dynamoRoot = path.dirname(path.dirname(scriptPath)) // .../DynamoPy/
+    // DynamoPy's config resolves file_system relative to cwd as ../file_system
+    // when APP_ENV=development, so cwd must be DynamoPy/app/
+    const cwd = path.dirname(scriptPath) // .../DynamoPy/app/
 
     this.process = spawn(pythonPath, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd,
-      env: { ...process.env, PYTHONPATH: cwd },
+      env: { ...process.env, PYTHONPATH: dynamoRoot, APP_ENV: 'development' },
     })
 
     console.log(`[dynamo] python: ${pythonPath}`)
     console.log(`[dynamo] script: ${scriptPath}`)
     console.log(`[dynamo] cwd: ${cwd}`)
+    console.log(`[dynamo] PYTHONPATH: ${dynamoRoot}`)
+    console.log(`[dynamo] APP_ENV: development`)
     this.pushLog(`[dynamo] python: ${pythonPath}`)
     this.pushLog(`[dynamo] script: ${scriptPath}`)
 
