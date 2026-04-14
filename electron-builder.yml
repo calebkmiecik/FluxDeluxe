@@ -1,0 +1,22 @@
+appId: com.axioforce.fluxdeluxe
+productName: FluxDeluxe
+directories:
+  output: output
+files:
+  - out/**/*
+extraResources:
+  - from: fluxdeluxe/DynamoPy
+    to: fluxdeluxe/DynamoPy
+    filter:
+      - "**/*"
+      - "!**/__pycache__/**"
+      - "!**/*.pyc"
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+publish:
+  provider: github
+  owner: calebkmiecik
+  repo: FluxDeluxe
