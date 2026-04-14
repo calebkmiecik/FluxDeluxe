@@ -97,7 +97,8 @@ FluxDeluxe/
 - On app close: sends graceful shutdown to DynamoPy, force-kills after timeout
 
 ### `electron/dynamo.ts` — DynamoPy Subprocess Manager
-- Spawns `python/python.exe fluxdeluxe/DynamoPy/app/main.py`
+- **Production**: spawns `python/python.exe fluxdeluxe/DynamoPy/app/main.py` using the bundled Python runtime
+- **Development**: spawns using system Python or project venv (mirrors the existing `runtime.py:get_python_executable()` logic that resolves the correct Python for frozen vs. dev modes)
 - Pipes stdout/stderr to a log ring buffer accessible from the renderer
 - Monitors process health — auto-restarts on crash, notifies renderer via IPC
 - Exposes IPC handlers: `dynamo:restart`, `dynamo:get-logs`, `dynamo:status`
@@ -133,42 +134,89 @@ The React app connects to DynamoPy's Socket.IO server identically to how the Qt 
 
 ### Event Protocol (unchanged from Qt app)
 
-**Backend to Frontend:**
+DynamoPy exposes ~190 Socket.IO events total. The tables below list the events needed for v1 scope (live testing + model packaging). The full event catalog lives in `fluxdeluxe/DynamoPy/app/flux_bridge/events/` — consult that directory as the source of truth for payload shapes and additional events.
 
-| Event | Destination Store |
-|-------|-------------------|
-| `connectedDeviceList` | `deviceStore` |
-| `connectionStatusUpdate` | `deviceStore` |
-| `dynamoConfig` | `sessionStore` |
-| Live data frames | `liveDataStore` (ring buffer) |
-| `captureStartStatus` | `sessionStore` |
-| `stopCaptureStatus` | `sessionStore` |
-| `modelMetadata` | `deviceStore` |
+DynamoPy also runs an HTTP REST API on port 3001 for configuration and admin operations (e.g., `POST /api/shutdown` for graceful shutdown, `GET /api/get-devices`). The React app uses the REST API for shutdown and may use it for configuration reads; all real-time communication uses Socket.IO.
 
-**Frontend to Backend:**
+**Backend to Frontend (v1 events):**
 
-| Event | Purpose |
-|-------|---------|
-| `startCapture` | Begin capture |
-| `stopCapture` | Finalize capture |
-| `cancelCapture` | Discard capture |
-| `setDataEmissionRate` | Set UI update frequency |
-| `activateModel` | Load ML model onto device |
-| `updateDynamoConfig` | Change runtime config |
+| Event | Destination Store | Notes |
+|-------|-------------------|-------|
+| `connectedDeviceList` | `deviceStore` | Device discovery response |
+| `connectionStatusUpdate` | `deviceStore` | Per-device connection changes |
+| `initializationDevices` | `deviceStore` | Devices found during init |
+| `initializationStatusUpdate` | `deviceStore` | Init progress per device |
+| `getGroupsStatus` | `deviceStore` | Device group list |
+| `groupDefinitions` | `deviceStore` | Group definitions (mound zones) |
+| `getDynamoConfigStatus` | `sessionStore` | Runtime config response |
+| `jsonData` | `liveDataStore` | Live data frames (JSON mode) |
+| `simpleJsonData` | `liveDataStore` | Live data frames (msgpack compact mode) |
+| `startCaptureStatus` | `sessionStore` | Capture start ACK |
+| `stopCaptureStatus` | `sessionStore` | Capture stop ACK |
+| `cancelCaptureStatus` | `sessionStore` | Capture cancel ACK |
+| `tareStatus` | `sessionStore` | Tare ACK (per-device) |
+| `tareAllStatus` | `sessionStore` | Tare-all ACK |
+| `modelMetadata` | `deviceStore` | Available ML models |
+| `modelLoadStatus` | `deviceStore` | Model load ACK |
+| `modelActivationStatus` | `deviceStore` | Model activate/deactivate ACK |
+| `modelPackageStatus` | `deviceStore` | Model packaging result |
+| `deviceSettingsList` | `deviceStore` | Device settings response |
+| `deviceTypesList` | `deviceStore` | Device type definitions |
+| `logMessage` | `uiStore` | Backend log forwarding |
+
+**Frontend to Backend (v1 events):**
+
+| Event | Purpose | Payload |
+|-------|---------|---------|
+| `getConnectedDevices` | Request device list | (none) |
+| `getDynamoConfig` | Request runtime config | (none) |
+| `getGroups` | Request device groups | (none) |
+| `getGroupDefinitions` | Request group definitions | (none) |
+| `getDeviceSettings` | Request device settings | (none) |
+| `getDeviceTypes` | Request device types | (none) |
+| `saveGroup` | Create/update device group | Group object |
+| `tare` | Tare specific devices | `{[groupId]: [deviceIds]}` |
+| `tareAll` | Tare all devices | (none) |
+| `startCapture` | Begin capture | `{captureType, groupId, athleteId?, tags?}` |
+| `stopCapture` | Finalize capture | `{groupId?}` |
+| `cancelCapture` | Discard capture | `{groupId?}` |
+| `setDataEmissionRate` | Set UI update frequency | int (0-500) |
+| `updateDynamoConfig` | Change runtime config | `{key, value}` |
+| `getModelMetadata` | Request model list | `{deviceId}` |
+| `activateModel` | Load ML model onto device | `{deviceId, modelId}` |
+| `deactivateModel` | Unload model from device | `{deviceId, modelId}` |
+| `loadModel` | Load model from disk | `{modelDir}` |
+| `packageModel` | Package force+moments models | `{forceModelDir, momentsModelDir, outputDir}` |
+| `getCaptureMetrics` | Fetch capture analytics | `{captureId}` |
+| `getCaptureMetadata` | Query capture history | `{captureType?, athleteIds?, startTime?, stopTime?, tags?}` |
+| `quit` | Graceful backend shutdown | (none) |
+| `clientLog` | Log from frontend | `{level, message}` |
+
+### Live Data Stream
+
+DynamoPy supports three emission modes: `json`, `csv`, and `simpleJson`. The React app should use `simpleJson` mode for live data (msgpack-encoded, lowest overhead) and `json` for debugging/development.
+
+**Event**: `jsonData` (json mode) or `simpleJsonData` (simpleJson mode)
+**Frequency**: Configurable 0-500 Hz via `setDataEmissionRate`
+**Payload**: Per-device data including force vectors (Fz), moments (Mx, My), COP (cop_x, cop_y), temperature, and model predictions if active.
+
+The existing Qt frontend's `extract_device_frames()` function (in `tools/FluxLite/src/ui/live_data_frames.py`) handles multiple payload shapes — the React version must handle the same variations. Consult that file for the definitive frame extraction logic.
 
 ---
 
 ## Zustand Stores
 
-### `deviceStore` — Hardware State
+### `deviceStore` — Hardware & Connection State
+- `connectionState`: `BACKEND_STARTING | SOCKET_CONNECTING | DISCOVERING_DEVICES | READY` (backend/hardware lifecycle, not test session state)
 - `devices`: Map of connected devices (id, type, status, firmware version, temperature)
 - `groups`: Device groups (paired devices for testing)
+- `groupDefinitions`: Group definitions (mound zone assignments)
 - `models`: Available ML models and device assignments
-- Actions: `selectDevice()`, `activateModel()`, `deactivateModel()`
+- Actions: `selectDevice()`, `activateModel()`, `deactivateModel()`, `saveGroup()`
 
 ### `sessionStore` — Test Session Lifecycle
-- `connectionState`: `BACKEND_STARTING | SOCKET_CONNECTING | DISCOVERING_DEVICES | READY`
 - `sessionPhase`: `IDLE | WARMUP | TARE | ARMED | STABLE | CAPTURING | SUMMARY`
+  - Note: `ARMED` and `STABLE` are frontend-only refinements of the existing backend `active` phase. The backend's `LiveSessionGate` uses `inactive | warmup | tare | active`. The frontend subdivides `active` into finer states for UI purposes.
 - `activeCapture`: Current capture metadata (start time, athlete, tags)
 - `dynamoConfig`: Emission rate, sampling rate, demo mode
 - Actions: `startCapture()`, `stopCapture()`, `cancelCapture()`, `tare()`, `updateConfig()`
@@ -187,6 +235,22 @@ The React app connects to DynamoPy's Socket.IO server identically to how the Qt 
 - `backendLogs`: Recent DynamoPy log lines (from Electron IPC)
 
 Stores are independent — no store reads from another. `deviceStore` and `sessionStore` are driven by Socket.IO events. `liveDataStore` is driven by the high-frequency data stream. `uiStore` is driven by user interaction.
+
+---
+
+## Device Group Management (Mound Mode)
+
+When testing with a mound setup (launch plate + landing plates), the user must assign physical devices to logical positions. This mirrors the existing `WorldCanvas` mound mode.
+
+**Mound zone positions**: "Launch Zone" (type 07/11), "Upper Landing Zone" (type 08/12), "Lower Landing Zone" (type 08/12).
+
+**Workflow**:
+1. User clicks a plate position on the `PlateCanvas` (in mound display mode)
+2. `DevicePickerDialog` opens, filtered to compatible device types for that position
+3. User selects a device → `saveGroup` event sent to backend with zone-to-device mapping
+4. Backend creates/updates the device group → `getGroupsStatus` response confirms
+
+This state lives in `deviceStore.groups` and `deviceStore.groupDefinitions`.
 
 ---
 
@@ -265,11 +329,26 @@ Give you what you need, strip away what you don't. The workspace adapts to the c
 - Sortable/filterable table of past sessions
 - Click to drill into capture detail: metrics, force plot replay, plate grid snapshot
 - Searchable by date, device, athlete, tags
+- **Data source**: Queries capture history via Socket.IO `getCaptureMetadata` event (returns metadata from DynamoPy's local SQLite + Firebase). Individual capture details via `getCaptureMetrics` and `getCaptureResults` events. No direct database access from the React app.
 
 ### Models Page
 - List of available models with metadata
 - Package new model dialog
 - Activate/deactivate on devices
+
+---
+
+## Error Handling
+
+**DynamoPy crash during active session**: Electron detects process exit via `dynamo.ts`. If a capture is in progress, the session transitions to an error state. DynamoPy auto-restarts. The UI shows a toast with the failure and offers to resume or discard. The capture CSV may be partially written on disk — recovery is not attempted in v1.
+
+**Socket.IO disconnection during active test**: `useSocket` hook detects disconnect. If mid-capture, the session pauses (UI shows "Reconnecting..."). On reconnect, the app re-requests device state. If reconnection fails after timeout, transitions to error state.
+
+**Device disconnection during capture**: Backend sends `connectionStatusUpdate` with disconnected status. Frontend shows which device dropped and stops the capture. The user decides whether to save partial data or discard.
+
+**Model packaging failure**: `modelPackageStatus` event returns with `status: 'error'`. The model packager dialog shows the error message. No retry — user fixes the input and tries again.
+
+**General pattern**: All Socket.IO response events include `{status: 'success'|'error', message: string}`. The `useSocket` hook checks status on every response and routes errors to the toast system via `uiStore`.
 
 ---
 
