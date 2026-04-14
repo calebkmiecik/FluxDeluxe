@@ -27,7 +27,9 @@ export class DynamoManager {
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
     }
-    return path.join(app.getAppPath(), 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
+    // In dev mode, app.getAppPath() points to out/main, not the project root.
+    // Walk up from __dirname (out/main/) to reach the project root.
+    return path.join(__dirname, '..', '..', 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
   }
 
   start(): void {
@@ -41,6 +43,16 @@ export class DynamoManager {
     this.process = spawn(pythonPath, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
+    })
+
+    this.pushLog(`[dynamo] python: ${pythonPath}`)
+    this.pushLog(`[dynamo] script: ${scriptPath}`)
+
+    this.process.on('error', (err) => {
+      this.pushLog(`[dynamo] spawn error: ${err.message}`)
+      this.status = 'crashed'
+      this.process = null
+      this.notifyStatus()
     })
 
     this.process.stdout?.on('data', (data: Buffer) => {
