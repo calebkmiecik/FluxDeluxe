@@ -2,14 +2,25 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-surface: #1e1e1e;
-  --color-success: #00c853;
-  --color-warning: #ffc107;
-  --color-danger: #ff5252;
+  --color-background: #232323;
+  --color-surface: #2D2D2D;
+  --color-surface-dark: #1E1E1E;
+  --color-border: #3A3A3A;
+  --color-border-accent: #0051BA;
+  --color-text: #CECECE;
+  --color-text-muted: #8E9FBC;
+  --color-primary: #0051BA;
+  --color-primary-hover: #0063E0;
+  --color-accent: #8E9FBC;
+  --color-success: #00C853;
+  --color-warning: #FFC107;
+  --color-danger: #FF5252;
+  --font-mono: 'Geist Mono Variable', monospace;
 }
 
 @theme inline {
@@ -91,37 +102,25 @@
 }
 
 .dark {
-  --background: #121212;
-  --foreground: oklch(0.985 0 0);
-  --card: #1e1e1e;
-  --card-foreground: oklch(0.985 0 0);
-  --popover: #1e1e1e;
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: #4a9eff;
-  --primary-foreground: #121212;
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: #ff5252;
-  --border: #2e2e2e;
-  --input: #2e2e2e;
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: #232323;
+  --foreground: #CECECE;
+  --card: #2D2D2D;
+  --card-foreground: #CECECE;
+  --popover: #2D2D2D;
+  --popover-foreground: #CECECE;
+  --primary: #0051BA;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2D2D2D;
+  --secondary-foreground: #CECECE;
+  --muted: #2D2D2D;
+  --muted-foreground: #8E9FBC;
+  --accent: #8E9FBC;
+  --accent-foreground: #232323;
+  --destructive: #FF5252;
+  --destructive-foreground: #FFFFFF;
+  --border: #3A3A3A;
+  --input: #3A3A3A;
+  --ring: #0051BA;
 }
 
 @layer base {
@@ -134,4 +133,30 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Aerospace telemetry label */
+.telemetry-label {
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+/* Aerospace telemetry value */
+.telemetry-value {
+  font-size: 16px;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+
+/* Card with accent top border */
+.card-accent {
+  border-top: 2px solid var(--color-primary);
+}
+
+/* Primary button directional glow on hover */
+.btn-glow:hover {
+  box-shadow: 2px 2px 8px rgba(0, 81, 186, 0.3);
 }
