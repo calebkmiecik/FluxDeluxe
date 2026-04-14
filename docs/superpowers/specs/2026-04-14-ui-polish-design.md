@@ -40,6 +40,49 @@ Apply Axioforce brand identity and visual polish to the FluxDeluxe Electron + Re
 | `--color-warning` | `#FFC107` | Caution, warmup states |
 | `--color-danger` | `#FF5252` | Errors, stop buttons, fail indicators |
 
+### shadcn/ui Token Mapping
+
+The shadcn/ui components use their own CSS custom properties. These MUST be updated in the `.dark` block of `src/index.css` to match the brand palette:
+
+```css
+.dark {
+  --background: #232323;
+  --foreground: #CECECE;
+  --card: #2D2D2D;
+  --card-foreground: #CECECE;
+  --popover: #2D2D2D;
+  --popover-foreground: #CECECE;
+  --primary: #0051BA;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2D2D2D;
+  --secondary-foreground: #CECECE;
+  --muted: #2D2D2D;
+  --muted-foreground: #8E9FBC;
+  --accent: #8E9FBC;
+  --accent-foreground: #232323;
+  --destructive: #FF5252;
+  --destructive-foreground: #FFFFFF;
+  --border: #3A3A3A;
+  --input: #3A3A3A;
+  --ring: #0051BA;
+}
+```
+
+### Hardcoded Class Migration
+
+Replace all hardcoded Tailwind color classes with token-based equivalents:
+
+| Replace | With | Reason |
+|---------|------|--------|
+| `text-white` | `text-foreground` | Uses `#CECECE` instead of pure white |
+| `text-zinc-400` | `text-muted-foreground` | Uses `#8E9FBC` accent gray-blue |
+| `text-zinc-500` | `text-muted-foreground` | Same — consolidate zinc shades |
+| `bg-zinc-*` | `bg-muted` or `bg-card` | Use semantic tokens |
+| `bg-black/50` (backdrops) | `bg-black/60` | Slightly more opacity for modals |
+| `border-zinc-*` | `border-border` | Use border token |
+
+Also update `index.html` body class from `text-white` to `text-foreground`.
+
 ### Typography
 
 - **Font family**: `'Geist Variable', system-ui, sans-serif` for all UI text
@@ -47,7 +90,8 @@ Apply Axioforce brand identity and visual polish to the FluxDeluxe Electron + Re
 - **Scale**: 24px page titles, 16px section headers, 14px body, 12px labels/captions
 - **Weights**: 400 (body), 500 (labels/emphasis), 600 (headings), 700 (page titles)
 - **Letter-spacing**: `-0.01em` on headings for tighter, technical feel
-- **Monospace**: `'Geist Mono', monospace` for data values, readouts, device IDs
+- **Monospace**: `'Geist Mono Variable', monospace` for data values, readouts, device IDs
+- **Prerequisite**: Install `@fontsource-variable/geist-mono` and add `@import` in `src/index.css`. Define `--font-mono: 'Geist Mono Variable', monospace` in the `@theme` block.
 
 ### Spacing
 
@@ -142,6 +186,14 @@ FORCE
 
 **Danger**: `bg-danger`, `text-white`. Hover: brighter + glow.
 
+### Transitions
+
+Standard transition for all interactive elements:
+- Duration: `150ms`
+- Property: `transition-colors` for color-only changes, `transition-all duration-150` for layout shifts
+- Easing: default (ease)
+- Consistent across all buttons, nav items, cards, and interactive elements
+
 ### Status indicators
 
 - Connection dots: `8px` circles, `bg-success` / `bg-warning` / `bg-danger`
@@ -225,7 +277,9 @@ FORCE
 | `src/pages/fluxlite/ModelsPage.tsx` | Card list styling |
 | `src/pages/fluxlite/ModelPackager.tsx` | Modal/form styling |
 | `src/pages/fluxlite/HistoryPage.tsx` | Table styling |
-| `src/components/canvas/ForcePlot.tsx` | Background color update to `#232323` |
-| `src/components/canvas/COPVisualization.tsx` | Background color update |
-| `src/components/canvas/PlateCanvas.tsx` | Background color update |
+| `src/components/canvas/ForcePlot.tsx` | Update ALL hardcoded colors: bg `#232323`, grid `#3A3A3A`, labels `#8E9FBC`, force line `#0051BA`, no-data text `#8E9FBC` |
+| `src/components/canvas/COPVisualization.tsx` | Update ALL hardcoded colors: bg `#232323`, plate outline `#3A3A3A`, COP dot `#0051BA`, crosshair `rgba(0,81,186,0.4)`, text `#CECECE` |
+| `src/components/canvas/PlateCanvas.tsx` | Update ALL hardcoded colors: bg `#232323`, grid lines `#3A3A3A`, plate border `#3A3A3A`, active cell `#0051BA`, cell text `#CECECE` |
+| `src/components/ui/sonner.tsx` | Verify sonner tokens reference updated shadcn variables |
+| `index.html` | Change `text-white` to `text-foreground` on body |
 | `src/App.tsx` | Remove any inline styling that conflicts |
