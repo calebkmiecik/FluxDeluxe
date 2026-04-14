@@ -117,17 +117,16 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    // Draw force line using timestamps for X positioning
-    // At 500-1000Hz, straight lineTo is smooth enough — no bezier needed
+    // Draw force line — simple connected line, no gap detection
+    // Data arrives in batches sharing the same _receivedAt timestamp,
+    // so we just connect all points in order with lineTo
     ctx.strokeStyle = C.dataLine
     ctx.lineWidth = 2
     ctx.lineJoin = 'round'
     ctx.lineCap = 'round'
+    ctx.beginPath()
 
-    let drawing = false
-    let lastT = 0
-    const MAX_GAP_MS = 50 // break line if gap > 50ms (data dropout)
-
+    let started = false
     for (let i = 0; i < frames.length; i++) {
       const t = frames[i]._receivedAt
       if (t < tMin) continue
@@ -136,18 +135,14 @@ export function ForcePlot() {
       const normalizedFz = (frames[i].fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - normalizedFz)
 
-      if (!drawing || (t - lastT) > MAX_GAP_MS) {
-        // Start a new path segment (first point or gap in data)
-        if (drawing) ctx.stroke()
-        ctx.beginPath()
+      if (!started) {
         ctx.moveTo(x, y)
-        drawing = true
+        started = true
       } else {
         ctx.lineTo(x, y)
       }
-      lastT = t
     }
-    if (drawing) ctx.stroke()
+    if (started) ctx.stroke()
 
     ctx.restore()
   })
