@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react'
 import { useAnimationFrame } from '../../hooks/useAnimationFrame'
 import { useLiveDataStore } from '../../stores/liveDataStore'
+import { useDeviceStore } from '../../stores/deviceStore'
 import { canvas as C } from '../../lib/theme'
 
 // How many seconds of data the plot window shows
@@ -10,7 +11,6 @@ export function ForcePlot() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
 
-  // Handle resize
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -26,7 +26,6 @@ export function ForcePlot() {
     return () => observer.disconnect()
   }, [])
 
-  // Render loop
   useAnimationFrame(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -38,7 +37,14 @@ export function ForcePlot() {
     const dpr = devicePixelRatio
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    const frames = useLiveDataStore.getState().frameBuffer.toArray()
+    // Get all frames and filter to selected device
+    const allFrames = useLiveDataStore.getState().frameBuffer.toArray()
+    const selectedId = useDeviceStore.getState().selectedDeviceId
+
+    // Filter to selected device only (avoids interleaving multiple devices)
+    const frames = selectedId
+      ? allFrames.filter((f) => f.id === selectedId)
+      : allFrames
 
     // Clear
     ctx.fillStyle = C.bg
@@ -48,7 +54,7 @@ export function ForcePlot() {
       ctx.fillStyle = C.noDataText
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText('No data', width / 2, height / 2)
+      ctx.fillText(selectedId ? 'No data from device' : 'No device selected', width / 2, height / 2)
       return
     }
 
@@ -57,15 +63,17 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Time window: right edge = now, left edge = now - WINDOW_MS
+    // Time window based on _receivedAt timestamps
     const now = performance.now()
     const tMin = now - WINDOW_MS
     const tMax = now
 
+    // Filter to visible window
+    const visible = frames.filter((f) => f._receivedAt >= tMin)
+
     // Calculate Y scale from visible frames
     let maxFz = 0
-    for (const f of frames) {
-      if (f._receivedAt < tMin) continue
+    for (const f of visible) {
       const abs = Math.abs(f.fz)
       if (abs > maxFz) maxFz = abs
     }
@@ -89,7 +97,7 @@ export function ForcePlot() {
       ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
     }
 
-    // Draw vertical grid lines (time)
+    // Vertical grid lines
     const vGridCount = 5
     ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
@@ -117,9 +125,7 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    // Draw force line — simple connected line, no gap detection
-    // Data arrives in batches sharing the same _receivedAt timestamp,
-    // so we just connect all points in order with lineTo
+    // Draw force line
     ctx.strokeStyle = C.dataLine
     ctx.lineWidth = 2
     ctx.lineJoin = 'round'
@@ -127,12 +133,9 @@ export function ForcePlot() {
     ctx.beginPath()
 
     let started = false
-    for (let i = 0; i < frames.length; i++) {
-      const t = frames[i]._receivedAt
-      if (t < tMin) continue
-
-      const x = padding.left + ((t - tMin) / (tMax - tMin)) * plotW
-      const normalizedFz = (frames[i].fz + maxFz) / (2 * maxFz)
+    for (let i = 0; i < visible.length; i++) {
+      const x = padding.left + ((visible[i]._receivedAt - tMin) / (tMax - tMin)) * plotW
+      const normalizedFz = (visible[i].fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - normalizedFz)
 
       if (!started) {
