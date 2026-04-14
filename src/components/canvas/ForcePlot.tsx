@@ -86,9 +86,12 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Right edge = newest sample (line always reaches the right edge)
-    // Use latest sample time, not Date.now(), to avoid a gap from network latency
-    const now = samples[samples.length - 1].time
+    // Smooth scrolling: right edge = Date.now() minus a display lag.
+    // The lag lets data arrive before it would be visible at the right edge,
+    // so the line fills to the edge without jitter. Date.now() advances every
+    // render frame (60fps) giving perfectly smooth scroll.
+    const DISPLAY_LAG_MS = 200
+    const now = Date.now() - DISPLAY_LAG_MS
     const msPerPixel = WINDOW_MS / plotW
 
     // Y auto-scale
@@ -159,25 +162,43 @@ export function ForcePlot() {
       points.push({ x, y })
     }
 
-    if (points.length > 1) {
-      // --- Gradient fill under curve ---
-      const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotH)
-      grad.addColorStop(0, 'rgba(0, 81, 186, 0.25)')
-      grad.addColorStop(0.6, 'rgba(0, 81, 186, 0.06)')
-      grad.addColorStop(1, 'rgba(0, 81, 186, 0.0)')
+    // Zero line Y position
+    const zeroY = padding.top + plotH * (1 - maxFz / (2 * maxFz))
 
+    // --- Explicit zero baseline ---
+    ctx.strokeStyle = 'rgba(142, 159, 188, 0.35)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(padding.left, zeroY)
+    ctx.lineTo(padding.left + plotW, zeroY)
+    ctx.stroke()
+
+    if (points.length > 1) {
+      // --- Gradient fill from curve toward zero line (clamped at zero) ---
+      // For each point, the fill goes from the data point to the zero line, not past it.
       ctx.beginPath()
       ctx.moveTo(points[0].x, points[0].y)
       for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y)
-      ctx.lineTo(points[points.length - 1].x, padding.top + plotH)
-      ctx.lineTo(points[0].x, padding.top + plotH)
+      // Close to the zero line, not the bottom of the plot
+      ctx.lineTo(points[points.length - 1].x, zeroY)
+      ctx.lineTo(points[0].x, zeroY)
       ctx.closePath()
+
+      // Gradient from the data side toward zero, fading out at zero
+      // Determine if data is mostly above or below zero to orient the gradient
+      const avgY = points.reduce((sum, p) => sum + p.y, 0) / points.length
+      const dataAbove = avgY < zeroY // canvas Y is inverted
+      const gradStart = dataAbove ? padding.top : padding.top + plotH
+      const grad = ctx.createLinearGradient(0, gradStart, 0, zeroY)
+      grad.addColorStop(0, 'rgba(0, 81, 186, 0.12)')
+      grad.addColorStop(0.6, 'rgba(0, 81, 186, 0.04)')
+      grad.addColorStop(1, 'rgba(0, 81, 186, 0.0)')
       ctx.fillStyle = grad
       ctx.fill()
 
       // --- Data line with glow ---
-      ctx.shadowColor = 'rgba(0, 81, 186, 0.6)'
-      ctx.shadowBlur = 8
+      ctx.shadowColor = 'rgba(0, 81, 186, 0.35)'
+      ctx.shadowBlur = 4
       ctx.strokeStyle = C.dataLine
       ctx.lineWidth = 2
       ctx.lineJoin = 'round'
