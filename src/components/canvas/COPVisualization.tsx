@@ -3,6 +3,7 @@ import { useAnimationFrame } from '../../hooks/useAnimationFrame'
 import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { PLATE_DIMENSIONS } from '../../lib/types'
+import { canvas as C } from '../../lib/theme'
 
 // Default plate dimensions (mm) if device type is unknown
 const DEFAULT_PLATE = { width: 353.3, height: 607.3 }
@@ -51,7 +52,7 @@ export function COPVisualization() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     // Clear
-    ctx.fillStyle = '#232323'
+    ctx.fillStyle = C.bg
     ctx.fillRect(0, 0, width, height)
 
     // Get plate dimensions and fit to canvas
@@ -73,7 +74,7 @@ export function COPVisualization() {
     const plateY = (height - plateH) / 2
 
     // Draw plate outline
-    ctx.strokeStyle = '#3A3A3A'
+    ctx.strokeStyle = C.plateOutline
     ctx.lineWidth = 2
     ctx.strokeRect(plateX, plateY, plateW, plateH)
 
@@ -81,7 +82,7 @@ export function COPVisualization() {
     const frame = useLiveDataStore.getState().currentFrame
 
     if (!frame) {
-      ctx.fillStyle = '#8E9FBC'
+      ctx.fillStyle = C.noDataText
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('No data', width / 2, height / 2)
@@ -89,16 +90,15 @@ export function COPVisualization() {
     }
 
     // Map COP from meters to canvas pixels
-    // COP origin is plate center; x/y in meters
     const copPxX = plateX + plateW / 2 + (frame.cop.x * 1000 / plate.width) * plateW
     const copPxY = plateY + plateH / 2 - (frame.cop.y * 1000 / plate.height) * plateH
 
-    // Clamp to plate bounds for visual safety
+    // Clamp to plate bounds
     const cx = Math.max(plateX, Math.min(plateX + plateW, copPxX))
     const cy = Math.max(plateY, Math.min(plateY + plateH, copPxY))
 
     // Draw cross-hair
-    ctx.strokeStyle = 'rgba(0, 81, 186, 0.4)'
+    ctx.strokeStyle = C.copCrosshair
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(cx, plateY)
@@ -111,7 +111,7 @@ export function COPVisualization() {
 
     // Draw COP dot
     const dotRadius = 8
-    ctx.fillStyle = '#0051BA'
+    ctx.fillStyle = C.copDot
     ctx.beginPath()
     ctx.arc(cx, cy, dotRadius, 0, Math.PI * 2)
     ctx.fill()
@@ -123,7 +123,7 @@ export function COPVisualization() {
     ctx.fill()
 
     // Force magnitude text
-    ctx.fillStyle = '#CECECE'
+    ctx.fillStyle = C.forceText
     ctx.font = '13px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(`Fz: ${frame.fz.toFixed(1)} N`, width / 2, height - 10)

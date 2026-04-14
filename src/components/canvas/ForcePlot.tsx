@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react'
 import { useAnimationFrame } from '../../hooks/useAnimationFrame'
 import { useLiveDataStore } from '../../stores/liveDataStore'
+import { canvas as C } from '../../lib/theme'
 
 export function ForcePlot() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -38,11 +39,11 @@ export function ForcePlot() {
     const frames = useLiveDataStore.getState().frameBuffer.toArray()
 
     // Clear
-    ctx.fillStyle = '#232323'
+    ctx.fillStyle = C.bg
     ctx.fillRect(0, 0, width, height)
 
     if (frames.length === 0) {
-      ctx.fillStyle = '#8E9FBC'
+      ctx.fillStyle = C.noDataText
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('No data', width / 2, height / 2)
@@ -63,7 +64,7 @@ export function ForcePlot() {
     maxFz = Math.max(maxFz * 1.2, 50) // At least 50N range, 20% padding
 
     // Draw grid lines
-    ctx.strokeStyle = '#3A3A3A'
+    ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
     const gridLines = 5
     for (let i = 0; i <= gridLines; i++) {
@@ -75,7 +76,7 @@ export function ForcePlot() {
 
       // Y-axis labels
       const forceVal = maxFz - (maxFz * 2 * i) / gridLines
-      ctx.fillStyle = '#8E9FBC'
+      ctx.fillStyle = C.noDataText
       ctx.font = '11px sans-serif'
       ctx.textAlign = 'right'
       ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
@@ -93,7 +94,7 @@ export function ForcePlot() {
 
     // X-axis time labels
     const totalSec = frames.length / 60
-    ctx.fillStyle = '#8E9FBC'
+    ctx.fillStyle = C.axisLabel
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     for (let i = 0; i <= vGridCount; i++) {
@@ -103,7 +104,7 @@ export function ForcePlot() {
     }
 
     // Draw force line
-    ctx.strokeStyle = '#0051BA'
+    ctx.strokeStyle = C.dataLine
     ctx.lineWidth = 1.5
     ctx.beginPath()
     const len = frames.length

@@ -7,10 +7,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-background: #232323;
-  --color-surface: #2D2D2D;
-  --color-surface-dark: #1E1E1E;
-  --color-border: #3A3A3A;
+  --color-background: #1A1A1A;
+  --color-surface: #242424;
+  --color-surface-dark: #141414;
+  --color-border: #333333;
   --color-border-accent: #0051BA;
   --color-text: #CECECE;
   --color-text-muted: #8E9FBC;
@@ -102,24 +102,24 @@
 }
 
 .dark {
-  --background: #232323;
+  --background: #1A1A1A;
   --foreground: #CECECE;
-  --card: #2D2D2D;
+  --card: #242424;
   --card-foreground: #CECECE;
-  --popover: #2D2D2D;
+  --popover: #242424;
   --popover-foreground: #CECECE;
   --primary: #0051BA;
   --primary-foreground: #FFFFFF;
-  --secondary: #2D2D2D;
+  --secondary: #242424;
   --secondary-foreground: #CECECE;
-  --muted: #2D2D2D;
+  --muted: #242424;
   --muted-foreground: #8E9FBC;
   --accent: #8E9FBC;
-  --accent-foreground: #232323;
+  --accent-foreground: #1A1A1A;
   --destructive: #FF5252;
   --destructive-foreground: #FFFFFF;
-  --border: #3A3A3A;
-  --input: #3A3A3A;
+  --border: #333333;
+  --input: #333333;
   --ring: #0051BA;
 }
 

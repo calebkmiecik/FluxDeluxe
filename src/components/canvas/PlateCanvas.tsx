@@ -4,6 +4,7 @@ import {
   GRID_DIMS,
   COLOR_BIN_RGBA,
 } from '../../lib/types'
+import { canvas as C } from '../../lib/theme'
 import {
   mapCellForDevice,
   mapCellForRotation,
@@ -106,7 +107,7 @@ export function PlateCanvas({
     const rect = computePlateRect(cw, ch, plateW, plateH)
 
     // --- plate background ---
-    ctx.fillStyle = '#afb4be'
+    ctx.fillStyle = C.plateFill
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h)
 
     // --- cell dimensions ---
@@ -139,7 +140,7 @@ export function PlateCanvas({
     ctx.font = `bold ${fontSize}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#232323'
+    ctx.fillStyle = C.cellText
 
     for (const [key, text] of cellTexts.entries()) {
       const [canonR, canonC] = key.split(',').map(Number)
@@ -156,7 +157,7 @@ export function PlateCanvas({
     }
 
     // --- grid lines ---
-    ctx.strokeStyle = '#3A3A3A'
+    ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 1
     for (let r = 0; r <= displayRows; r++) {
       const yy = rect.y + r * cellH
@@ -174,7 +175,7 @@ export function PlateCanvas({
     }
 
     // --- plate border ---
-    ctx.strokeStyle = '#3A3A3A'
+    ctx.strokeStyle = C.plateBorder
     ctx.lineWidth = 2
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
 
@@ -189,7 +190,7 @@ export function PlateCanvas({
       )
       const [dispR, dispC] = mapCellForRotation(dr, dc, grid.rows, grid.cols, rotation)
 
-      ctx.strokeStyle = '#0051BA'
+      ctx.strokeStyle = C.activeCell
       ctx.lineWidth = 3
       ctx.strokeRect(
         rect.x + dispC * cellW + 1,
