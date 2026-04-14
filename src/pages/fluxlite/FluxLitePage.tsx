@@ -31,8 +31,8 @@ export function FluxLitePage() {
               onClick={() => setActiveLitePage(item.id)}
               className={`px-3 py-1.5 text-sm rounded-t transition-colors ${
                 activeLitePage === item.id
-                  ? 'text-white bg-surface border-b-2 border-primary'
-                  : 'text-zinc-400 hover:text-white'
+                  ? 'text-foreground bg-card border-b-2 border-primary'
+                  : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               {item.label}
