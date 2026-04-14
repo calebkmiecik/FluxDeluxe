@@ -6,10 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-background: #121212;
   --color-surface: #1e1e1e;
-  --color-border: #2e2e2e;
-  --color-primary: #4a9eff;
   --color-success: #00c853;
   --color-warning: #ffc107;
   --color-danger: #ff5252;
@@ -94,23 +91,23 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: #121212;
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: #1e1e1e;
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: #1e1e1e;
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: #4a9eff;
+  --primary-foreground: #121212;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --destructive: #ff5252;
+  --border: #2e2e2e;
+  --input: #2e2e2e;
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);

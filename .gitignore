@@ -12,9 +12,13 @@ live_test_logs/
 /dist/
 /build/
 /output/
-*.spec
-!FluxDeluxe.spec
 nul
 /CLAUDE.md
 .env
 Microsoft/
+
+# Node / Electron
+node_modules/
+dist-electron/
+out/
+*.js.map
