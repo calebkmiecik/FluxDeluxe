@@ -57,11 +57,12 @@ export class DynamoManager {
     this.process = spawn(pythonPath, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       cwd,
-      env: { ...process.env },
+      env: { ...process.env, PYTHONPATH: cwd },
     })
 
     console.log(`[dynamo] python: ${pythonPath}`)
     console.log(`[dynamo] script: ${scriptPath}`)
+    console.log(`[dynamo] cwd: ${cwd}`)
     this.pushLog(`[dynamo] python: ${pythonPath}`)
     this.pushLog(`[dynamo] script: ${scriptPath}`)
 
