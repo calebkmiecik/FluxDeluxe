@@ -86,7 +86,7 @@ export function FluxLitePage() {
             </div>
 
             {/* Right: Control Panel */}
-            <div className="w-56 border-l border-border bg-card flex-shrink-0">
+            <div className="w-72 border-l border-border bg-card flex-shrink-0">
               <ControlPanel />
             </div>
           </div>

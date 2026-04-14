@@ -34,25 +34,25 @@ export function ControlPanel() {
     <div className="flex flex-col h-full overflow-y-auto">
       {/* Connection status */}
       <Section>
-        <div className="flex items-center gap-2 mb-2">
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+        <div className="flex items-center gap-3 mb-3">
+          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
             connectionState === 'READY' ? 'bg-success' :
             connectionState === 'DISCONNECTED' || connectionState === 'ERROR' ? 'bg-danger' :
             'bg-warning animate-pulse'
           }`} />
-          <span className="telemetry-label">
+          <span className="telemetry-label text-sm">
             {connectionState === 'READY' ? 'Connected' : connectionState.toLowerCase().replace('_', ' ')}
           </span>
         </div>
 
         {/* Device selector */}
         {devices.length > 0 && (
-          <div className="mt-2">
-            <div className="telemetry-label mb-1">Device</div>
+          <div className="mt-3">
+            <div className="telemetry-label mb-2">Device</div>
             <select
               value={selectedDeviceId || ''}
               onChange={(e) => selectDevice(e.target.value || null)}
-              className="w-full bg-background border border-border rounded-md px-2 py-1.5 text-sm text-foreground"
+              className="w-full bg-background border border-border rounded-md px-3 py-2.5 text-sm text-foreground"
             >
               <option value="">Select device...</option>
               {devices.map((d) => (
@@ -66,14 +66,14 @@ export function ControlPanel() {
 
         {/* Device info */}
         {selectedDevice && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-3">
             <div>
               <div className="telemetry-label">Type</div>
-              <div className="telemetry-value text-sm">{selectedDevice.deviceTypeId}</div>
+              <div className="telemetry-value">{selectedDevice.deviceTypeId}</div>
             </div>
             <div>
               <div className="telemetry-label">ID</div>
-              <div className="telemetry-value text-sm font-mono">{selectedDevice.axfId.slice(-8)}</div>
+              <div className="telemetry-value font-mono">{selectedDevice.axfId.slice(-8)}</div>
             </div>
           </div>
         )}
@@ -81,13 +81,13 @@ export function ControlPanel() {
 
       {/* Session status */}
       <Section>
-        <div className="flex items-center gap-2 mb-3">
-          <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
             phase === 'CAPTURING' ? 'bg-danger animate-pulse' :
             phase === 'ARMED' || phase === 'STABLE' ? 'bg-success' :
             'bg-muted-foreground'
           }`} />
-          <span className="telemetry-label">
+          <span className="telemetry-label text-sm">
             {phase === 'IDLE' ? 'Ready' :
              phase === 'ARMED' ? 'Armed' :
              phase === 'STABLE' ? 'Stable' :
@@ -99,11 +99,11 @@ export function ControlPanel() {
 
         {/* Phase-specific controls */}
         {phase === 'IDLE' && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <button
               onClick={handleStartSession}
               disabled={connectionState !== 'READY' || !selectedDeviceId}
-              className="w-full px-4 py-2 bg-primary text-white rounded-md btn-glow transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full px-5 py-3 text-base font-medium bg-primary text-white rounded-md btn-glow transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Start Session
             </button>
@@ -111,18 +111,18 @@ export function ControlPanel() {
         )}
 
         {(phase === 'ARMED' || phase === 'STABLE' || phase === 'CAPTURING') && (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             {phase === 'CAPTURING' && (
               <button
                 onClick={handleStopCapture}
-                className="w-full px-4 py-2 bg-destructive text-white rounded-md transition-colors"
+                className="w-full px-5 py-3 text-base font-medium bg-destructive text-white rounded-md transition-colors"
               >
                 Stop Capture
               </button>
             )}
             <button
               onClick={handleCancelSession}
-              className="w-full px-4 py-2 bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
+              className="w-full px-5 py-3 text-base bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
             >
               End Session
             </button>
@@ -130,19 +130,19 @@ export function ControlPanel() {
         )}
 
         {phase === 'SUMMARY' && (
-          <div className="flex flex-col gap-2">
-            <div className="bg-background rounded-md p-3 mb-1">
-              <p className="text-muted-foreground text-xs">Capture metrics will appear here.</p>
+          <div className="flex flex-col gap-3">
+            <div className="bg-background rounded-md p-4 mb-1">
+              <p className="text-muted-foreground text-sm">Capture metrics will appear here.</p>
             </div>
             <button
               onClick={() => setPhase('ARMED')}
-              className="w-full px-4 py-2 bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
+              className="w-full px-5 py-3 text-base bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
             >
               Test Again
             </button>
             <button
               onClick={() => setPhase('IDLE')}
-              className="w-full px-4 py-2 bg-primary text-white rounded-md btn-glow transition-colors"
+              className="w-full px-5 py-3 text-base font-medium bg-primary text-white rounded-md btn-glow transition-colors"
             >
               Done
             </button>
@@ -152,18 +152,18 @@ export function ControlPanel() {
 
       {/* Quick actions */}
       <Section>
-        <div className="telemetry-label mb-2">Actions</div>
-        <div className="flex flex-col gap-1.5">
+        <div className="telemetry-label mb-3">Actions</div>
+        <div className="flex flex-col gap-2">
           <button
             onClick={handleTare}
             disabled={connectionState !== 'READY'}
-            className="w-full px-3 py-1.5 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors disabled:opacity-40"
+            className="w-full px-4 py-2.5 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors disabled:opacity-40"
           >
             Tare All
           </button>
           <button
             onClick={() => getSocket().emit('getConnectedDevices')}
-            className="w-full px-3 py-1.5 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
+            className="w-full px-4 py-2.5 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors"
           >
             Refresh Devices
           </button>
@@ -175,7 +175,7 @@ export function ControlPanel() {
 
 function Section({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-3 py-3 border-b border-border">
+    <div className="px-4 py-4 border-b border-border">
       {children}
     </div>
   )
