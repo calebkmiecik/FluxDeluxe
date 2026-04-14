@@ -4,12 +4,24 @@ import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { canvas as C } from '../../lib/theme'
 
-// How many seconds of data the plot window shows
-const WINDOW_MS = 5000
+// How many seconds of trailing data to show
+const WINDOW_SEC = 5
+// Max samples to keep (bounded memory)
+const MAX_SAMPLES = 600
+
+/** Lightweight sample stored in the plot's own buffer */
+interface Sample {
+  t: number // backend timestamp (ms)
+  fz: number
+}
 
 export function ForcePlot() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
+  // Plot's own sample buffer — decoupled from the store's ring buffer
+  const samplesRef = useRef<Sample[]>([])
+  // Track the last frame count we processed to detect new data
+  const lastProcessedRef = useRef(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -37,49 +49,66 @@ export function ForcePlot() {
     const dpr = devicePixelRatio
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    // Get all frames and filter to selected device
-    const allFrames = useLiveDataStore.getState().frameBuffer.toArray()
+    // --- Ingest new frames from the store ---
+    const store = useLiveDataStore.getState()
+    const currentFrame = store.currentFrame
     const selectedId = useDeviceStore.getState().selectedDeviceId
+    const samples = samplesRef.current
 
-    // Filter to selected device only (avoids interleaving multiple devices)
-    const frames = selectedId
-      ? allFrames.filter((f) => f.id === selectedId)
-      : allFrames
+    // Check if there's a new frame to process
+    if (currentFrame && currentFrame._receivedAt !== lastProcessedRef.current) {
+      lastProcessedRef.current = currentFrame._receivedAt
 
-    // Clear
+      // Get recent frames from buffer, filter to selected device
+      const allFrames = store.frameBuffer.toArray()
+      // Find frames we haven't processed yet (newer than our last sample)
+      const lastT = samples.length > 0 ? samples[samples.length - 1].t : -Infinity
+
+      for (const f of allFrames) {
+        // Filter to selected device
+        if (selectedId && f.id !== selectedId) continue
+        // Use backend timestamp; fall back to _receivedAt if missing
+        const t = f.time ?? f._receivedAt
+        if (t <= lastT) continue
+        samples.push({ t, fz: f.fz })
+      }
+
+      // Trim to max samples
+      if (samples.length > MAX_SAMPLES) {
+        samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
+      }
+    }
+
+    // --- Draw ---
     ctx.fillStyle = C.bg
     ctx.fillRect(0, 0, width, height)
 
-    if (frames.length === 0) {
+    if (samples.length === 0) {
       ctx.fillStyle = C.noDataText
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
-      ctx.fillText(selectedId ? 'No data from device' : 'No device selected', width / 2, height / 2)
+      ctx.fillText(selectedId ? 'Waiting for data...' : 'No device selected', width / 2, height / 2)
       return
     }
 
-    // Layout
     const padding = { top: 20, right: 20, bottom: 30, left: 60 }
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Time window based on _receivedAt timestamps
-    const now = performance.now()
-    const tMin = now - WINDOW_MS
-    const tMax = now
+    // Time window: right edge = latest sample time, left edge = latest - WINDOW_SEC
+    const tMax = samples[samples.length - 1].t
+    const tMin = tMax - WINDOW_SEC * 1000
 
-    // Filter to visible window
-    const visible = frames.filter((f) => f._receivedAt >= tMin)
-
-    // Calculate Y scale from visible frames
+    // Y-axis auto-scale from visible samples
     let maxFz = 0
-    for (const f of visible) {
-      const abs = Math.abs(f.fz)
+    for (let i = samples.length - 1; i >= 0; i--) {
+      if (samples[i].t < tMin) break
+      const abs = Math.abs(samples[i].fz)
       if (abs > maxFz) maxFz = abs
     }
-    maxFz = Math.max(maxFz * 1.2, 50)
+    maxFz = Math.max(maxFz * 1.15, 10) // 15% headroom, minimum ±10N
 
-    // Draw horizontal grid lines
+    // Horizontal grid lines + Y labels
     ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
     const gridLines = 5
@@ -97,7 +126,7 @@ export function ForcePlot() {
       ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
     }
 
-    // Vertical grid lines
+    // Vertical grid lines + X labels
     const vGridCount = 5
     ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
@@ -108,14 +137,12 @@ export function ForcePlot() {
       ctx.lineTo(x, padding.top + plotH)
       ctx.stroke()
     }
-
-    // X-axis time labels
     ctx.fillStyle = C.axisLabel
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     for (let i = 0; i <= vGridCount; i++) {
       const x = padding.left + (plotW * i) / vGridCount
-      const sec = -WINDOW_MS / 1000 + (WINDOW_MS / 1000 * i) / vGridCount
+      const sec = -WINDOW_SEC + (WINDOW_SEC * i) / vGridCount
       ctx.fillText(`${sec.toFixed(1)}s`, x, height - 8)
     }
 
@@ -125,7 +152,7 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    // Draw force line
+    // Draw force line using backend timestamps for X
     ctx.strokeStyle = C.dataLine
     ctx.lineWidth = 2
     ctx.lineJoin = 'round'
@@ -133,9 +160,12 @@ export function ForcePlot() {
     ctx.beginPath()
 
     let started = false
-    for (let i = 0; i < visible.length; i++) {
-      const x = padding.left + ((visible[i]._receivedAt - tMin) / (tMax - tMin)) * plotW
-      const normalizedFz = (visible[i].fz + maxFz) / (2 * maxFz)
+    for (let i = 0; i < samples.length; i++) {
+      const s = samples[i]
+      if (s.t < tMin) continue
+
+      const x = padding.left + ((s.t - tMin) / (tMax - tMin)) * plotW
+      const normalizedFz = (s.fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - normalizedFz)
 
       if (!started) {
