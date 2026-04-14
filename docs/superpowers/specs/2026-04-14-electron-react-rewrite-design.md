@@ -136,7 +136,7 @@ The React app connects to DynamoPy's Socket.IO server identically to how the Qt 
 
 DynamoPy exposes ~190 Socket.IO events total. The tables below list the events needed for v1 scope (live testing + model packaging). The full event catalog lives in `fluxdeluxe/DynamoPy/app/flux_bridge/events/` — consult that directory as the source of truth for payload shapes and additional events.
 
-DynamoPy also runs an HTTP REST API on port 3001 for configuration and admin operations (e.g., `POST /api/shutdown` for graceful shutdown, `GET /api/get-devices`). The React app uses the REST API for shutdown and may use it for configuration reads; all real-time communication uses Socket.IO.
+DynamoPy also runs an HTTP REST API on port 3001 (default, configurable via `api_port` config key) for configuration and admin operations (e.g., `POST /api/shutdown` for graceful shutdown, `GET /api/get-devices`). The React app uses the REST API for shutdown and may use it for configuration reads; all real-time communication uses Socket.IO.
 
 **Backend to Frontend (v1 events):**
 
@@ -162,6 +162,10 @@ DynamoPy also runs an HTTP REST API on port 3001 for configuration and admin ope
 | `modelPackageStatus` | `deviceStore` | Model packaging result |
 | `deviceSettingsList` | `deviceStore` | Device settings response |
 | `deviceTypesList` | `deviceStore` | Device type definitions |
+| `groupUpdateStatus` | `deviceStore` | Response to saveGroup/updateGroup/deleteGroup |
+| `getCaptureMetricsStatus` | (History page) | Capture analytics response |
+| `getCaptureMetadataStatus` | (History page) | Capture history query response |
+| `getCaptureResultsStatus` | (History page) | Capture detail response |
 | `logMessage` | `uiStore` | Backend log forwarding |
 
 **Frontend to Backend (v1 events):**
@@ -177,7 +181,7 @@ DynamoPy also runs an HTTP REST API on port 3001 for configuration and admin ope
 | `saveGroup` | Create/update device group | Group object |
 | `tare` | Tare specific devices | `{[groupId]: [deviceIds]}` |
 | `tareAll` | Tare all devices | (none) |
-| `startCapture` | Begin capture | `{captureType, groupId, athleteId?, tags?}` |
+| `startCapture` | Begin capture | `{captureType, groupId, captureName?, athleteId?, tags?}` |
 | `stopCapture` | Finalize capture | `{groupId?}` |
 | `cancelCapture` | Discard capture | `{groupId?}` |
 | `setDataEmissionRate` | Set UI update frequency | int (0-500) |
@@ -189,6 +193,7 @@ DynamoPy also runs an HTTP REST API on port 3001 for configuration and admin ope
 | `packageModel` | Package force+moments models | `{forceModelDir, momentsModelDir, outputDir}` |
 | `getCaptureMetrics` | Fetch capture analytics | `{captureId}` |
 | `getCaptureMetadata` | Query capture history | `{captureType?, athleteIds?, startTime?, stopTime?, tags?}` |
+| `getCaptureResults` | Fetch capture detail | `{captureId}` |
 | `quit` | Graceful backend shutdown | (none) |
 | `clientLog` | Log from frontend | `{level, message}` |
 
@@ -207,7 +212,7 @@ The existing Qt frontend's `extract_device_frames()` function (in `tools/FluxLit
 ## Zustand Stores
 
 ### `deviceStore` — Hardware & Connection State
-- `connectionState`: `BACKEND_STARTING | SOCKET_CONNECTING | DISCOVERING_DEVICES | READY` (backend/hardware lifecycle, not test session state)
+- `connectionState`: `BACKEND_STARTING | SOCKET_CONNECTING | DISCOVERING_DEVICES | READY | DISCONNECTED | ERROR` (backend/hardware lifecycle, not test session state)
 - `devices`: Map of connected devices (id, type, status, firmware version, temperature)
 - `groups`: Device groups (paired devices for testing)
 - `groupDefinitions`: Group definitions (mound zone assignments)
@@ -248,7 +253,7 @@ When testing with a mound setup (launch plate + landing plates), the user must a
 1. User clicks a plate position on the `PlateCanvas` (in mound display mode)
 2. `DevicePickerDialog` opens, filtered to compatible device types for that position
 3. User selects a device → `saveGroup` event sent to backend with zone-to-device mapping
-4. Backend creates/updates the device group → `getGroupsStatus` response confirms
+4. Backend creates/updates the device group → `groupUpdateStatus` response confirms
 
 This state lives in `deviceStore.groups` and `deviceStore.groupDefinitions`.
 
