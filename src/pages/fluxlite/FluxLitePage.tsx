@@ -4,6 +4,9 @@ import { IdleView } from './IdleView'
 import { GateView } from './GateView'
 import { LiveView } from './LiveView'
 import { SummaryView } from './SummaryView'
+import { HistoryPage } from './HistoryPage'
+import { ModelsPage } from './ModelsPage'
+import { ModelPackager } from './ModelPackager'
 
 const LITE_NAV = [
   { id: 'live' as const, label: 'Live' },
@@ -46,10 +49,11 @@ export function FluxLitePage() {
           <LiveView />
         ) : (
           activeLitePage === 'live' ? <IdleView /> :
-          activeLitePage === 'history' ? <div className="p-4 text-zinc-400">History (coming soon)</div> :
-          <div className="p-4 text-zinc-400">Models (coming soon)</div>
+          activeLitePage === 'history' ? <HistoryPage /> :
+          <ModelsPage />
         )}
       </div>
+      <ModelPackager />
     </div>
   )
 }
