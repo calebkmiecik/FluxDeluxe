@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { DynamoManager } from './dynamo'
+import { initUpdater } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 let dynamo: DynamoManager | null = null
@@ -28,6 +29,8 @@ function createWindow(): void {
 
   dynamo = new DynamoManager(mainWindow)
   dynamo.start()
+
+  initUpdater(mainWindow)
 
   ipcMain.removeHandler('app:version')
   ipcMain.handle('app:version', () => app.getVersion())
