@@ -3,7 +3,7 @@ import { useUiStore } from '../../stores/uiStore'
 
 const TYPE_STYLES = {
   success: 'border-l-4 border-l-success bg-success/10',
-  error: 'border-l-4 border-l-danger bg-danger/10',
+  error: 'border-l-4 border-l-destructive bg-destructive/10',
   warning: 'border-l-4 border-l-warning bg-warning/10',
   info: 'border-l-4 border-l-primary bg-primary/10',
 } as const
@@ -40,10 +40,10 @@ function ToastItem({ id, message, type, onDismiss }: {
 
   return (
     <div
-      className={`${TYPE_STYLES[type]} bg-surface border border-border rounded px-4 py-3 shadow-lg cursor-pointer animate-in slide-in-from-right`}
+      className={`${TYPE_STYLES[type]} bg-card border border-border rounded-lg px-4 py-3 shadow-lg cursor-pointer animate-in slide-in-from-right`}
       onClick={() => onDismiss(id)}
     >
-      <p className="text-sm text-white">{message}</p>
+      <p className="text-sm text-foreground">{message}</p>
     </div>
   )
 }

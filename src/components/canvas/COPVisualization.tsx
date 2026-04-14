@@ -51,7 +51,7 @@ export function COPVisualization() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     // Clear
-    ctx.fillStyle = '#1a1a1a'
+    ctx.fillStyle = '#232323'
     ctx.fillRect(0, 0, width, height)
 
     // Get plate dimensions and fit to canvas
@@ -73,7 +73,7 @@ export function COPVisualization() {
     const plateY = (height - plateH) / 2
 
     // Draw plate outline
-    ctx.strokeStyle = '#555'
+    ctx.strokeStyle = '#3A3A3A'
     ctx.lineWidth = 2
     ctx.strokeRect(plateX, plateY, plateW, plateH)
 
@@ -81,7 +81,7 @@ export function COPVisualization() {
     const frame = useLiveDataStore.getState().currentFrame
 
     if (!frame) {
-      ctx.fillStyle = '#666'
+      ctx.fillStyle = '#8E9FBC'
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('No data', width / 2, height / 2)
@@ -98,7 +98,7 @@ export function COPVisualization() {
     const cy = Math.max(plateY, Math.min(plateY + plateH, copPxY))
 
     // Draw cross-hair
-    ctx.strokeStyle = 'rgba(74, 158, 255, 0.4)'
+    ctx.strokeStyle = 'rgba(0, 81, 186, 0.4)'
     ctx.lineWidth = 1
     ctx.beginPath()
     ctx.moveTo(cx, plateY)
@@ -111,7 +111,7 @@ export function COPVisualization() {
 
     // Draw COP dot
     const dotRadius = 8
-    ctx.fillStyle = '#4a9eff'
+    ctx.fillStyle = '#0051BA'
     ctx.beginPath()
     ctx.arc(cx, cy, dotRadius, 0, Math.PI * 2)
     ctx.fill()
@@ -123,7 +123,7 @@ export function COPVisualization() {
     ctx.fill()
 
     // Force magnitude text
-    ctx.fillStyle = '#ccc'
+    ctx.fillStyle = '#CECECE'
     ctx.font = '13px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText(`Fz: ${frame.fz.toFixed(1)} N`, width / 2, height - 10)

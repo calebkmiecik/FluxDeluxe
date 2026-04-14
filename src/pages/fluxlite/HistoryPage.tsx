@@ -50,34 +50,34 @@ export function HistoryPage() {
           placeholder="Search captures..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 bg-background border border-border rounded text-sm text-white placeholder-zinc-500 w-64"
+          className="px-3 py-1.5 bg-background border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground w-64"
         />
       </div>
 
       <div className="flex-1 overflow-auto">
         {loading ? (
-          <p className="text-zinc-400">Loading captures...</p>
+          <p className="text-muted-foreground">Loading captures...</p>
         ) : filtered.length === 0 ? (
-          <p className="text-zinc-400">No captures found.</p>
+          <p className="text-muted-foreground">No captures found.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-zinc-400 border-b border-border">
-                <th className="pb-2 pr-4">ID</th>
-                <th className="pb-2 pr-4">Type</th>
-                <th className="pb-2 pr-4">Athlete</th>
-                <th className="pb-2 pr-4">Date</th>
-                <th className="pb-2">Tags</th>
+              <tr className="text-left border-b border-border">
+                <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">ID</th>
+                <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Type</th>
+                <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Athlete</th>
+                <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Date</th>
+                <th className="pb-2 text-muted-foreground text-xs uppercase tracking-wider">Tags</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((cap) => (
-                <tr key={cap.captureId} className="border-b border-border/50 hover:bg-white/5 cursor-pointer">
-                  <td className="py-2 pr-4 font-mono text-xs">{cap.captureId.slice(0, 8)}</td>
-                  <td className="py-2 pr-4">{cap.captureType}</td>
-                  <td className="py-2 pr-4">{cap.athleteId || '—'}</td>
-                  <td className="py-2 pr-4">{new Date(cap.timestamp).toLocaleDateString()}</td>
-                  <td className="py-2">{(cap.tags || []).join(', ') || '—'}</td>
+                <tr key={cap.captureId} className="border-b border-border/50 hover:bg-white/5 transition-colors cursor-pointer">
+                  <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">{cap.captureId.slice(0, 8)}</td>
+                  <td className="py-2 pr-4 text-foreground">{cap.captureType}</td>
+                  <td className="py-2 pr-4 text-muted-foreground">{cap.athleteId || '—'}</td>
+                  <td className="py-2 pr-4 text-muted-foreground">{new Date(cap.timestamp).toLocaleDateString()}</td>
+                  <td className="py-2 text-muted-foreground">{(cap.tags || []).join(', ') || '—'}</td>
                 </tr>
               ))}
             </tbody>

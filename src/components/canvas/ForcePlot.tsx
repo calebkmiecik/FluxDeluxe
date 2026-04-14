@@ -38,11 +38,11 @@ export function ForcePlot() {
     const frames = useLiveDataStore.getState().frameBuffer.toArray()
 
     // Clear
-    ctx.fillStyle = '#1a1a1a'
+    ctx.fillStyle = '#232323'
     ctx.fillRect(0, 0, width, height)
 
     if (frames.length === 0) {
-      ctx.fillStyle = '#666'
+      ctx.fillStyle = '#8E9FBC'
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('No data', width / 2, height / 2)
@@ -63,7 +63,7 @@ export function ForcePlot() {
     maxFz = Math.max(maxFz * 1.2, 50) // At least 50N range, 20% padding
 
     // Draw grid lines
-    ctx.strokeStyle = '#333'
+    ctx.strokeStyle = '#3A3A3A'
     ctx.lineWidth = 0.5
     const gridLines = 5
     for (let i = 0; i <= gridLines; i++) {
@@ -75,7 +75,7 @@ export function ForcePlot() {
 
       // Y-axis labels
       const forceVal = maxFz - (maxFz * 2 * i) / gridLines
-      ctx.fillStyle = '#888'
+      ctx.fillStyle = '#8E9FBC'
       ctx.font = '11px sans-serif'
       ctx.textAlign = 'right'
       ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
@@ -93,7 +93,7 @@ export function ForcePlot() {
 
     // X-axis time labels
     const totalSec = frames.length / 60
-    ctx.fillStyle = '#888'
+    ctx.fillStyle = '#8E9FBC'
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     for (let i = 0; i <= vGridCount; i++) {
@@ -103,7 +103,7 @@ export function ForcePlot() {
     }
 
     // Draw force line
-    ctx.strokeStyle = '#4a9eff'
+    ctx.strokeStyle = '#0051BA'
     ctx.lineWidth = 1.5
     ctx.beginPath()
     const len = frames.length

@@ -30,21 +30,21 @@ export function ModelsPage() {
         <h2 className="text-lg font-semibold">Models</h2>
         <button
           onClick={() => setShowModelPackager(true)}
-          className="px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/80 transition-colors"
+          className="px-3 py-1.5 bg-primary text-white text-sm rounded-md btn-glow transition-colors"
         >
           Package New Model
         </button>
       </div>
 
       {(models as any[]).length === 0 ? (
-        <p className="text-zinc-400">No models loaded.</p>
+        <p className="text-muted-foreground">No models loaded.</p>
       ) : (
         <div className="flex flex-col gap-2">
           {(models as any[]).map((model: any, i: number) => (
-            <div key={model.modelId || i} className="bg-surface border border-border rounded-lg p-4 flex items-center justify-between">
+            <div key={model.modelId || i} className="bg-card border border-border rounded-lg p-4 flex items-center justify-between">
               <div>
-                <div className="font-medium">{model.name || model.modelId || 'Unknown Model'}</div>
-                <div className="text-sm text-zinc-400">
+                <div className="text-foreground font-medium">{model.name || model.modelId || 'Unknown Model'}</div>
+                <div className="text-sm text-muted-foreground">
                   {model.deviceId && `Device: ${model.deviceId}`}
                   {model.type && ` • Type: ${model.type}`}
                 </div>
@@ -53,14 +53,14 @@ export function ModelsPage() {
                 {model.active ? (
                   <button
                     onClick={() => handleDeactivate(model.deviceId, model.modelId)}
-                    className="px-3 py-1 text-sm border border-border rounded hover:bg-white/5"
+                    className="px-3 py-1 text-sm border border-border text-muted-foreground rounded-md hover:bg-white/5"
                   >
                     Deactivate
                   </button>
                 ) : (
                   <button
                     onClick={() => handleActivate(model.deviceId, model.modelId)}
-                    className="px-3 py-1 text-sm bg-primary text-white rounded hover:bg-primary/80"
+                    className="px-3 py-1 text-sm bg-primary text-white rounded-md"
                   >
                     Activate
                   </button>

@@ -139,7 +139,7 @@ export function PlateCanvas({
     ctx.font = `bold ${fontSize}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#1a1a1a'
+    ctx.fillStyle = '#232323'
 
     for (const [key, text] of cellTexts.entries()) {
       const [canonR, canonC] = key.split(',').map(Number)
@@ -156,7 +156,7 @@ export function PlateCanvas({
     }
 
     // --- grid lines ---
-    ctx.strokeStyle = '#555'
+    ctx.strokeStyle = '#3A3A3A'
     ctx.lineWidth = 1
     for (let r = 0; r <= displayRows; r++) {
       const yy = rect.y + r * cellH
@@ -174,7 +174,7 @@ export function PlateCanvas({
     }
 
     // --- plate border ---
-    ctx.strokeStyle = '#333'
+    ctx.strokeStyle = '#3A3A3A'
     ctx.lineWidth = 2
     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h)
 
@@ -189,7 +189,7 @@ export function PlateCanvas({
       )
       const [dispR, dispC] = mapCellForRotation(dr, dc, grid.rows, grid.cols, rotation)
 
-      ctx.strokeStyle = '#00bfff'
+      ctx.strokeStyle = '#0051BA'
       ctx.lineWidth = 3
       ctx.strokeRect(
         rect.x + dispC * cellW + 1,
@@ -284,21 +284,21 @@ export function PlateCanvas({
         <button
           onClick={onRefresh}
           title="Refresh devices"
-          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white text-base font-bold flex items-center justify-center transition-colors"
+          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-muted-foreground hover:text-foreground text-base font-bold flex items-center justify-center transition-colors"
         >
           &#x21bb;
         </button>
         <button
           onClick={onTare}
           title="Tare (zero)"
-          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white text-xs font-bold flex items-center justify-center transition-colors"
+          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-muted-foreground hover:text-foreground text-xs font-bold flex items-center justify-center transition-colors"
         >
           0.0
         </button>
         <button
           onClick={onRotate}
           title="Rotate plate 90 degrees"
-          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white text-base font-bold flex items-center justify-center transition-colors"
+          className="w-8 h-8 rounded bg-white/10 hover:bg-white/20 text-muted-foreground hover:text-foreground text-base font-bold flex items-center justify-center transition-colors"
         >
           &#x27F3;
         </button>

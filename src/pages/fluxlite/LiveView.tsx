@@ -50,7 +50,7 @@ export function LiveView() {
           <div className={`w-2 h-2 rounded-full ${
             phase === 'CAPTURING' ? 'bg-danger animate-pulse' : 'bg-success'
           }`} />
-          <span className="text-sm font-medium">
+          <span className="font-mono text-xs uppercase tracking-widest">
             {phase === 'ARMED' ? 'Waiting for subject...' :
              phase === 'STABLE' ? 'Stable — ready to capture' :
              phase === 'CAPTURING' ? 'Capturing...' : phase}
@@ -58,11 +58,11 @@ export function LiveView() {
         </div>
         <div className="flex gap-2">
           {phase === 'CAPTURING' && (
-            <button onClick={handleStopCapture} className="px-3 py-1 text-sm bg-danger text-white rounded hover:bg-danger/80">
+            <button onClick={handleStopCapture} className="px-3 py-1 text-sm bg-destructive text-white rounded-md hover:bg-destructive/80">
               Stop
             </button>
           )}
-          <button onClick={handleCancelCapture} className="px-3 py-1 text-sm bg-surface border border-border rounded hover:bg-white/5">
+          <button onClick={handleCancelCapture} className="px-3 py-1 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 transition-colors">
             Cancel
           </button>
         </div>
