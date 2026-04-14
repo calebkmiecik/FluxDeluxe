@@ -51,8 +51,12 @@ export class DynamoManager {
     const pythonPath = this.getPythonPath()
     const scriptPath = this.getScriptPath()
 
+    // DynamoPy uses `from app.` imports — cwd must be the DynamoPy root
+    const cwd = path.dirname(path.dirname(scriptPath)) // .../DynamoPy/
+
     this.process = spawn(pythonPath, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd,
       env: { ...process.env },
     })
 
