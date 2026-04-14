@@ -135,28 +135,72 @@
   }
 }
 
-/* Aerospace telemetry label */
+/* ── Mission Control Telemetry ────────────────────────────────── */
+
 .telemetry-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: var(--color-text-muted);
+  font-family: var(--font-mono);
 }
 
-/* Aerospace telemetry value */
 .telemetry-value {
   font-size: 16px;
   font-family: var(--font-mono);
   color: var(--color-text);
+  letter-spacing: 0.02em;
 }
 
-/* Card with accent top border */
+/* ── Panel chrome ────────────────────────────────────────────── */
+
+/* Accent top-edge on cards — like a status strip on hardware */
 .card-accent {
   border-top: 2px solid var(--color-primary);
 }
 
-/* Primary button directional glow on hover */
+/* Subtle inset panel — recessed instrument look */
+.panel-inset {
+  background: var(--color-surface-dark);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+
 .btn-glow:hover {
-  box-shadow: 2px 2px 8px rgba(0, 81, 186, 0.3);
+  box-shadow: 0 0 12px rgba(0, 81, 186, 0.35), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.btn-glow:active {
+  box-shadow: 0 0 6px rgba(0, 81, 186, 0.25);
+}
+
+/* ── Status indicators ───────────────────────────────────────── */
+
+@keyframes status-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.status-live {
+  animation: status-breathe 2s ease-in-out infinite;
+}
+
+/* ── Scrollbar (thin, dark) ──────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
 }

@@ -86,9 +86,9 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Current time with a small offset so the line ends just before the right edge,
+    // Small offset so the leading edge sits just inside the right border,
     // hiding jitter from batch arrivals
-    const RIGHT_MARGIN_MS = 150
+    const RIGHT_MARGIN_MS = 50
     const now = Date.now() - RIGHT_MARGIN_MS
     const msPerPixel = WINDOW_MS / plotW
 
@@ -103,33 +103,36 @@ export function ForcePlot() {
     maxFz = Math.max(maxFz * 1.15, 10)
 
     // H grid + Y labels
-    ctx.strokeStyle = C.gridLine
-    ctx.lineWidth = 0.5
+    const monoFont = "'Geist Mono Variable', monospace"
     for (let i = 0; i <= 5; i++) {
       const y = padding.top + (plotH * i) / 5
+      const val = maxFz - (maxFz * 2 * i) / 5
+      // Zero line gets emphasis
+      const isZero = Math.abs(val) < maxFz * 0.05
+      ctx.strokeStyle = isZero ? 'rgba(142, 159, 188, 0.3)' : C.gridLine
+      ctx.lineWidth = isZero ? 1 : 0.5
       ctx.beginPath()
       ctx.moveTo(padding.left, y)
       ctx.lineTo(width - padding.right, y)
       ctx.stroke()
-      const val = maxFz - (maxFz * 2 * i) / 5
       ctx.fillStyle = C.axisLabel
-      ctx.font = '11px sans-serif'
+      ctx.font = `11px ${monoFont}`
       ctx.textAlign = 'right'
       ctx.fillText(`${val.toFixed(0)}N`, padding.left - 8, y + 4)
     }
 
     // V grid + X labels
-    ctx.strokeStyle = C.gridLine
-    ctx.lineWidth = 0.5
     for (let i = 0; i <= 5; i++) {
       const x = padding.left + (plotW * i) / 5
+      ctx.strokeStyle = C.gridLine
+      ctx.lineWidth = 0.5
       ctx.beginPath()
       ctx.moveTo(x, padding.top)
       ctx.lineTo(x, padding.top + plotH)
       ctx.stroke()
     }
     ctx.fillStyle = C.axisLabel
-    ctx.font = '11px sans-serif'
+    ctx.font = `11px ${monoFont}`
     ctx.textAlign = 'center'
     for (let i = 0; i <= 5; i++) {
       const x = padding.left + (plotW * i) / 5

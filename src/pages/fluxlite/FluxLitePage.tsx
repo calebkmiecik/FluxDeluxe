@@ -43,15 +43,15 @@ export function FluxLitePage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Sub-nav tabs */}
-      <div className="flex gap-1 px-4 pt-2 pb-1 border-b border-border">
+      <div className="flex gap-0 px-4 pt-2 pb-0 border-b border-border">
         {LITE_NAV.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveLitePage(item.id)}
-            className={`px-3 py-1.5 text-sm rounded-t transition-colors ${
+            className={`px-4 py-2 text-xs font-mono tracking-widest uppercase transition-all duration-150 border-b-2 ${
               activeLitePage === item.id
-                ? 'text-foreground bg-card border-b-2 border-primary'
-                : 'text-muted-foreground hover:text-foreground'
+                ? 'text-foreground border-primary'
+                : 'text-muted-foreground border-transparent hover:text-foreground hover:border-border'
             }`}
           >
             {item.label}
