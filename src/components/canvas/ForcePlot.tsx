@@ -117,44 +117,37 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    // Map frames to screen coordinates using real timestamps
-    // This makes scrolling perfectly smooth — each frame has a fixed
-    // position based on when it arrived, and "now" moves continuously at 60fps
-    const points: { x: number; y: number }[] = []
+    // Draw force line using timestamps for X positioning
+    // At 500-1000Hz, straight lineTo is smooth enough — no bezier needed
+    ctx.strokeStyle = C.dataLine
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.lineCap = 'round'
+
+    let drawing = false
+    let lastT = 0
+    const MAX_GAP_MS = 50 // break line if gap > 50ms (data dropout)
+
     for (let i = 0; i < frames.length; i++) {
       const t = frames[i]._receivedAt
-      if (t < tMin - 100) continue // skip frames well outside window (small margin)
+      if (t < tMin) continue
+
       const x = padding.left + ((t - tMin) / (tMax - tMin)) * plotW
       const normalizedFz = (frames[i].fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - normalizedFz)
-      points.push({ x, y })
-    }
 
-    // Draw force line with Catmull-Rom bezier interpolation
-    if (points.length >= 2) {
-      ctx.strokeStyle = C.dataLine
-      ctx.lineWidth = 2
-      ctx.lineJoin = 'round'
-      ctx.lineCap = 'round'
-      ctx.beginPath()
-      ctx.moveTo(points[0].x, points[0].y)
-
-      for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[Math.max(0, i - 1)]
-        const p1 = points[i]
-        const p2 = points[i + 1]
-        const p3 = points[Math.min(points.length - 1, i + 2)]
-
-        const cp1x = p1.x + (p2.x - p0.x) / 6
-        const cp1y = p1.y + (p2.y - p0.y) / 6
-        const cp2x = p2.x - (p3.x - p1.x) / 6
-        const cp2y = p2.y - (p3.y - p1.y) / 6
-
-        ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+      if (!drawing || (t - lastT) > MAX_GAP_MS) {
+        // Start a new path segment (first point or gap in data)
+        if (drawing) ctx.stroke()
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        drawing = true
+      } else {
+        ctx.lineTo(x, y)
       }
-
-      ctx.stroke()
+      lastT = t
     }
+    if (drawing) ctx.stroke()
 
     ctx.restore()
   })
