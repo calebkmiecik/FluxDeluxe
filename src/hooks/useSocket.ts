@@ -7,6 +7,16 @@ import { useLiveDataStore } from '../stores/liveDataStore'
 import { useUiStore } from '../stores/uiStore'
 import type { SocketResponse } from '../lib/types'
 
+/** DynamoPy events vary: some send raw data, some use {status, data} envelope.
+ *  This helper extracts the payload from either format. */
+function unwrapPayload(data: unknown): unknown {
+  if (typeof data === 'object' && data !== null && 'status' in (data as Record<string, unknown>)) {
+    const resp = data as SocketResponse
+    return resp.status === 'success' ? resp.data : null
+  }
+  return data // raw payload
+}
+
 export function useSocket(): void {
   useEffect(() => {
     const socket = getSocket()
@@ -34,41 +44,39 @@ export function useSocket(): void {
     })
 
     // Device events
+    // connectedDeviceList sends raw groups array (NOT wrapped in {status, data})
     socket.on('connectedDeviceList', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        deviceStore.setDevices(resp.data as any)
+      const devices = unwrapPayload(data)
+      if (devices) {
+        deviceStore.setDevices(devices as any)
         deviceStore.setConnectionState('READY')
       }
     })
 
-    socket.on('connectionStatusUpdate', (data: unknown) => {
-      // Update specific device status - implementation depends on payload shape
+    // connectionStatusUpdate fires when devices connect/disconnect — re-fetch the list
+    socket.on('connectionStatusUpdate', (_data: unknown) => {
+      socket.emit('getConnectedDevices')
     })
 
     socket.on('getGroupsStatus', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        deviceStore.setGroups(resp.data as any)
-      }
+      const payload = unwrapPayload(data)
+      if (payload) deviceStore.setGroups(payload as any)
     })
 
     socket.on('groupDefinitions', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        deviceStore.setGroupDefinitions(resp.data as any)
-      }
+      const payload = unwrapPayload(data)
+      if (payload) deviceStore.setGroupDefinitions(payload as any)
     })
 
     // Config
     socket.on('getDynamoConfigStatus', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        const config = resp.data as Record<string, unknown>
+      const payload = unwrapPayload(data)
+      if (payload && typeof payload === 'object') {
+        const config = payload as Record<string, unknown>
         sessionStore.setDynamoConfig({
-          emissionRate: Number(config.dataEmissionRate ?? 0),
-          samplingRate: Number(config.samplingRate ?? 1000),
-          demoMode: Boolean(config.demoMode),
+          emissionRate: Number(config.dataEmissionRate ?? config.emission_rate ?? 0),
+          samplingRate: Number(config.samplingRate ?? config.sampling_rate ?? 1000),
+          demoMode: Boolean(config.demoMode ?? config.demo_mode),
         })
       }
     })
@@ -130,10 +138,8 @@ export function useSocket(): void {
 
     // Device init
     socket.on('initializationDevices', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        deviceStore.setDevices(resp.data as any)
-      }
+      const payload = unwrapPayload(data)
+      if (payload) deviceStore.setDevices(payload as any)
     })
 
     socket.on('initializationStatusUpdate', (_data: unknown) => {})
@@ -152,10 +158,8 @@ export function useSocket(): void {
 
     // Models
     socket.on('modelMetadata', (data: unknown) => {
-      const resp = data as SocketResponse
-      if (resp.status === 'success' && resp.data) {
-        deviceStore.setModels(resp.data as any)
-      }
+      const payload = unwrapPayload(data)
+      if (payload) deviceStore.setModels(payload as any)
     })
 
     socket.on('modelLoadStatus', (data: unknown) => {
