@@ -86,10 +86,7 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Small offset so the leading edge sits just inside the right border,
-    // hiding jitter from batch arrivals
-    const RIGHT_MARGIN_MS = 50
-    const now = Date.now() - RIGHT_MARGIN_MS
+    const now = Date.now()
     const msPerPixel = WINDOW_MS / plotW
 
     // Y auto-scale
