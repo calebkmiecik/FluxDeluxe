@@ -10,7 +10,7 @@ export default function App() {
   const currentPage = useUiStore((s) => s.currentPage)
 
   return (
-    <div className="flex h-screen w-screen bg-background text-white">
+    <div className="flex h-screen w-screen bg-background text-foreground">
       <Sidebar />
       <main className="flex-1 flex overflow-hidden">
         {currentPage === 'launcher' && <Launcher />}
