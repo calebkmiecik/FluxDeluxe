@@ -37,11 +37,11 @@
 | `src/stores/liveDataStore.ts` | Ring buffer, current frame, high-frequency data |
 | `src/stores/uiStore.ts` | Navigation, toasts, dialog visibility, backend logs |
 | `src/hooks/useSocket.ts` | Connect Socket.IO events to Zustand stores |
-| `src/hooks/useLiveData.ts` | Subscribe to live data stream for canvas components |
+| ~~`src/hooks/useLiveData.ts`~~ | *(Removed — canvas components read from liveDataStore directly via `getState()`)* |
 | `src/hooks/useAnimationFrame.ts` | Shared requestAnimationFrame loop hook |
 | `src/components/ui/` | shadcn/ui components (button, dialog, card, toast, etc.) |
 | `src/components/shared/Sidebar.tsx` | Persistent navigation sidebar with device status |
-| `src/components/shared/StatusBar.tsx` | Bottom status bar (connection, session info) |
+| ~~`src/components/shared/StatusBar.tsx`~~ | *(Removed — connection info lives in sidebar; session info in workspace header)* |
 | `src/components/shared/Toast.tsx` | Toast notification system |
 | `src/components/shared/DevicePicker.tsx` | Device selection dialog (single + mound mode) |
 | `src/components/canvas/ForcePlot.tsx` | Real-time force vs. time (HTML5 Canvas) |
@@ -73,9 +73,7 @@
 | `package.json` | Dependencies, scripts |
 | `tsconfig.json` | TypeScript config (strict) |
 | `tsconfig.node.json` | TypeScript config for Electron main process |
-| `vite.config.ts` | Vite + electron-vite config |
-| `tailwind.config.ts` | Tailwind theme (dark mode, Axioforce colors) |
-| `postcss.config.js` | PostCSS for Tailwind |
+| `electron.vite.config.ts` | electron-vite config (main, preload, renderer) |
 | `electron-builder.yml` | Electron packaging config |
 | `components.json` | shadcn/ui config |
 
@@ -84,7 +82,7 @@
 ## Task 1: Branch & Project Scaffold
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `vite.config.ts`, `tailwind.config.ts`, `postcss.config.js`, `components.json`, `src/main.tsx`, `src/App.tsx`, `src/index.css`, `index.html`
+- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `electron.vite.config.ts`, `components.json`, `src/main.tsx`, `src/App.tsx`, `src/index.css`, `index.html`
 
 - [ ] **Step 1: Create the `electron` branch**
 
@@ -131,7 +129,7 @@ Then edit `package.json` to set:
 
 ```bash
 npm install react react-dom zustand socket.io-client recharts
-npm install -D electron electron-vite vite @vitejs/plugin-react typescript @types/react @types/react-dom tailwindcss @tailwindcss/vite postcss autoprefixer vitest @testing-library/react @testing-library/jest-dom jsdom
+npm install -D electron electron-vite vite @vitejs/plugin-react typescript @types/react @types/react-dom tailwindcss @tailwindcss/vite vitest @testing-library/react @testing-library/jest-dom jsdom electron-builder electron-updater
 ```
 
 - [ ] **Step 5: Create TypeScript configs**
@@ -172,48 +170,34 @@ Create `tsconfig.node.json`:
 }
 ```
 
-- [ ] **Step 6: Create Vite config**
+- [ ] **Step 6: Create electron-vite config**
 
-Create `vite.config.ts`:
+Create `electron.vite.config.ts`:
 ```typescript
-import { defineConfig } from 'vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: { '@': path.resolve(__dirname, 'src') },
+  main: {
+    plugins: [externalizeDepsPlugin()],
+  },
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+  },
+  renderer: {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: { '@': path.resolve(__dirname, 'src') },
+    },
   },
 })
 ```
 
-- [ ] **Step 7: Create Tailwind config**
+- [ ] **Step 7: Configure Tailwind v4 theme via CSS**
 
-Create `tailwind.config.ts`:
-```typescript
-import type { Config } from 'tailwindcss'
-
-export default {
-  darkMode: 'class',
-  content: ['./src/**/*.{ts,tsx}', './index.html'],
-  theme: {
-    extend: {
-      colors: {
-        background: '#121212',
-        surface: '#1e1e1e',
-        border: '#2e2e2e',
-        primary: '#4a9eff',
-        success: '#00c853',
-        warning: '#ffc107',
-        danger: '#ff5252',
-      },
-    },
-  },
-  plugins: [],
-} satisfies Config
-```
+Tailwind v4 uses CSS-based configuration, not a config file. Theme customization goes in `src/index.css` (created in Step 8). No `tailwind.config.ts` or `postcss.config.js` needed — `@tailwindcss/vite` handles everything.
 
 - [ ] **Step 8: Create entry files**
 
@@ -236,6 +220,16 @@ Create `index.html`:
 Create `src/index.css`:
 ```css
 @import 'tailwindcss';
+
+@theme {
+  --color-background: #121212;
+  --color-surface: #1e1e1e;
+  --color-border: #2e2e2e;
+  --color-primary: #4a9eff;
+  --color-success: #00c853;
+  --color-warning: #ffc107;
+  --color-danger: #ff5252;
+}
 ```
 
 Create `src/main.tsx`:
@@ -265,7 +259,25 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 9: Initialize shadcn/ui**
+- [ ] **Step 9: Create vitest config**
+
+Create `vitest.config.ts`:
+```typescript
+import { defineConfig } from 'vitest/config'
+import path from 'path'
+
+export default defineConfig({
+  test: {
+    environment: 'jsdom',
+    globals: true,
+  },
+  resolve: {
+    alias: { '@': path.resolve(__dirname, 'src') },
+  },
+})
+```
+
+- [ ] **Step 10: Initialize shadcn/ui**
 
 ```bash
 npx shadcn@latest init
@@ -278,15 +290,15 @@ Then add initial components:
 npx shadcn@latest add button card dialog toast sonner
 ```
 
-- [ ] **Step 10: Verify the dev server starts**
+- [ ] **Step 11: Verify the dev server starts**
 
 ```bash
-npx vite
+npm run dev
 ```
 
-Open browser to `http://localhost:5173`. Confirm "FluxDeluxe" renders with dark background and white text.
+Confirm: Electron window opens showing "FluxDeluxe" with dark background and white text. If Electron doesn't open, check that `electron-vite` is configured correctly.
 
-- [ ] **Step 11: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add -A
@@ -299,18 +311,9 @@ git commit -m "feat: scaffold Electron + React project with Vite, Tailwind, shad
 
 **Files:**
 - Create: `electron/main.ts`, `electron/preload.ts`, `electron/dynamo.ts`
-- Modify: `vite.config.ts` (add electron-vite config), `package.json` (update main entry)
+- Note: `electron.vite.config.ts` was already created in Task 1
 
-- [ ] **Step 1: Configure electron-vite**
-
-Update `vite.config.ts` to use `electron-vite` or configure Electron entry points. Create an `electron-vite` config or update the existing vite config per electron-vite docs.
-
-Check the latest electron-vite documentation for the correct configuration approach:
-```bash
-npx electron-vite --help
-```
-
-- [ ] **Step 2: Create `electron/preload.ts`**
+- [ ] **Step 1: Create `electron/preload.ts`**
 
 ```typescript
 import { contextBridge, ipcRenderer } from 'electron'
@@ -329,7 +332,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 })
 ```
 
-- [ ] **Step 3: Create `electron/dynamo.ts`**
+- [ ] **Step 2: Create `electron/dynamo.ts`**
 
 ```typescript
 import { spawn, ChildProcess } from 'child_process'
@@ -408,12 +411,22 @@ export class DynamoManager {
     })
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (!this.process) return
     this.status = 'stopped'
-    this.process.kill()
-    this.process = null
     this.notifyStatus()
+    // Graceful shutdown: POST /api/shutdown, then wait up to 5s before force-kill
+    try {
+      await fetch('http://localhost:3001/api/shutdown', { method: 'POST', signal: AbortSignal.timeout(3000) })
+    } catch { /* Backend may already be down */ }
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.process?.kill()
+        resolve()
+      }, 5000)
+      this.process?.on('exit', () => { clearTimeout(timeout); resolve() })
+    })
+    this.process = null
   }
 
   restart(): void {
@@ -432,6 +445,10 @@ export class DynamoManager {
   }
 
   private registerIpcHandlers(): void {
+    // Guard against duplicate registration (e.g., window recreation)
+    for (const ch of ['dynamo:status', 'dynamo:get-logs', 'dynamo:restart']) {
+      ipcMain.removeHandler(ch)
+    }
     ipcMain.handle('dynamo:status', () => this.status)
     ipcMain.handle('dynamo:get-logs', () => [...this.logs])
     ipcMain.handle('dynamo:restart', () => { this.restart() })
@@ -441,7 +458,7 @@ export class DynamoManager {
 }
 ```
 
-- [ ] **Step 4: Create `electron/main.ts`**
+- [ ] **Step 3: Create `electron/main.ts`**
 
 ```typescript
 import { app, BrowserWindow, ipcMain } from 'electron'
@@ -480,13 +497,13 @@ function createWindow(): void {
 
 app.whenReady().then(createWindow)
 
-app.on('window-all-closed', () => {
-  dynamo?.stop()
+app.on('window-all-closed', async () => {
+  await dynamo?.stop()
   app.quit()
 })
 ```
 
-- [ ] **Step 5: Verify Electron window opens with React app**
+- [ ] **Step 4: Verify Electron window opens with React app**
 
 ```bash
 npm run dev
@@ -494,7 +511,7 @@ npm run dev
 
 Confirm: Electron window opens, shows "FluxDeluxe" text, DynamoPy starts (check terminal logs).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -989,7 +1006,7 @@ describe('liveDataStore', () => {
   it('pushes frames to ring buffer', () => {
     const frame = { id: 'axf_001', fx: 0, fy: 0, fz: 100, cop: { x: 0, y: 0 }, moments: { x: 0, y: 0, z: 0 } }
     useLiveDataStore.getState().pushFrame(frame as any)
-    expect(useLiveDataStore.getState().frameBuffer).toHaveLength(1)
+    expect(useLiveDataStore.getState().frameBuffer.size).toBe(1)
     expect(useLiveDataStore.getState().currentFrame?.fz).toBe(100)
   })
 
@@ -998,7 +1015,7 @@ describe('liveDataStore', () => {
     for (let i = 0; i < 400; i++) {
       store.pushFrame({ id: 'axf_001', fx: 0, fy: 0, fz: i, cop: { x: 0, y: 0 }, moments: { x: 0, y: 0, z: 0 } } as any)
     }
-    expect(useLiveDataStore.getState().frameBuffer.length).toBeLessThanOrEqual(300)
+    expect(useLiveDataStore.getState().frameBuffer.size).toBeLessThanOrEqual(300)
   })
 })
 ```
@@ -1080,32 +1097,59 @@ export const useSessionStore = create<SessionStoreState>()((set) => ({
 ```
 
 Create `src/stores/liveDataStore.ts`:
+
+**IMPORTANT**: This store uses a mutable ring buffer to avoid React re-renders at 500Hz. Canvas components read via `getState()` in their `requestAnimationFrame` loop — they never subscribe via React. Only UI components that show summary info (like a force readout) should subscribe, and they should use `subscribeWithSelector` to limit re-renders.
+
 ```typescript
 import { create } from 'zustand'
+import { subscribeWithSelector } from 'zustand/middleware'
 import type { DeviceFrame } from '../lib/types'
 
 const MAX_BUFFER_SIZE = 300 // ~5 seconds at 60fps
 
+// Mutable ring buffer — mutated in place, no new array allocations per frame
+class RingBuffer<T> {
+  private buf: T[] = []
+  private head = 0
+  private _size = 0
+  constructor(private capacity: number) {}
+  push(item: T): void {
+    if (this._size < this.capacity) {
+      this.buf.push(item)
+      this._size++
+    } else {
+      this.buf[this.head] = item
+      this.head = (this.head + 1) % this.capacity
+    }
+  }
+  toArray(): T[] {
+    if (this._size < this.capacity) return this.buf.slice()
+    return [...this.buf.slice(this.head), ...this.buf.slice(0, this.head)]
+  }
+  clear(): void { this.buf = []; this.head = 0; this._size = 0 }
+  get size(): number { return this._size }
+}
+
 interface LiveDataStoreState {
   currentFrame: DeviceFrame | null
-  frameBuffer: DeviceFrame[]
+  frameBuffer: RingBuffer<DeviceFrame>
   pushFrame: (frame: DeviceFrame) => void
   clearBuffer: () => void
 }
 
-export const useLiveDataStore = create<LiveDataStoreState>()((set) => ({
-  currentFrame: null,
-  frameBuffer: [],
-  pushFrame: (frame) =>
-    set((s) => ({
-      currentFrame: frame,
-      frameBuffer:
-        s.frameBuffer.length >= MAX_BUFFER_SIZE
-          ? [...s.frameBuffer.slice(1), frame]
-          : [...s.frameBuffer, frame],
-    })),
-  clearBuffer: () => set({ currentFrame: null, frameBuffer: [] }),
-}))
+export const useLiveDataStore = create<LiveDataStoreState>()(
+  subscribeWithSelector((set, get) => ({
+    currentFrame: null,
+    frameBuffer: new RingBuffer<DeviceFrame>(MAX_BUFFER_SIZE),
+    pushFrame: (frame) => {
+      // Mutate buffer in place — no React re-render triggered
+      get().frameBuffer.push(frame)
+      // Only update currentFrame (triggers subscribers that select it)
+      set({ currentFrame: frame })
+    },
+    clearBuffer: () => set({ currentFrame: null, frameBuffer: new RingBuffer<DeviceFrame>(MAX_BUFFER_SIZE) }),
+  }))
+)
 ```
 
 Create `src/stores/uiStore.ts`:
@@ -1227,7 +1271,7 @@ export function useSocket(): void {
 
     // Connection lifecycle
     socket.on('connect', () => {
-      deviceStore.setConnectionState('SOCKET_CONNECTING')
+      deviceStore.setConnectionState('DISCOVERING_DEVICES')
       // Request initial state from backend
       socket.emit('getConnectedDevices')
       socket.emit('getDynamoConfig')
@@ -1235,7 +1279,6 @@ export function useSocket(): void {
       socket.emit('getGroupDefinitions')
       socket.emit('getDeviceSettings')
       socket.emit('getDeviceTypes')
-      deviceStore.setConnectionState('DISCOVERING_DEVICES')
     })
 
     socket.on('disconnect', () => {
@@ -1333,6 +1376,94 @@ export function useSocket(): void {
       }
     })
 
+    socket.on('cancelCaptureStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        sessionStore.setSessionPhase('IDLE')
+        uiStore.addToast({ message: 'Capture cancelled', type: 'info' })
+      }
+    })
+
+    socket.on('tareAllStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        uiStore.addToast({ message: 'All devices tared', type: 'success' })
+      }
+    })
+
+    // Device init
+    socket.on('initializationDevices', (data: unknown) => {
+      // Update device list during discovery
+      const resp = data as SocketResponse
+      if (resp.status === 'success' && resp.data) {
+        deviceStore.setDevices(resp.data as any)
+      }
+    })
+
+    socket.on('initializationStatusUpdate', (_data: unknown) => {
+      // Could update per-device init progress in deviceStore if needed
+    })
+
+    socket.on('deviceSettingsList', (data: unknown) => {
+      const resp = data as SocketResponse
+      // Store device settings if needed for UI display
+    })
+
+    socket.on('deviceTypesList', (data: unknown) => {
+      const resp = data as SocketResponse
+      // Store device type definitions
+    })
+
+    // Group management
+    socket.on('groupUpdateStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        // Re-fetch groups to get updated list
+        socket.emit('getGroups')
+      } else {
+        uiStore.addToast({ message: `Group update failed: ${resp.message}`, type: 'error' })
+      }
+    })
+
+    // Model lifecycle
+    socket.on('modelLoadStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        uiStore.addToast({ message: 'Model loaded', type: 'success' })
+      } else {
+        uiStore.addToast({ message: `Model load failed: ${resp.message}`, type: 'error' })
+      }
+    })
+
+    socket.on('modelActivationStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        uiStore.addToast({ message: 'Model activation updated', type: 'success' })
+      }
+    })
+
+    socket.on('modelPackageStatus', (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        uiStore.addToast({ message: 'Model packaged successfully', type: 'success' })
+      } else {
+        uiStore.addToast({ message: `Packaging failed: ${resp.message}`, type: 'error' })
+      }
+    })
+
+    // Capture history (for History page)
+    socket.on('getCaptureMetricsStatus', (_data: unknown) => {
+      // Handled by History page component directly
+    })
+
+    socket.on('getCaptureMetadataStatus', (_data: unknown) => {
+      // Handled by History page component directly
+    })
+
+    socket.on('getCaptureResultsStatus', (_data: unknown) => {
+      // Handled by History page component directly
+    })
+
     // Backend logs
     socket.on('logMessage', (data: unknown) => {
       if (typeof data === 'string') uiStore.pushBackendLog(data)
@@ -1398,6 +1529,7 @@ import { useDeviceStore } from '../../stores/deviceStore'
 
 const NAV_ITEMS = [
   { id: 'launcher' as const, icon: '⊞', label: 'Home' },
+  { id: 'fluxlite' as const, icon: '⚡', label: 'FluxLite' },
 ] as const
 
 export function Sidebar() {
@@ -1548,12 +1680,12 @@ export function FluxLitePage() {
   const phase = useSessionStore((s) => s.sessionPhase)
   const { activeLitePage, setActiveLitePage } = useUiStore()
 
-  // During active sessions, always show the live workspace regardless of nav
-  const isActiveSession = !['IDLE', 'SUMMARY'].includes(phase)
+  // During active sessions (not IDLE), show the session workspace instead of nav tabs
+  const isActiveSession = phase !== 'IDLE'
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Sub-nav tabs (hidden during active session) */}
+      {/* Sub-nav tabs (only shown when IDLE) */}
       {!isActiveSession && (
         <div className="flex gap-1 px-4 pt-3 pb-1 border-b border-border">
           {LITE_NAV.map((item) => (
