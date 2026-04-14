@@ -63,8 +63,8 @@ export function FluxLitePage() {
       <div className="flex-1 overflow-hidden">
         {activeLitePage === 'live' && (
           <div className="flex h-full">
-            {/* Left: Plate + Force Plot stacked */}
-            <div className="flex-1 flex flex-col min-w-0">
+            {/* Left: Plate + Force Plot stacked (~66% width) */}
+            <div className="flex-[2] flex flex-col min-w-0">
               {/* PlateCanvas — top ~60% */}
               <div className="flex-[3] min-h-0 p-2">
                 <PlateCanvas
@@ -85,8 +85,8 @@ export function FluxLitePage() {
               </div>
             </div>
 
-            {/* Right: Control Panel */}
-            <div className="w-72 border-l border-border bg-card flex-shrink-0">
+            {/* Right: Control Panel (~33% width) */}
+            <div className="flex-[1] border-l border-border bg-card min-w-0">
               <ControlPanel />
             </div>
           </div>
