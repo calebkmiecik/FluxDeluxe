@@ -86,8 +86,10 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Current time = Date.now() (same epoch as backend timestamps)
-    const now = Date.now()
+    // Current time with a small offset so the line ends just before the right edge,
+    // hiding jitter from batch arrivals
+    const RIGHT_MARGIN_MS = 150
+    const now = Date.now() - RIGHT_MARGIN_MS
     const msPerPixel = WINDOW_MS / plotW
 
     // Y auto-scale
@@ -141,32 +143,58 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
-    ctx.strokeStyle = C.dataLine
-    ctx.lineWidth = 2
-    ctx.lineJoin = 'round'
-    ctx.lineCap = 'round'
-    ctx.beginPath()
-
-    let started = false
+    // Build path points
+    const points: { x: number; y: number }[] = []
     for (let i = 0; i < samples.length; i++) {
       const s = samples[i]
       const age = now - s.time
       if (age > WINDOW_MS) continue
-      if (age < 0) break // future sample (shouldn't happen)
+      if (age < 0) break
 
-      // Flux3 formula: x = right edge - (age / msPerPixel)
       const x = padding.left + plotW - (age / msPerPixel)
       const nFz = (s.fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - nFz)
-
-      if (!started) {
-        ctx.moveTo(x, y)
-        started = true
-      } else {
-        ctx.lineTo(x, y)
-      }
+      points.push({ x, y })
     }
-    if (started) ctx.stroke()
+
+    if (points.length > 1) {
+      // --- Gradient fill under curve ---
+      const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotH)
+      grad.addColorStop(0, 'rgba(0, 81, 186, 0.25)')
+      grad.addColorStop(0.6, 'rgba(0, 81, 186, 0.06)')
+      grad.addColorStop(1, 'rgba(0, 81, 186, 0.0)')
+
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, points[0].y)
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y)
+      ctx.lineTo(points[points.length - 1].x, padding.top + plotH)
+      ctx.lineTo(points[0].x, padding.top + plotH)
+      ctx.closePath()
+      ctx.fillStyle = grad
+      ctx.fill()
+
+      // --- Data line with glow ---
+      ctx.shadowColor = 'rgba(0, 81, 186, 0.6)'
+      ctx.shadowBlur = 8
+      ctx.strokeStyle = C.dataLine
+      ctx.lineWidth = 2
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, points[0].y)
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y)
+      ctx.stroke()
+
+      // Bright core line (no shadow) for that CRT/oscilloscope look
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+      ctx.strokeStyle = '#3B8EFF'
+      ctx.lineWidth = 1.2
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, points[0].y)
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y)
+      ctx.stroke()
+    }
 
     ctx.restore()
   })
