@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { DeviceFrame } from '../lib/types'
 
-const MAX_BUFFER_SIZE = 300 // ~5 seconds at 60fps
+const MAX_BUFFER_SIZE = 5000 // ~5 seconds at 1000Hz
 
 export class RingBuffer<T> {
   private buf: T[] = []
@@ -26,9 +26,14 @@ export class RingBuffer<T> {
   get size(): number { return this._size }
 }
 
+export interface TimestampedFrame extends DeviceFrame {
+  /** Monotonic timestamp (ms) set on arrival — always present, unlike frame.time */
+  _receivedAt: number
+}
+
 interface LiveDataStoreState {
-  currentFrame: DeviceFrame | null
-  frameBuffer: RingBuffer<DeviceFrame>
+  currentFrame: TimestampedFrame | null
+  frameBuffer: RingBuffer<TimestampedFrame>
   pushFrame: (frame: DeviceFrame) => void
   clearBuffer: () => void
 }
@@ -36,11 +41,12 @@ interface LiveDataStoreState {
 export const useLiveDataStore = create<LiveDataStoreState>()(
   subscribeWithSelector((set, get) => ({
     currentFrame: null,
-    frameBuffer: new RingBuffer<DeviceFrame>(MAX_BUFFER_SIZE),
+    frameBuffer: new RingBuffer<TimestampedFrame>(MAX_BUFFER_SIZE),
     pushFrame: (frame) => {
-      get().frameBuffer.push(frame)
-      set({ currentFrame: frame })
+      const stamped: TimestampedFrame = { ...frame, _receivedAt: performance.now() }
+      get().frameBuffer.push(stamped)
+      set({ currentFrame: stamped })
     },
-    clearBuffer: () => set({ currentFrame: null, frameBuffer: new RingBuffer<DeviceFrame>(MAX_BUFFER_SIZE) }),
+    clearBuffer: () => set({ currentFrame: null, frameBuffer: new RingBuffer<TimestampedFrame>(MAX_BUFFER_SIZE) }),
   }))
 )

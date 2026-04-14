@@ -4,19 +4,11 @@ import { useLiveDataStore } from '../../stores/liveDataStore'
 import { canvas as C } from '../../lib/theme'
 
 // How many seconds of data the plot window shows
-const WINDOW_SECONDS = 5
-// Target data rate (used for scroll speed calculation)
-const DATA_RATE_HZ = 60
+const WINDOW_MS = 5000
 
 export function ForcePlot() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
-  // Track frame count to detect new data arrivals
-  const lastFrameCountRef = useRef(0)
-  // Fractional scroll offset (0..1 of one frame spacing) for smooth scrolling
-  const scrollOffsetRef = useRef(0)
-  // Timestamp of last new data arrival
-  const lastDataTimeRef = useRef(performance.now())
 
   // Handle resize
   useEffect(() => {
@@ -46,10 +38,7 @@ export function ForcePlot() {
     const dpr = devicePixelRatio
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    // Get data from store (no React re-render)
-    const store = useLiveDataStore.getState()
-    const frames = store.frameBuffer.toArray()
-    const frameCount = store.frameBuffer.size
+    const frames = useLiveDataStore.getState().frameBuffer.toArray()
 
     // Clear
     ctx.fillStyle = C.bg
@@ -60,7 +49,6 @@ export function ForcePlot() {
       ctx.font = '14px sans-serif'
       ctx.textAlign = 'center'
       ctx.fillText('No data', width / 2, height / 2)
-      lastFrameCountRef.current = 0
       return
     }
 
@@ -69,30 +57,21 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Smooth scrolling: interpolate position between data arrivals
+    // Time window: right edge = now, left edge = now - WINDOW_MS
     const now = performance.now()
-    if (frameCount !== lastFrameCountRef.current) {
-      // New data arrived — reset scroll interpolation
-      lastFrameCountRef.current = frameCount
-      lastDataTimeRef.current = now
-      scrollOffsetRef.current = 0
-    } else {
-      // No new data yet — smoothly advance scroll offset
-      const elapsed = now - lastDataTimeRef.current
-      const frameDuration = 1000 / DATA_RATE_HZ
-      scrollOffsetRef.current = Math.min(elapsed / frameDuration, 1)
-    }
-    const scrollFrac = scrollOffsetRef.current
+    const tMin = now - WINDOW_MS
+    const tMax = now
 
-    // Calculate Y scale from data
+    // Calculate Y scale from visible frames
     let maxFz = 0
     for (const f of frames) {
+      if (f._receivedAt < tMin) continue
       const abs = Math.abs(f.fz)
       if (abs > maxFz) maxFz = abs
     }
     maxFz = Math.max(maxFz * 1.2, 50)
 
-    // Draw grid lines
+    // Draw horizontal grid lines
     ctx.strokeStyle = C.gridLine
     ctx.lineWidth = 0.5
     const gridLines = 5
@@ -103,7 +82,6 @@ export function ForcePlot() {
       ctx.lineTo(width - padding.right, y)
       ctx.stroke()
 
-      // Y-axis labels
       const forceVal = maxFz - (maxFz * 2 * i) / gridLines
       ctx.fillStyle = C.axisLabel
       ctx.font = '11px sans-serif'
@@ -111,8 +89,10 @@ export function ForcePlot() {
       ctx.fillText(`${forceVal.toFixed(0)}N`, padding.left - 8, y + 4)
     }
 
-    // Vertical grid lines (time)
-    const vGridCount = 6
+    // Draw vertical grid lines (time)
+    const vGridCount = 5
+    ctx.strokeStyle = C.gridLine
+    ctx.lineWidth = 0.5
     for (let i = 0; i <= vGridCount; i++) {
       const x = padding.left + (plotW * i) / vGridCount
       ctx.beginPath()
@@ -122,21 +102,14 @@ export function ForcePlot() {
     }
 
     // X-axis time labels
-    const totalSec = frames.length / DATA_RATE_HZ
     ctx.fillStyle = C.axisLabel
     ctx.font = '11px sans-serif'
     ctx.textAlign = 'center'
     for (let i = 0; i <= vGridCount; i++) {
       const x = padding.left + (plotW * i) / vGridCount
-      const t = -totalSec + (totalSec * i) / vGridCount
-      ctx.fillText(`${t.toFixed(1)}s`, x, height - 8)
+      const sec = -WINDOW_MS / 1000 + (WINDOW_MS / 1000 * i) / vGridCount
+      ctx.fillText(`${sec.toFixed(1)}s`, x, height - 8)
     }
-
-    // Map frames to screen coordinates with sub-pixel scroll offset
-    const len = frames.length
-    const pxPerFrame = plotW / (WINDOW_SECONDS * DATA_RATE_HZ)
-    // Scroll offset in pixels — shifts everything left between data arrivals
-    const scrollPx = scrollFrac * pxPerFrame
 
     // Clip to plot area
     ctx.save()
@@ -144,10 +117,14 @@ export function ForcePlot() {
     ctx.rect(padding.left, padding.top, plotW, plotH)
     ctx.clip()
 
+    // Map frames to screen coordinates using real timestamps
+    // This makes scrolling perfectly smooth — each frame has a fixed
+    // position based on when it arrived, and "now" moves continuously at 60fps
     const points: { x: number; y: number }[] = []
-    for (let i = 0; i < len; i++) {
-      // Right-align: newest frame at right edge, scroll left
-      const x = padding.left + plotW - (len - 1 - i) * pxPerFrame - scrollPx
+    for (let i = 0; i < frames.length; i++) {
+      const t = frames[i]._receivedAt
+      if (t < tMin - 100) continue // skip frames well outside window (small margin)
+      const x = padding.left + ((t - tMin) / (tMax - tMin)) * plotW
       const normalizedFz = (frames[i].fz + maxFz) / (2 * maxFz)
       const y = padding.top + plotH * (1 - normalizedFz)
       points.push({ x, y })

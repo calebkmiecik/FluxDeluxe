@@ -35,26 +35,29 @@ describe('liveDataStore', () => {
   it('updates currentFrame on push', () => {
     const frame = makeFrame('axf_001', 250)
     useLiveDataStore.getState().pushFrame(frame)
-    expect(useLiveDataStore.getState().currentFrame).toEqual(frame)
+    const current = useLiveDataStore.getState().currentFrame
+    expect(current?.fz).toBe(250)
+    expect(current?.id).toBe('axf_001')
+    expect(current?._receivedAt).toBeGreaterThan(0)
   })
 
-  it('ring buffer caps at 300', () => {
-    for (let i = 0; i < 350; i++) {
+  it('ring buffer caps at 5000', () => {
+    for (let i = 0; i < 5050; i++) {
       useLiveDataStore.getState().pushFrame(makeFrame(`axf_${i}`, i))
     }
-    expect(useLiveDataStore.getState().frameBuffer.size).toBe(300)
+    expect(useLiveDataStore.getState().frameBuffer.size).toBe(5000)
   })
 
   it('ring buffer toArray returns frames in order after overflow', () => {
-    for (let i = 0; i < 310; i++) {
+    for (let i = 0; i < 5010; i++) {
       useLiveDataStore.getState().pushFrame(makeFrame(`axf_${i}`, i))
     }
     const arr = useLiveDataStore.getState().frameBuffer.toArray()
-    expect(arr).toHaveLength(300)
+    expect(arr).toHaveLength(5000)
     // The oldest should be frame index 10 (frames 0-9 were overwritten)
     expect(arr[0].fz).toBe(10)
-    // The newest should be frame index 309
-    expect(arr[299].fz).toBe(309)
+    // The newest should be frame index 5009
+    expect(arr[4999].fz).toBe(5009)
   })
 
   it('clearBuffer resets currentFrame and buffer', () => {
