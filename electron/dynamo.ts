@@ -19,8 +19,19 @@ export class DynamoManager {
     if (app.isPackaged) {
       return path.join(process.resourcesPath, 'python', 'python.exe')
     }
-    // Dev mode: use system Python or venv
-    return process.env.PYTHON_PATH || 'python'
+    // Dev mode: PYTHON_PATH env var takes priority
+    if (process.env.PYTHON_PATH) return process.env.PYTHON_PATH
+    // Try conda env: look for DYNAMO_CONDA_ENV or default to Dynamo3.11
+    const condaEnv = process.env.DYNAMO_CONDA_ENV || 'Dynamo3.11'
+    const home = process.env.USERPROFILE || ''
+    const condaPython = path.join(home, 'miniconda3', 'envs', condaEnv, 'python.exe')
+    try {
+      require('fs').accessSync(condaPython)
+      return condaPython
+    } catch {
+      // Fall back to bare python
+      return 'python'
+    }
   }
 
   private getScriptPath(): string {
@@ -45,10 +56,13 @@ export class DynamoManager {
       env: { ...process.env },
     })
 
+    console.log(`[dynamo] python: ${pythonPath}`)
+    console.log(`[dynamo] script: ${scriptPath}`)
     this.pushLog(`[dynamo] python: ${pythonPath}`)
     this.pushLog(`[dynamo] script: ${scriptPath}`)
 
     this.process.on('error', (err) => {
+      console.error(`[dynamo] spawn error: ${err.message}`)
       this.pushLog(`[dynamo] spawn error: ${err.message}`)
       this.status = 'crashed'
       this.process = null
@@ -58,6 +72,7 @@ export class DynamoManager {
     this.process.stdout?.on('data', (data: Buffer) => {
       const line = data.toString().trim()
       if (line) {
+        console.log(`[dynamo:stdout] ${line}`)
         this.pushLog(line)
         if (this.status === 'starting' && line.includes('Uvicorn running')) {
           this.status = 'running'
@@ -68,10 +83,14 @@ export class DynamoManager {
 
     this.process.stderr?.on('data', (data: Buffer) => {
       const line = data.toString().trim()
-      if (line) this.pushLog(`[stderr] ${line}`)
+      if (line) {
+        console.error(`[dynamo:stderr] ${line}`)
+        this.pushLog(`[stderr] ${line}`)
+      }
     })
 
     this.process.on('exit', (code) => {
+      console.log(`[dynamo] exited with code ${code}`)
       this.pushLog(`DynamoPy exited with code ${code}`)
       this.process = null
       if (this.status === 'running') {
