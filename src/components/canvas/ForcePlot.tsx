@@ -86,7 +86,9 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    const now = Date.now()
+    // Right edge = newest sample (line always reaches the right edge)
+    // Use latest sample time, not Date.now(), to avoid a gap from network latency
+    const now = samples[samples.length - 1].time
     const msPerPixel = WINDOW_MS / plotW
 
     // Y auto-scale
