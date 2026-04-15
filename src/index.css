@@ -189,6 +189,12 @@
   animation: status-breathe 2s ease-in-out infinite;
 }
 
+/* Reusable LED pulse — breathes the glow, not the element.
+   Set --led-color via inline style to match the indicator color.
+   e.g. style="--led-color: #3B8EFF" */
+/* .led-active glow is driven by JS (sin wave via requestAnimationFrame).
+   Set --led-color inline. JS applies the box-shadow directly. */
+
 /* ── Scrollbar (thin, dark) ──────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
