@@ -347,16 +347,19 @@ function WarmupBody({
   if (phase === 'IDLE') return <p className="text-xs text-muted-foreground">Warmup starts after you begin the session.</p>
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        {!warmupTriggered ? 'Jump on the plate to begin precompression…' : `Keep jumping — ${remainingSec.toFixed(0)}s remaining`}
-      </p>
-      <div className="w-full h-2 bg-background rounded-full overflow-hidden">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">
+          {!warmupTriggered ? 'Jump on the plate to begin' : 'Keep jumping'}
+        </span>
+        <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>
+      </div>
+      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
         <div className="h-full bg-warning rounded-full transition-all duration-200" style={{ width: `${progress * 100}%` }} />
       </div>
       {phase === 'WARMUP' && (
-        <button onClick={onSkip} className="w-full px-4 py-2 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors">
-          Skip Warmup
+        <button onClick={onSkip} className="self-end text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
+          Skip warmup →
         </button>
       )}
     </div>
@@ -397,20 +400,22 @@ function TareBody({
   if (phase === 'IDLE' || phase === 'WARMUP') return <p className="text-xs text-muted-foreground">Tare runs after warmup.</p>
 
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        {isOffPlate ? `Hold still — taring in ${remainingSec.toFixed(0)}s…` : 'Step off the plate to begin tare countdown.'}
-      </p>
-      <div className="w-full h-2 bg-background rounded-full overflow-hidden">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">
+          {isOffPlate ? 'Hold still — taring' : 'Step off the plate'}
+        </span>
+        <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>
+      </div>
+      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
         <div className="h-full bg-warning rounded-full transition-all duration-200" style={{ width: `${progress * 100}%` }} />
       </div>
-      <div className="flex items-center justify-between text-xs font-mono">
-        <span>Fz: <span className={isOffPlate ? 'text-success' : 'text-danger'}>{currentFz.toFixed(1)}N</span></span>
-        <span>Countdown: {remainingSec.toFixed(0)}s</span>
+      <div className="text-xs font-mono text-muted-foreground">
+        Fz: <span className={isOffPlate ? 'text-success' : 'text-danger'}>{currentFz.toFixed(1)}N</span>
       </div>
       {phase === 'TARE' && (
-        <button onClick={onSkipAndTare} className="w-full px-4 py-2 text-sm bg-transparent border border-border text-muted-foreground rounded-md hover:bg-white/5 hover:text-foreground transition-colors">
-          Skip &amp; Tare Now
+        <button onClick={onSkipAndTare} className="self-end text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
+          Skip &amp; tare now →
         </button>
       )}
     </div>
