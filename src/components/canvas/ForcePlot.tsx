@@ -18,6 +18,8 @@ export function ForcePlot() {
   const sizeRef = useRef({ width: 0, height: 0 })
   const samplesRef = useRef<Sample[]>([])
   const lastBufferSizeRef = useRef(0)
+  // Adaptive lag: tracks the actual gap between Date.now() and newest sample
+  const lagEstimateRef = useRef(500)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -68,6 +70,14 @@ export function ForcePlot() {
       if (samples.length > MAX_SAMPLES) {
         samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
       }
+
+      // Measure actual latency: gap between wall clock and newest sample
+      if (samples.length > 0) {
+        const newestSampleTime = samples[samples.length - 1].time
+        const measuredLag = Date.now() - newestSampleTime
+        // Smooth the estimate (EMA) to avoid jitter, with a small buffer
+        lagEstimateRef.current = lagEstimateRef.current * 0.9 + (measuredLag + 50) * 0.1
+      }
     }
 
     // --- Draw ---
@@ -86,12 +96,10 @@ export function ForcePlot() {
     const plotW = width - padding.left - padding.right
     const plotH = height - padding.top - padding.bottom
 
-    // Smooth scrolling: right edge = Date.now() minus a display lag.
-    // The lag lets data arrive before it would be visible at the right edge,
-    // so the line fills to the edge without jitter. Date.now() advances every
-    // render frame (60fps) giving perfectly smooth scroll.
-    const DISPLAY_LAG_MS = 500
-    const now = Date.now() - DISPLAY_LAG_MS
+    // Smooth scrolling with adaptive lag.
+    // Date.now() advances every frame (60fps = smooth scroll).
+    // Lag is measured from actual data arrival and smoothed to avoid jitter.
+    const now = Date.now() - lagEstimateRef.current
     const msPerPixel = WINDOW_MS / plotW
 
     // Y auto-scale
