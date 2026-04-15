@@ -71,6 +71,12 @@ export function ControlPanel() {
   // Local metadata form state — only used when Meta Data row is editable (phase === IDLE)
   const [testerName, setTesterName] = useState('')
   const [bodyWeightNInput, setBodyWeightNInput] = useState('')
+  useEffect(() => {
+    if (metadata) {
+      setTesterName(metadata.testerName)
+      setBodyWeightNInput(String(Math.round(metadata.bodyWeightN)))
+    }
+  }, [metadata])
   const bodyWeightN = parseFloat(bodyWeightNInput || '0')
   const metadataValid =
     !!selectedDevice && testerName.trim().length > 0 && bodyWeightN > 0
@@ -102,7 +108,11 @@ export function ControlPanel() {
   }
 
   // Summary strings per row (temporary terse versions — refined in later tasks)
-  const metaSummary = formatMetaSummary(metadata)
+  const metaSummary = metadata
+    ? formatMetaSummary(metadata)
+    : (selectedDevice && testerName.trim() && bodyWeightN > 0
+        ? `${testerName.trim()} · ${Math.round(bodyWeightN)}N · ${selectedDevice.axfId}`
+        : 'Fill out metadata to begin')
 
   return (
     <div className="flex flex-col h-full">
