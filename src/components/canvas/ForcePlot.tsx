@@ -90,7 +90,7 @@ export function ForcePlot() {
     // The lag lets data arrive before it would be visible at the right edge,
     // so the line fills to the edge without jitter. Date.now() advances every
     // render frame (60fps) giving perfectly smooth scroll.
-    const DISPLAY_LAG_MS = 200
+    const DISPLAY_LAG_MS = 500
     const now = Date.now() - DISPLAY_LAG_MS
     const msPerPixel = WINDOW_MS / plotW
 
