@@ -269,7 +269,7 @@ export function ControlPanel() {
             <button
               onClick={handleDiscard}
               disabled={saving}
-              className="flex-1 px-4 py-3 text-sm font-medium tracking-wide rounded-md bg-transparent border border-border text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors"
+              className="flex-1 px-4 py-3 text-sm font-medium tracking-wide rounded-md bg-transparent border border-border text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {confirmDiscard ? 'Click again to confirm' : 'Discard'}
             </button>
