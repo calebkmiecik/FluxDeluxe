@@ -29,6 +29,20 @@ export interface Bounds {
   maxZ: number
 }
 
+/** Internal: derive display-grid dimensions after rotation. */
+function getDisplayDims(deviceType: string, rotation: number): {
+  rows: number; cols: number; displayRows: number; displayCols: number
+} {
+  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
+  const rotated = rotation % 2 === 1
+  return {
+    rows: grid.rows,
+    cols: grid.cols,
+    displayRows: rotated ? grid.cols : grid.rows,
+    displayCols: rotated ? grid.rows : grid.cols,
+  }
+}
+
 export function hitPointToCanonicalCell(
   x: number,
   z: number,
@@ -39,18 +53,15 @@ export function hitPointToCanonicalCell(
   if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) {
     return null
   }
-  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
-  const rotated = rotation % 2 === 1
-  const displayRows = rotated ? grid.cols : grid.rows
-  const displayCols = rotated ? grid.rows : grid.cols
+  const { rows, cols, displayRows, displayCols } = getDisplayDims(deviceType, rotation)
 
   const u = (x - bounds.minX) / (bounds.maxX - bounds.minX)
   const v = (z - bounds.minZ) / (bounds.maxZ - bounds.minZ)
   const dispC = Math.min(displayCols - 1, Math.max(0, Math.floor(u * displayCols)))
   const dispR = Math.min(displayRows - 1, Math.max(0, Math.floor(v * displayRows)))
 
-  const [invR, invC] = invertRotation(dispR, dispC, grid.rows, grid.cols, rotation)
-  const [canonR, canonC] = invertDeviceMapping(invR, invC, grid.rows, grid.cols, deviceType)
+  const [invR, invC] = invertRotation(dispR, dispC, rows, cols, rotation)
+  const [canonR, canonC] = invertDeviceMapping(invR, invC, rows, cols, deviceType)
   return [canonR, canonC]
 }
 
@@ -66,13 +77,10 @@ export function canonicalCellToWorldXZ(
   rotation: number,
   bounds: Bounds,
 ): { x: number; z: number } {
-  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
-  const rotated = rotation % 2 === 1
-  const displayRows = rotated ? grid.cols : grid.rows
-  const displayCols = rotated ? grid.rows : grid.cols
+  const { rows, cols, displayRows, displayCols } = getDisplayDims(deviceType, rotation)
 
-  const [dr, dc] = mapCellForDevice(canonR, canonC, grid.rows, grid.cols, deviceType)
-  const [dispR, dispC] = mapCellForRotation(dr, dc, grid.rows, grid.cols, rotation)
+  const [dr, dc] = mapCellForDevice(canonR, canonC, rows, cols, deviceType)
+  const [dispR, dispC] = mapCellForRotation(dr, dc, rows, cols, rotation)
 
   const cellW = (bounds.maxX - bounds.minX) / displayCols
   const cellH = (bounds.maxZ - bounds.minZ) / displayRows
@@ -92,13 +100,10 @@ export function canonicalCellRect(
   rotation: number,
   bounds: Bounds,
 ): { x: number; z: number; w: number; h: number } {
-  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
-  const rotated = rotation % 2 === 1
-  const displayRows = rotated ? grid.cols : grid.rows
-  const displayCols = rotated ? grid.rows : grid.cols
+  const { rows, cols, displayRows, displayCols } = getDisplayDims(deviceType, rotation)
 
-  const [dr, dc] = mapCellForDevice(canonR, canonC, grid.rows, grid.cols, deviceType)
-  const [dispR, dispC] = mapCellForRotation(dr, dc, grid.rows, grid.cols, rotation)
+  const [dr, dc] = mapCellForDevice(canonR, canonC, rows, cols, deviceType)
+  const [dispR, dispC] = mapCellForRotation(dr, dc, rows, cols, rotation)
 
   const w = (bounds.maxX - bounds.minX) / displayCols
   const h = (bounds.maxZ - bounds.minZ) / displayRows
