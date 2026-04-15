@@ -42,6 +42,12 @@ export const colors = {
   plateFill: '#AFB4BE',
   gridLine: '#333333',
   canvasBg: '#141414',
+
+  // 3D plate canvas
+  plate3dFloorGrid: '#3A4556',
+  plate3dPlateFill: '#1C2638',
+  plate3dEdgeCyan: '#7AB8FF',
+  plate3dActiveAmber: '#FFC107', // alias for warning, used only for active cell
 } as const
 
 // ── Typography ──────────────────────────────────────────────────────
@@ -86,4 +92,17 @@ export const canvas = {
   cellText: colors.background,
   cellTextLight: colors.text,
   forceText: colors.text,
+} as const
+
+// ── Plate 3D Canvas Drawing Helpers ─────────────────────────────────
+export const plate3d = {
+  bg: colors.canvasBg,
+  floorGrid: colors.plate3dFloorGrid,
+  plateFill: colors.plate3dPlateFill,
+  plateFillOpacity: 0.92,
+  edgeCyan: colors.plate3dEdgeCyan,
+  activeAmber: colors.plate3dActiveAmber,
+  cellFillOpacity: 0.55, // multiplier applied to COLOR_BIN_RGBA alpha
+  hudTextColor: colors.textMuted,
+  hudMonoFont: fonts.mono,
 } as const
