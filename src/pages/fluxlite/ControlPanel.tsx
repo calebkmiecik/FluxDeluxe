@@ -12,7 +12,7 @@ import {
   type MeasurementStatus,
   type CellMeasurement,
 } from '../../lib/liveTestTypes'
-import { Play, Square, ChevronRight, ChevronLeft, ChevronDown } from 'lucide-react'
+import { Play, Square, ChevronDown } from 'lucide-react'
 import {
   rowForPhase,
   rowStatus,
@@ -229,7 +229,7 @@ export function ControlPanel() {
 // StepperRow — the generic accordion wrapper
 // ────────────────────────────────────────────────────────────────
 function StepperRow({
-  label, status, summary, expanded, onToggle, children,
+  id, label, status, summary, expanded, onToggle, children,
 }: {
   id: StepperRowId
   label: string
@@ -245,7 +245,7 @@ function StepperRow({
     'bg-transparent border border-border'
 
   return (
-    <div className="border-b border-border">
+    <div className="border-b border-border" data-testid={`stepper-row-${id}`}>
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
