@@ -11,7 +11,7 @@ import type { CellMeasurement } from '../lib/liveTestTypes'
 function m(row: number, col: number, stageIndex: number, pass: boolean): CellMeasurement {
   return {
     row, col, stageIndex, pass,
-    meanFzN: 0, stdFzN: 0, errorN: 0, errorRatio: 0,
+    meanFzN: 0, stdFzN: 0, errorN: 0, signedErrorN: 0, errorRatio: 0,
     colorBin: pass ? 'green' : 'red',
     timestamp: 0,
   }

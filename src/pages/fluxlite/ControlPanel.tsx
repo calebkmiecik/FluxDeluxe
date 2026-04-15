@@ -107,7 +107,7 @@ export function ControlPanel() {
     else endSession()
   }
 
-  // Summary strings per row (temporary terse versions — refined in later tasks)
+  // Collapsed-row summary strings
   const metaSummary = metadata
     ? formatMetaSummary(metadata)
     : (selectedDevice && testerName.trim() && bodyWeightN > 0
@@ -248,6 +248,7 @@ function StepperRow({
     <div className="border-b border-border" data-testid={`stepper-row-${id}`}>
       <button
         onClick={onToggle}
+        aria-expanded={expanded}
         className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/[0.02] transition-colors"
       >
         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${dotClass}`} />
@@ -430,7 +431,7 @@ function TareBody({
       </div>
       {phase === 'TARE' && (
         <button onClick={onSkipAndTare} className="self-end text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
-          Skip &amp; tare now →
+          Skip & tare now →
         </button>
       )}
     </div>
@@ -537,7 +538,7 @@ function TestBody({
           Active: <span className="text-foreground font-medium">{activeStage.location} · {activeStage.name}</span>
         </span>
         <span className="font-mono text-muted-foreground">
-          {activeStage.targetN.toFixed(0)}N &plusmn;{activeStage.toleranceN.toFixed(1)}N · {activeStats.tested}/{activeStats.total}
+          {activeStage.targetN.toFixed(0)}N ±{activeStage.toleranceN.toFixed(1)}N · {activeStats.tested}/{activeStats.total}
         </span>
       </div>
 
@@ -575,9 +576,8 @@ function SummaryBody() {
 
   const totalCells = gridRows * gridCols
   const stageResults = stages.map((stage) => {
-    const cells = Array.from(measurements.values()).filter((m: CellMeasurement) => m.stageIndex === stage.index)
-    const passed = cells.filter((m: CellMeasurement) => m.pass).length
-    return { ...stage, tested: cells.length, passed, total: totalCells }
+    const stats = stageStats(measurements, stage.index, totalCells)
+    return { ...stage, ...stats }
   })
   const overallTested = stageResults.reduce((s, r) => s + r.tested, 0)
   const overallPassed = stageResults.reduce((s, r) => s + r.passed, 0)
