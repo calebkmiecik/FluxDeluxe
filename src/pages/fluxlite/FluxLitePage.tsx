@@ -172,13 +172,13 @@ export function FluxLitePage() {
           <div className="flex h-full">
             {/* Main visualization area */}
             <div className="flex-[2] flex flex-col min-w-0">
-              {/* Top row: DeviceList + PlateCanvas + TempGauge */}
-              <div className="flex-[3] min-h-0 flex p-2">
+              {/* Top row: DeviceList + PlateCanvas with TempGauge overlay */}
+              <div className="flex-[3] min-h-0 flex">
                 {/* Device list — left column */}
                 <div className="w-52 flex-shrink-0 mr-2 border-r border-border pr-2">
                   <DeviceList />
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 relative">
                   <PlateCanvas
                     deviceType={deviceType}
                     rotation={rotation}
@@ -190,10 +190,7 @@ export function FluxLitePage() {
                     onTare={handleTare}
                     liveTesting={phase === 'TESTING'}
                   />
-                </div>
-                {/* Temperature bar — slim vertical strip, ~1/3 height, top-aligned */}
-                <div className="w-10 flex-shrink-0 ml-1 flex items-start justify-center">
-                  <div className="w-full h-1/3">
+                  <div className="absolute top-2 right-2 w-10 h-1/3 pointer-events-none z-10">
                     <TempGauge />
                   </div>
                 </div>

@@ -71,7 +71,7 @@ export function LiveView() {
       {/* Main layout: PlateCanvas hero + side panels */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left: PlateCanvas (hero ~60%) */}
-        <div className="flex-[3] p-2 min-w-0">
+        <div className="flex-[3] min-w-0">
           <PlateCanvas
             deviceType={deviceType}
             rotation={rotation}
