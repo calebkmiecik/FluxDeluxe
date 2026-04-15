@@ -58,6 +58,8 @@ export class LiveTestRepo {
       this.client.from('session_stage_aggregates').select('*').eq('session_id', id),
     ])
     if (sessionRes.error) throw new Error(`getSession failed: ${sessionRes.error.message}`)
+    if (cellsRes.error) throw new Error(`getSession cells failed: ${cellsRes.error.message}`)
+    if (aggRes.error) throw new Error(`getSession aggregates failed: ${aggRes.error.message}`)
     return {
       session: sessionRes.data as Record<string, unknown>,
       cells: (cellsRes.data ?? []) as Array<Record<string, unknown>>,
