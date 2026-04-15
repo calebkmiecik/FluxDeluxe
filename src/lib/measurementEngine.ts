@@ -202,7 +202,8 @@ export class MeasurementEngine {
     const meanFz = fz.reduce((a, b) => a + b, 0) / fz.length
     const variance = fz.reduce((a, b) => a + (b - meanFz) ** 2, 0) / fz.length
     const stdFz = Math.sqrt(variance)
-    const errorN = Math.abs(meanFz - stage.targetN)
+    const signedErrorN = meanFz - stage.targetN
+    const errorN = Math.abs(signedErrorN)
     const errorRatio = stage.toleranceN > 0 ? errorN / stage.toleranceN : 0
     const colorBin = getColorBin(errorRatio)
 
@@ -213,6 +214,7 @@ export class MeasurementEngine {
       meanFzN: meanFz,
       stdFzN: stdFz,
       errorN,
+      signedErrorN,
       errorRatio,
       colorBin,
       pass: errorRatio <= 1.0,

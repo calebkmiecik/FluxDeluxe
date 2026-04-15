@@ -51,7 +51,8 @@ export interface CellMeasurement {
   stageIndex: number
   meanFzN: number
   stdFzN: number
-  errorN: number
+  errorN: number         // magnitude: |meanFz - target|
+  signedErrorN: number   // directional: meanFz - target
   errorRatio: number   // error / tolerance
   colorBin: string     // 'green' | 'light_green' | 'yellow' | 'orange' | 'red'
   pass: boolean
