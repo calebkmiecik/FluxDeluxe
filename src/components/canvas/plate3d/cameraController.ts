@@ -118,8 +118,8 @@ export class CameraController {
       this.progressAnim((t) => {
         const e = easing.cubicInOut(t)
         this.pose = this.lerpPose(this.animFromPose!, this.animToPose!, e)
-        // Cross from perspective to ortho near end (binary switch at t=0.85)
-        this.pose.ortho = t >= 0.85
+        // Cross from perspective to ortho near end (binary switch at t=1)
+        this.pose.ortho = t >= 1
       }, () => {
         this.state = 'ORTHO_LOCKED'
         this.pose = this.orthoTop()
@@ -128,7 +128,7 @@ export class CameraController {
       this.progressAnim((t) => {
         const e = easing.cubicOut(t)
         this.pose = this.lerpPose(this.animFromPose!, this.animToPose!, e)
-        this.pose.ortho = t >= 0.9
+        this.pose.ortho = t >= 1
       }, () => {
         this.state = 'ORTHO_LOCKED'
         this.pose = this.orthoTop()

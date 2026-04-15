@@ -93,7 +93,7 @@ export class PlateScene {
     ).add(_tgt)
 
     if (ortho) {
-      const halfH = distance * 0.55
+      const halfH = distance * Math.tan((fov * Math.PI / 180) / 2)
       const halfW = halfH * aspect
       if (!(this.camera instanceof THREE.OrthographicCamera)) {
         this.camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 20)
