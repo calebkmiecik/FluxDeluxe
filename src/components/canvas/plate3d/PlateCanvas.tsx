@@ -12,9 +12,9 @@
  *   - cellOverlay (HUD chrome + projected text)
  */
 
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, forwardRef, CSSProperties } from 'react'
 import * as THREE from 'three'
-import { plate3d, colors } from '../../../lib/theme'
+import { plate3d } from '../../../lib/theme'
 import {
   PLATE_DIMENSIONS,
   GRID_DIMS,
@@ -35,7 +35,6 @@ import {
 } from './cellRaycaster'
 import {
   drawBrackets,
-  drawBottomReadout,
   drawCellText,
   drawHoverReticle,
   projectToScreen,
@@ -70,7 +69,6 @@ export interface PlateCanvasProps {
   onCellClick: (row: number, col: number) => void
   onRotate: () => void
   onTare: () => void
-  onRefresh: () => void
   liveTesting?: boolean
 }
 
@@ -99,7 +97,6 @@ export function PlateCanvas({
   onCellClick,
   onRotate,
   onTare,
-  onRefresh,
   liveTesting = false,
 }: PlateCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -132,6 +129,10 @@ export function PlateCanvas({
   // HUD fade state
   const bracketOpacityRef = useRef(0)
   const hoverInsideRef = useRef(false)
+
+  // Camera state button — updated imperatively in RAF to avoid per-frame re-renders
+  const cameraStateButtonRef = useRef<HTMLButtonElement>(null)
+  const lastCameraStateRef = useRef<string>('')
 
   // ── Parse plate JSON when deviceType changes ─────────────────────
   useEffect(() => {
@@ -387,6 +388,16 @@ export function PlateCanvas({
       cam.update(delta)
       scene.setMeshRotation(cam.getMeshRotation())
 
+      // Imperatively update camera state button (avoids per-frame React re-render)
+      if (cam.state !== lastCameraStateRef.current) {
+        lastCameraStateRef.current = cam.state
+        const btn = cameraStateButtonRef.current
+        if (btn) {
+          btn.textContent = cameraStateLabel(cam.state)
+          btn.style.opacity = cam.state === 'ORTHO_LOCKED' ? '0.7' : '1'
+        }
+      }
+
       const dpr = window.devicePixelRatio || 1
       const W = main.width / dpr
       const H = main.height / dpr
@@ -486,23 +497,20 @@ export function PlateCanvas({
         drawHoverReticle(ctx, { x: h.x, y: h.y }, `R${h.row},C${h.col}`)
       }
 
-      // Bottom readout
-      const dims = PLATE_DIMENSIONS[deviceTypeNow] ?? { width: 400, height: 400 }
-      const rotated = rotationNow % 2 === 1
-      drawBottomReadout(ctx, W, H, {
-        deviceType: deviceTypeNow,
-        widthMm: rotated ? dims.height : dims.width,
-        heightMm: rotated ? dims.width : dims.height,
-        rows: rotated ? grid.cols : grid.rows,
-        cols: rotated ? grid.rows : grid.cols,
-        cameraStateLabel: cameraStateLabel(cam.state),
-        activeCell: activeCellNow,
-      })
     }
     rafRef.current = requestAnimationFrame(draw)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ── Derived HUD data (non-animated, React-driven) ────────────────
+  const dims = PLATE_DIMENSIONS[deviceType] ?? { width: 400, height: 400 }
+  const rotated = rotation % 2 === 1
+  const hudWidthMm = rotated ? dims.height : dims.width
+  const hudHeightMm = rotated ? dims.width : dims.height
+  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
+  const hudRows = rotated ? grid.cols : grid.rows
+  const hudCols = rotated ? grid.rows : grid.cols
 
   // ── Render tree ──────────────────────────────────────────────────
   return (
@@ -515,46 +523,107 @@ export function PlateCanvas({
       <canvas ref={webglCanvasRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
       <canvas ref={canvasRef}      style={{ position: 'absolute', inset: 0, zIndex: 2 }} />
 
-      {/* HUD action buttons (spec §3.1) — HTML overlays, restyled palette */}
-      <div className="absolute bottom-3 right-3 flex gap-1.5" style={{ zIndex: 3 }}>
-        <HudButton onClick={onRefresh} title="Refresh devices">&#x21bb;</HudButton>
-        <HudButton onClick={onTare} title="Tare (zero)" small>0.0</HudButton>
-        <HudButton onClick={onRotate} title="Rotate plate 90°">&#x27F3;</HudButton>
+      {/* Bottom HUD strip — segmented control */}
+      <div
+        className="absolute flex items-center overflow-hidden"
+        style={{
+          bottom: 12, left: 12, right: 12, height: 32,
+          zIndex: 3,
+          background: 'rgba(20, 20, 20, 0.65)',
+          border: `1px solid ${plate3d.edgeCyan}20`,
+          borderRadius: 4,
+          backdropFilter: 'blur(8px)',
+          fontFamily: plate3d.hudMonoFont,
+          fontSize: 12,
+          color: plate3d.hudTextColor,
+        }}
+      >
+        <HudSection>{deviceType}</HudSection>
+        <HudSection>{hudWidthMm.toFixed(0)}×{hudHeightMm.toFixed(0)} mm</HudSection>
+        <HudSection>{hudRows}×{hudCols}</HudSection>
+        <HudActionButton onClick={onTare}>TARE</HudActionButton>
+        <HudActionButton onClick={onRotate}>ROTATE 90°</HudActionButton>
+        <div className="flex-1" />
+        <HudActionButton
+          ref={cameraStateButtonRef}
+          onClick={() => cameraRef.current?.dismissPeek()}
+        >
+          ▲ TOP
+        </HudActionButton>
+        {activeCell && (
+          <HudSection amber>R{activeCell.row},C{activeCell.col}</HudSection>
+        )}
       </div>
     </div>
   )
 }
 
-function HudButton({
-  children, onClick, title, small,
+// ── Local HUD sub-components ──────────────────────────────────────
+
+const DIVIDER: CSSProperties = {
+  borderRight: `1px solid ${plate3d.edgeCyan}1A`,
+}
+
+function HudSection({
+  children,
+  amber,
 }: {
-  children: React.ReactNode; onClick: () => void; title: string; small?: boolean
+  children: React.ReactNode
+  amber?: boolean
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${small ? 'text-xs' : 'text-base'} font-bold`}
+    <div
       style={{
+        padding: '0 12px',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        color: amber ? plate3d.activeAmber : undefined,
+        ...DIVIDER,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+const HudActionButton = forwardRef<
+  HTMLButtonElement,
+  { children: React.ReactNode; onClick: () => void }
+>(function HudActionButton({ children, onClick }, ref) {
+  return (
+    <button
+      ref={ref}
+      onClick={onClick}
+      style={{
+        padding: '0 12px',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
         background: 'transparent',
-        border: `1px solid ${plate3d.edgeCyan}40`,
-        color: colors.textMuted,
+        border: 'none',
+        color: 'inherit',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        cursor: 'pointer',
+        transition: 'background 120ms ease-out, color 120ms ease-out',
+        ...DIVIDER,
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = `${plate3d.edgeCyan}1F`
-        ;(e.currentTarget as HTMLButtonElement).style.borderColor = `${plate3d.edgeCyan}99`
-        ;(e.currentTarget as HTMLButtonElement).style.color = plate3d.edgeCyan
+        const el = e.currentTarget
+        el.style.background = `${plate3d.edgeCyan}14`
+        el.style.color = plate3d.edgeCyan
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-        ;(e.currentTarget as HTMLButtonElement).style.borderColor = `${plate3d.edgeCyan}40`
-        ;(e.currentTarget as HTMLButtonElement).style.color = colors.textMuted
+        const el = e.currentTarget
+        el.style.background = 'transparent'
+        el.style.color = plate3d.hudTextColor
       }}
     >
       {children}
     </button>
   )
-}
+})
 
 // ── 2D helpers kept inline (share projection state with scene) ─────
 

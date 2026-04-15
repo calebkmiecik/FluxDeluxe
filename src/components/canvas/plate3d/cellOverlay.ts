@@ -19,7 +19,6 @@ import {
   HUD_BRACKET_LENGTH,
   HUD_BRACKET_STROKE,
   HUD_FONT_PX,
-  HUD_READOUT_HEIGHT,
 } from './constants'
 
 export interface ScreenRect {
@@ -66,42 +65,6 @@ export function drawBrackets(
     ctx.moveTo(path[0].x, path[0].y)
     for (let i = 1; i < path.length; i++) ctx.lineTo(path[i].x, path[i].y)
     ctx.stroke()
-  }
-  ctx.restore()
-}
-
-export interface ReadoutContent {
-  deviceType: string
-  widthMm: number
-  heightMm: number
-  rows: number
-  cols: number
-  cameraStateLabel: string // e.g. "▲ TOP", "⤴ PEEK", "◌ SWOOP"
-  activeCell: { row: number; col: number } | null
-}
-
-export function drawBottomReadout(
-  ctx: CanvasRenderingContext2D,
-  viewportW: number,
-  viewportH: number,
-  content: ReadoutContent,
-) {
-  const y = viewportH - HUD_READOUT_HEIGHT
-  ctx.save()
-  ctx.font = `${HUD_FONT_PX}px ${plate3d.hudMonoFont}`
-  ctx.textBaseline = 'middle'
-  ctx.fillStyle = plate3d.hudTextColor
-  const left = `${content.deviceType} · ${content.widthMm.toFixed(0)}×${content.heightMm.toFixed(0)} mm · ${content.rows}×${content.cols} · ${content.cameraStateLabel}`
-  ctx.textAlign = 'left'
-  ctx.fillText(left, 12, y + HUD_READOUT_HEIGHT / 2)
-  if (content.activeCell) {
-    ctx.fillStyle = plate3d.activeAmber
-    ctx.textAlign = 'right'
-    ctx.fillText(
-      `R${content.activeCell.row},C${content.activeCell.col}`,
-      viewportW - 12,
-      y + HUD_READOUT_HEIGHT / 2,
-    )
   }
   ctx.restore()
 }

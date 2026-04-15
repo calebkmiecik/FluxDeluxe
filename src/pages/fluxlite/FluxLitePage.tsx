@@ -188,7 +188,6 @@ export function FluxLitePage() {
                     onCellClick={handleCellClick}
                     onRotate={() => setRotation((r) => (r + 1) % 4)}
                     onTare={handleTare}
-                    onRefresh={handleRefresh}
                     liveTesting={phase === 'TESTING'}
                   />
                 </div>
