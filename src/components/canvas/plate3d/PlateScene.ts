@@ -97,6 +97,7 @@ export class PlateScene {
       const halfW = halfH * aspect
       if (!(this.camera instanceof THREE.OrthographicCamera)) {
         this.camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 20)
+        this.camera.updateProjectionMatrix()
       } else {
         this.camera.left = -halfW; this.camera.right = halfW
         this.camera.top = halfH; this.camera.bottom = -halfH
@@ -105,6 +106,7 @@ export class PlateScene {
     } else {
       if (!(this.camera instanceof THREE.PerspectiveCamera)) {
         this.camera = new THREE.PerspectiveCamera(fov, aspect, 0.001, 20)
+        this.camera.updateProjectionMatrix()
       } else {
         this.camera.fov = fov; this.camera.aspect = aspect
         this.camera.updateProjectionMatrix()

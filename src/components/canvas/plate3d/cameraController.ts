@@ -23,6 +23,7 @@ import {
   INTRO_DISTANCE_MULT,
   MIN_PEEK_ELEVATION,
   MAX_ELEVATION,
+  WHEEL_ZOOM_CLAMP,
   easing,
 } from './constants'
 
@@ -233,8 +234,8 @@ export class CameraController {
 
   applyWheelZoom(deltaY: number) {
     if (this.state !== 'ORTHO_LOCKED' && this.state !== 'PEEK_ORBIT') return
-    const lo = this.fitDistance * (1 - 0.15)
-    const hi = this.fitDistance * (1 + 0.15)
+    const lo = this.fitDistance * (1 - WHEEL_ZOOM_CLAMP)
+    const hi = this.fitDistance * (1 + WHEEL_ZOOM_CLAMP)
     this.pose.distance = CLAMP(this.pose.distance + deltaY * 0.001, lo, hi)
   }
 }
