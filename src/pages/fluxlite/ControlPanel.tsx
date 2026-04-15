@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { toast } from 'sonner'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { useLiveTestStore } from '../../stores/liveTestStore'
 import { useLiveDataStore } from '../../stores/liveDataStore'
@@ -12,8 +11,7 @@ import {
   type StageDefinition,
   type CellMeasurement,
 } from '../../lib/liveTestTypes'
-import { buildSessionPayload } from '../../lib/liveTestPayload'
-import { ChevronDown, Play, Square } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import {
   rowForPhase,
   rowStatus,
@@ -109,9 +107,6 @@ export function ControlPanel() {
   const phaseInfo = PHASE_DISPLAY[phase] ?? PHASE_DISPLAY.IDLE
   const activeStage = stages[activeStageIndex]
 
-  const [saving, setSaving] = useState(false)
-  const [confirmDiscard, setConfirmDiscard] = useState(false)
-
   const handleStart = () => {
     if (!metadataValid || !selectedDevice) return
     const meta: SessionMetadata = {
@@ -125,41 +120,9 @@ export function ControlPanel() {
     startSession(meta)
   }
 
-  const handleComplete = async () => {
-    if (!metadata) { toast.error('No session metadata'); return }
-    if (!window.electronAPI?.liveTest) { toast.error('Persistence not available'); return }
-    setSaving(true)
-    try {
-      const appVersion = await window.electronAPI.getAppVersion()
-      const payload = buildSessionPayload({
-        metadata,
-        stages,
-        measurements,
-        gridRows,
-        gridCols,
-        appVersion: String(appVersion ?? '0.0.0'),
-        endedAt: Date.now(),
-      })
-      const result = await window.electronAPI.liveTest.saveSession(payload)
-      if (result.status === 'saved') toast.success('Session saved')
-      else toast.warning('Saved locally — will retry')
-      setPhase('IDLE')
-      setConfirmDiscard(false)
-    } catch (err) {
-      toast.error(`Save failed: ${(err as Error).message}`)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDiscard = () => {
-    if (!confirmDiscard) { setConfirmDiscard(true); return }
-    setPhase('IDLE')
-    setConfirmDiscard(false)
-  }
-
   const handleActionBar = () => {
     if (phase === 'IDLE') handleStart()
+    else if (phase === 'SUMMARY') setPhase('IDLE')
     else endSession()
   }
 
@@ -264,37 +227,15 @@ export function ControlPanel() {
 
       {/* Persistent action bar */}
       <div className="border-t border-border px-4 py-3">
-        {phase === 'SUMMARY' ? (
-          <div className="flex gap-2">
-            <button
-              onClick={handleDiscard}
-              disabled={saving}
-              className="flex-1 px-4 py-3 text-sm font-medium tracking-wide rounded-md bg-transparent border border-border text-muted-foreground hover:bg-white/5 hover:text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {confirmDiscard ? 'Click again to confirm' : 'Discard'}
-            </button>
-            <button
-              onClick={handleComplete}
-              disabled={saving}
-              className="flex-1 px-4 py-3 text-sm font-medium tracking-wide rounded-md bg-primary text-white btn-glow transition-colors disabled:opacity-60"
-            >
-              {saving ? 'Saving…' : 'Complete'}
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={handleActionBar}
-            disabled={phase === 'IDLE' && (!metadataValid || connectionState !== 'READY')}
-            className={`w-full flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium tracking-wide rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-              phase === 'IDLE'
-                ? 'bg-primary text-white btn-glow'
-                : 'bg-transparent border border-border text-muted-foreground hover:bg-white/5 hover:text-foreground'
-            }`}
-          >
-            {phase === 'IDLE' && (<><Play size={16} fill="currentColor" /> Start Session</>)}
-            {phase !== 'IDLE' && (<><Square size={14} /> End Session</>)}
-          </button>
-        )}
+        <button
+          onClick={handleActionBar}
+          disabled={phase === 'IDLE' && (!metadataValid || connectionState !== 'READY')}
+          className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] tracking-[0.2em] uppercase border border-foreground/30 text-foreground bg-transparent hover:bg-foreground hover:text-background transition-colors disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-foreground"
+        >
+          {phase === 'IDLE' && 'Start Session'}
+          {phase === 'SUMMARY' && 'New Session'}
+          {phase !== 'IDLE' && phase !== 'SUMMARY' && 'End Session'}
+        </button>
       </div>
     </div>
   )
