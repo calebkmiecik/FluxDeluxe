@@ -50,8 +50,30 @@ interface PlateCanvasProps {
 ```
 
 Existing call sites (`LiveView.tsx`, `FluxLitePage.tsx`) change only their
-`import` path. `LiveView` additionally passes `liveTesting={phase === 'CAPTURING'}`.
-`FluxLitePage` omits the prop (default `false`).
+`import` path, plus pass a `liveTesting` boolean appropriate to their own
+session phase model. See §13 open items for the specific phase values — the
+two pages use different stores (`sessionStore.sessionPhase` vs
+`liveTestStore.phase`) with different vocabularies.
+
+### 3.1 HUD action buttons (`onRotate`, `onTare`, `onRefresh`)
+
+The existing 2D component renders three 32 px overlay buttons in the
+bottom-right corner (refresh, tare, rotate). These are preserved as
+**HTML overlays** absolutely positioned over the 3D container, not drawn
+into the HUD canvas. They keep their current pixel positions
+(`absolute bottom-3 right-3`), icons, and tooltips, but their visual
+style is updated to match the Tesla-leaning palette:
+
+- Background: transparent at rest, `rgba(122, 184, 255, 0.12)` on hover
+  (edge-cyan tint)
+- Border: 1 px `edgeCyan` @ 0.25 opacity at rest, 0.6 on hover
+- Icon color: `textMuted` at rest, `edgeCyan` on hover
+- Transition: 150 ms `quadOut`
+- No gradients, no drop shadows
+
+The rotate button firing `onRotate` is what causes the `rotation` prop
+change that triggers ROTATE_ANIMATE (§6.4); the component itself does
+not modify rotation state.
 
 ## 4. File layout
 
@@ -233,11 +255,19 @@ Extends `src/lib/theme.ts` with a new `plate3d` token block:
 Only one thing in the viewport is amber. If two things are amber, it's a
 bug.
 
+**Intentional change from the 2D component.** The existing 2D
+`PlateCanvas` uses `colors.primary` (`#0051BA`, Axioforce blue) for the
+active cell outline (`canvas.activeCell` in `theme.ts`). The 3D version
+deliberately switches active-cell to amber so it stands alone as the
+one "warning/attention" accent. Blue remains available in the palette
+for non-active chrome (edges), but no longer marks active state.
+
 ### 8.2 Typography
 
-- **Geist Mono** (12 px): bottom readout strip, corner bracket labels,
-  hover reticle coord label. Monospace earns its place for numeric
-  readouts.
+- **Geist Mono Variable** (12 px) — actual font name as declared in
+  `src/lib/theme.ts` `fonts.mono`. Used for: bottom readout strip,
+  corner bracket labels, hover reticle coord label. Monospace earns its
+  place for numeric readouts.
 - **Geist Variable**: everything else (none currently — this component has
   no sans-serif chrome).
 
@@ -359,13 +389,25 @@ makes that a local change.
    `GRID_DIMS`, `THRESHOLDS_*`). Plate-3D handles it by mapping to
    `plate-lite`, but the broader app won't render `10` correctly until
    `types.ts` is updated. Flagged for follow-up — out of scope here.
-2. **`liveTesting` criterion in `LiveView`**. Design assumes
-   `liveTesting={phase === 'CAPTURING'}`. If you want
-   `ARMED | STABLE | CAPTURING`, it's a one-line change in
-   `LiveView.tsx`.
-3. **`FluxLitePage`** keeps default `liveTesting=false`, so users can
-   peek freely there. Assumed correct; confirm if that page is also
-   considered "live testing" at some phase.
+2. **`liveTesting` criterion — two stores, two vocabularies**. The two
+   call sites use different phase models:
+   - **`LiveView.tsx`** reads `phase` from `useSessionStore` (type
+     `SessionPhase`: `IDLE | WARMUP | TARE | ARMED | STABLE | CAPTURING
+     | SUMMARY`). Design assumes
+     `liveTesting={phase === 'CAPTURING'}` — swap for
+     `['ARMED','STABLE','CAPTURING'].includes(phase)` if you want the
+     hard-lock to extend through pre-capture stabilisation.
+   - **`FluxLitePage.tsx`** reads `phase` from `useLiveTestStore` (type
+     `LiveTestPhase`: `IDLE | WARMUP | TARE | TESTING | STAGE_SWITCH |
+     SUMMARY`). Design assumes
+     `liveTesting={phase === 'TESTING'}` — the active-measurement phase
+     in the FluxLite protocol.
+
+   `PlateCanvas` itself receives a plain boolean and doesn't care which
+   store it came from. Both call sites compute their own truthy value
+   from the appropriate store.
+3. ~~**`FluxLitePage`** keeps default `liveTesting=false`~~. Superseded
+   by item 2 — `FluxLitePage` uses `liveTestStore.phase === 'TESTING'`.
 4. **"Once per app session"** for the intro swoop scopes to the Electron
    process lifetime. Re-entering LiveView within the same run snaps
    straight to top, no swoop.
