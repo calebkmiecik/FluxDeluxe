@@ -5,13 +5,17 @@ import {
   rowStatus,
   stagesStartedCount,
   formatMetaSummary,
+  stageErrorStats,
 } from '../pages/fluxlite/controlPanelHelpers'
 import type { CellMeasurement } from '../lib/liveTestTypes'
 
-function m(row: number, col: number, stageIndex: number, pass: boolean): CellMeasurement {
+function m(
+  row: number, col: number, stageIndex: number, pass: boolean,
+  signedErrorN = 0,
+): CellMeasurement {
   return {
     row, col, stageIndex, pass,
-    meanFzN: 0, stdFzN: 0, errorN: 0, signedErrorN: 0, errorRatio: 0,
+    meanFzN: 0, stdFzN: 0, errorN: Math.abs(signedErrorN), signedErrorN, errorRatio: 0,
     colorBin: pass ? 'green' : 'red',
     timestamp: 0,
   }
@@ -91,6 +95,59 @@ describe('rowStatus', () => {
     expect(rowStatus('tare', 'WARMUP')).toBe('pending')
     expect(rowStatus('test', 'TARE')).toBe('pending')
     expect(rowStatus('summary', 'TESTING')).toBe('pending')
+  })
+})
+
+describe('stageErrorStats', () => {
+  it('returns zeros for an empty measurements map', () => {
+    const out = stageErrorStats(new Map(), 0, 800)
+    expect(out).toEqual({ tested: 0, signedPct: 0, maePct: 0, stdPct: 0 })
+  })
+
+  it('returns zeros when targetN is 0 (defensive)', () => {
+    const measurements = new Map<string, CellMeasurement>([
+      ['0,0', m(0, 0, 0, true, 10)],
+    ])
+    const out = stageErrorStats(measurements, 0, 0)
+    expect(out).toEqual({ tested: 0, signedPct: 0, maePct: 0, stdPct: 0 })
+  })
+
+  it('computes signed and MAE percentages', () => {
+    // Target 200N. Signed errors: +10N, -10N → +5%, -5%.
+    // signedPct mean = 0; maePct mean = 5.
+    const measurements = new Map<string, CellMeasurement>([
+      ['0,0', m(0, 0, 0, true, 10)],
+      ['0,1', m(0, 1, 0, true, -10)],
+    ])
+    const out = stageErrorStats(measurements, 0, 200)
+    expect(out.tested).toBe(2)
+    expect(out.signedPct).toBeCloseTo(0, 5)
+    expect(out.maePct).toBeCloseTo(5, 5)
+  })
+
+  it('computes population std of signed % error', () => {
+    // Target 100N. Signed errors +10, -10, +20, -20 → percentages +10, -10, +20, -20.
+    // Mean = 0. Variance (population) = (100+100+400+400)/4 = 250. Std ≈ 15.811.
+    const measurements = new Map<string, CellMeasurement>([
+      ['0,0', m(0, 0, 0, true, 10)],
+      ['0,1', m(0, 1, 0, true, -10)],
+      ['1,0', m(1, 0, 0, true, 20)],
+      ['1,1', m(1, 1, 0, true, -20)],
+    ])
+    const out = stageErrorStats(measurements, 0, 100)
+    expect(out.signedPct).toBeCloseTo(0, 5)
+    expect(out.maePct).toBeCloseTo(15, 5)
+    expect(out.stdPct).toBeCloseTo(Math.sqrt(250), 5)
+  })
+
+  it('only includes measurements from the requested stage', () => {
+    const measurements = new Map<string, CellMeasurement>([
+      ['0,0', m(0, 0, 0, true, 10)],  // included
+      ['0,1', m(0, 1, 1, true, 100)], // wrong stage — excluded
+    ])
+    const out = stageErrorStats(measurements, 0, 100)
+    expect(out.tested).toBe(1)
+    expect(out.signedPct).toBeCloseTo(10, 5)
   })
 })
 

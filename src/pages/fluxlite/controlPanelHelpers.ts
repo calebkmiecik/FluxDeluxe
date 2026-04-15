@@ -75,6 +75,44 @@ export function stagesStartedCount(measurements: ReadonlyMap<string, CellMeasure
   return seen.size
 }
 
+export interface StageErrorStats {
+  tested: number
+  /** mean signed error as % of target — positive = reading high, negative = reading low */
+  signedPct: number
+  /** mean absolute error as % of target */
+  maePct: number
+  /** std of signed % error across tested cells (population std, dividing by n) */
+  stdPct: number
+}
+
+/**
+ * Compute per-stage error distribution as percentages of target load.
+ * Returns zeros if no cells are tested. Using population std (divide by n) since
+ * we're summarizing a fixed snapshot, not sampling a population.
+ */
+export function stageErrorStats(
+  measurements: ReadonlyMap<string, CellMeasurement>,
+  stageIndex: number,
+  targetN: number,
+): StageErrorStats {
+  if (targetN <= 0) return { tested: 0, signedPct: 0, maePct: 0, stdPct: 0 }
+  const pcts: number[] = []
+  let absSum = 0
+  measurements.forEach((m) => {
+    if (m.stageIndex === stageIndex) {
+      const pct = (m.signedErrorN / targetN) * 100
+      pcts.push(pct)
+      absSum += Math.abs(pct)
+    }
+  })
+  const tested = pcts.length
+  if (tested === 0) return { tested: 0, signedPct: 0, maePct: 0, stdPct: 0 }
+  const signedPct = pcts.reduce((s, p) => s + p, 0) / tested
+  const maePct = absSum / tested
+  const variance = pcts.reduce((s, p) => s + (p - signedPct) ** 2, 0) / tested
+  return { tested, signedPct, maePct, stdPct: Math.sqrt(variance) }
+}
+
 export function formatMetaSummary(meta: SessionMetadata | null): string {
   if (!meta) return 'Fill out metadata to begin'
   return `${meta.testerName} · ${Math.round(meta.bodyWeightN)}N · ${meta.deviceId}`

@@ -9,19 +9,20 @@ import {
   TARE_DURATION_MS, TARE_THRESHOLD_N,
   type SessionMetadata,
   type StageDefinition,
-  type MeasurementStatus,
   type CellMeasurement,
 } from '../../lib/liveTestTypes'
-import { Play, Square, ChevronDown } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import {
   rowForPhase,
   rowStatus,
   formatMetaSummary,
   stageStats,
+  stageErrorStats,
   stagesStartedCount,
   type StepperRowId,
   type StepperRowStatus,
 } from './controlPanelHelpers'
+import { THRESHOLDS_DB_N, THRESHOLDS_BW_PCT } from '../../lib/types'
 
 const PHASE_DISPLAY: Record<string, { label: string; color: string; className?: string }> = {
   IDLE:         { label: 'STANDBY',  color: 'bg-muted-foreground' },
@@ -37,7 +38,6 @@ export function ControlPanel() {
   const metadata = useLiveTestStore((s) => s.metadata)
   const stages = useLiveTestStore((s) => s.stages)
   const activeStageIndex = useLiveTestStore((s) => s.activeStageIndex)
-  const measurementStatus = useLiveTestStore((s) => s.measurementStatus)
   const warmupTriggered = useLiveTestStore((s) => s.warmupTriggered)
   const warmupStartMs = useLiveTestStore((s) => s.warmupStartMs)
   const tareStartMs = useLiveTestStore((s) => s.tareStartMs)
@@ -81,9 +81,28 @@ export function ControlPanel() {
   const metadataValid =
     !!selectedDevice && testerName.trim().length > 0 && bodyWeightN > 0
 
-  // Accordion state: follows phase, overridable by user click
-  const [expandedRow, setExpandedRow] = useState<StepperRowId>(() => rowForPhase(phase))
-  useEffect(() => { setExpandedRow(rowForPhase(phase)) }, [phase])
+  // Multi-expand state: a set of row IDs that are currently open.
+  // Phase changes ADD the new active row (never remove) — users can collapse anything manually.
+  const [expandedRows, setExpandedRows] = useState<Set<StepperRowId>>(
+    () => new Set([rowForPhase(phase)])
+  )
+  useEffect(() => {
+    setExpandedRows((prev) => {
+      const row = rowForPhase(phase)
+      if (prev.has(row)) return prev
+      const next = new Set(prev)
+      next.add(row)
+      return next
+    })
+  }, [phase])
+  const toggleRow = (row: StepperRowId) => {
+    setExpandedRows((prev) => {
+      const next = new Set(prev)
+      if (next.has(row)) next.delete(row)
+      else next.add(row)
+      return next
+    })
+  }
 
   const phaseInfo = PHASE_DISPLAY[phase] ?? PHASE_DISPLAY.IDLE
   const activeStage = stages[activeStageIndex]
@@ -129,8 +148,8 @@ export function ControlPanel() {
           label="Meta Data"
           status={rowStatus('meta', phase)}
           summary={metaSummary}
-          expanded={expandedRow === 'meta'}
-          onToggle={() => setExpandedRow('meta')}
+          expanded={expandedRows.has('meta')}
+          onToggle={() => toggleRow('meta')}
         >
           <MetaDataBody
             phase={phase}
@@ -150,8 +169,8 @@ export function ControlPanel() {
           label="Warmup"
           status={rowStatus('warmup', phase)}
           summary={warmupSummary(phase, warmupTriggered, warmupStartMs)}
-          expanded={expandedRow === 'warmup'}
-          onToggle={() => setExpandedRow('warmup')}
+          expanded={expandedRows.has('warmup')}
+          onToggle={() => toggleRow('warmup')}
         >
           <WarmupBody
             phase={phase}
@@ -166,8 +185,8 @@ export function ControlPanel() {
           label="Tare"
           status={rowStatus('tare', phase)}
           summary={tareSummary(phase, tareStartMs)}
-          expanded={expandedRow === 'tare'}
-          onToggle={() => setExpandedRow('tare')}
+          expanded={expandedRows.has('tare')}
+          onToggle={() => toggleRow('tare')}
         >
           <TareBody
             phase={phase}
@@ -181,15 +200,16 @@ export function ControlPanel() {
           label="Test"
           status={rowStatus('test', phase)}
           summary={testSummary(phase, measurements, stages.length, gridRows * gridCols * stages.length)}
-          expanded={expandedRow === 'test'}
-          onToggle={() => setExpandedRow('test')}
+          expanded={expandedRows.has('test')}
+          onToggle={() => toggleRow('test')}
         >
           <TestBody
             phase={phase}
             stages={stages}
             activeStageIndex={activeStageIndex}
             activeStage={activeStage}
-            measurementStatus={measurementStatus}
+            bodyWeightN={metadata?.bodyWeightN ?? bodyWeightN}
+            deviceType={metadata?.deviceType ?? selectedDevice?.deviceTypeId ?? '07'}
           />
         </StepperRow>
 
@@ -198,8 +218,8 @@ export function ControlPanel() {
           label="Summary"
           status={rowStatus('summary', phase)}
           summary={phase === 'SUMMARY' ? 'Ready to review' : '—'}
-          expanded={expandedRow === 'summary'}
-          onToggle={() => setExpandedRow('summary')}
+          expanded={expandedRows.has('summary')}
+          onToggle={() => toggleRow('summary')}
         >
           <SummaryBody />
         </StepperRow>
@@ -210,15 +230,11 @@ export function ControlPanel() {
         <button
           onClick={handleActionBar}
           disabled={phase === 'IDLE' && (!metadataValid || connectionState !== 'READY')}
-          className={`w-full flex items-center justify-center gap-2 px-5 py-3 text-sm font-medium tracking-wide rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-            phase === 'IDLE' || phase === 'SUMMARY'
-              ? 'bg-primary text-white btn-glow'
-              : 'bg-transparent border border-border text-muted-foreground hover:bg-white/5 hover:text-foreground'
-          }`}
+          className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] tracking-[0.2em] uppercase border border-foreground/30 text-foreground bg-transparent hover:bg-foreground hover:text-background transition-colors disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-foreground"
         >
-          {phase === 'IDLE' && (<><Play size={16} fill="currentColor" /> Start Session</>)}
+          {phase === 'IDLE' && 'Start Session'}
           {phase === 'SUMMARY' && 'New Session'}
-          {phase !== 'IDLE' && phase !== 'SUMMARY' && (<><Square size={14} /> End Session</>)}
+          {phase !== 'IDLE' && phase !== 'SUMMARY' && 'End Session'}
         </button>
       </div>
     </div>
@@ -452,64 +468,96 @@ function StageGrid({
   const locB = stages.filter((s) => s.location === 'B')
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="grid grid-cols-[2rem_1fr_1fr_1fr] gap-1 items-stretch text-[10px]">
-        <div />
-        <div className="telemetry-label text-center">Dumbbell</div>
-        <div className="telemetry-label text-center">Two Leg</div>
-        <div className="telemetry-label text-center">One Leg</div>
+    <div className="grid grid-cols-[1.25rem_1fr_1fr_1fr] gap-1.5 items-stretch">
+      <div />
+      <div className="telemetry-label text-center">Dumbbell</div>
+      <div className="telemetry-label text-center">Two Leg</div>
+      <div className="telemetry-label text-center">One Leg</div>
 
-        <div className="telemetry-label self-center text-center">A</div>
-        {locA.map((s) => (
-          <StageCell key={s.index} stage={s} active={s.index === activeStageIndex} stats={stageStats(measurements, s.index, totalCells)} onClick={() => onSelect(s.index)} />
-        ))}
+      <div className="telemetry-label self-center text-center">A</div>
+      {locA.map((s) => (
+        <StageCell
+          key={s.index}
+          stage={s}
+          active={s.index === activeStageIndex}
+          stats={stageStats(measurements, s.index, totalCells)}
+          errorStats={stageErrorStats(measurements, s.index, s.targetN)}
+          onClick={() => onSelect(s.index)}
+        />
+      ))}
 
-        <div className="telemetry-label self-center text-center">B</div>
-        {locB.map((s) => (
-          <StageCell key={s.index} stage={s} active={s.index === activeStageIndex} stats={stageStats(measurements, s.index, totalCells)} onClick={() => onSelect(s.index)} />
-        ))}
-      </div>
+      <div className="telemetry-label self-center text-center">B</div>
+      {locB.map((s) => (
+        <StageCell
+          key={s.index}
+          stage={s}
+          active={s.index === activeStageIndex}
+          stats={stageStats(measurements, s.index, totalCells)}
+          errorStats={stageErrorStats(measurements, s.index, s.targetN)}
+          onClick={() => onSelect(s.index)}
+        />
+      ))}
     </div>
   )
 }
 
+/** Format signed percent for UI: sign included, one decimal, e.g. +1.2%, -0.4%, 0.0%. */
+function formatSignedPct(pct: number): string {
+  if (Math.abs(pct) < 0.05) return '0.0%'
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}
+
 function StageCell({
-  stage, active, stats, onClick,
+  stage, active, stats, errorStats, onClick,
 }: {
   stage: StageDefinition
   active: boolean
   stats: { tested: number; passed: number; total: number }
+  errorStats: { tested: number; signedPct: number; maePct: number; stdPct: number }
   onClick: () => void
 }) {
   const complete = stats.tested === stats.total && stats.total > 0
-  const dot = complete ? '✓' : active ? '●' : ''
+  const indicator = complete ? 'bg-success' : active ? 'bg-primary status-live' : null
+  const label = stage.type === 'dumbbell' ? 'DB' : stage.type === 'two_leg' ? '2L' : '1L'
   return (
     <button
       onClick={onClick}
-      className={`relative rounded-md border px-2 py-1.5 text-left transition-all ${
-        active ? 'border-primary bg-primary/10' : complete ? 'border-success/50 bg-success/5' : 'border-border bg-background/50 hover:bg-white/[0.03]'
+      className={`relative border px-2.5 py-2 text-left transition-all flex flex-col gap-0.5 ${
+        active
+          ? 'border-foreground/60'
+          : complete
+          ? 'border-success/40 hover:border-success/70'
+          : 'border-border hover:border-foreground/40'
       }`}
     >
-      <div className="absolute top-1 right-1.5 text-[10px] text-muted-foreground">{dot}</div>
-      <div className="text-[10px] font-mono text-foreground">
-        {stage.type === 'dumbbell' ? 'DB' : stage.type === 'two_leg' ? '2L' : '1L'}·{stage.location}
-      </div>
+      {indicator && (
+        <div className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${indicator}`} />
+      )}
+      <div className="text-xs font-mono text-foreground tracking-wider">{label}·{stage.location}</div>
       <div className="text-[10px] text-muted-foreground font-mono">{stats.tested}/{stats.total} done</div>
       <div className="text-[10px] text-muted-foreground font-mono">
-        {stats.tested > 0 ? `${stats.passed}/${stats.tested} pass` : '—'}
+        {stats.tested > 0 ? `${stats.passed}/${stats.tested} pass` : '— pass'}
+      </div>
+      <div className="text-[10px] font-mono text-foreground">
+        {errorStats.tested > 0 ? formatSignedPct(errorStats.signedPct) : '—'}
+      </div>
+      <div className="text-[10px] text-muted-foreground font-mono">
+        {errorStats.tested > 0 ? `MAE ${errorStats.maePct.toFixed(1)}%` : '—'}
       </div>
     </button>
   )
 }
 
 function TestBody({
-  phase, stages, activeStageIndex, activeStage, measurementStatus,
+  phase, stages, activeStageIndex, activeStage, bodyWeightN, deviceType,
 }: {
   phase: string
   stages: StageDefinition[]
   activeStageIndex: number
   activeStage: StageDefinition | undefined
-  measurementStatus: MeasurementStatus
+  bodyWeightN: number
+  deviceType: string
 }) {
   const setActiveStage = useLiveTestStore((s) => s.setActiveStage)
   const measurements = useLiveTestStore((s) => s.measurements)
@@ -521,10 +569,28 @@ function TestBody({
     return <p className="text-xs text-muted-foreground">Testing starts after tare completes.</p>
   }
 
-  const activeStats = stageStats(measurements, activeStageIndex, totalCells)
+  const bwPct = THRESHOLDS_BW_PCT[deviceType] ?? 0.015
+  const bwThresholdN = bodyWeightN * bwPct
+  const dbThresholdN = THRESHOLDS_DB_N[deviceType] ?? 6.0
 
   return (
     <div className="flex flex-col gap-3">
+      {/* Passing thresholds header */}
+      <div className="flex flex-col gap-1">
+        <div className="telemetry-label">Passing thresholds</div>
+        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-muted-foreground">BW</span>
+            <span className="text-foreground">{(bwPct * 100).toFixed(1)}%</span>
+            <span className="text-muted-foreground">· {bwThresholdN.toFixed(1)}N</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-muted-foreground">DB</span>
+            <span className="text-foreground">{dbThresholdN.toFixed(1)}N</span>
+          </div>
+        </div>
+      </div>
+
       <StageGrid
         stages={stages}
         activeStageIndex={activeStageIndex}
@@ -532,35 +598,6 @@ function TestBody({
         totalCells={totalCells}
         onSelect={setActiveStage}
       />
-
-      <div className="flex items-center justify-between text-xs border-t border-border pt-3">
-        <span className="text-muted-foreground">
-          Active: <span className="text-foreground font-medium">{activeStage.location} · {activeStage.name}</span>
-        </span>
-        <span className="font-mono text-muted-foreground">
-          {activeStage.targetN.toFixed(0)}N ±{activeStage.toleranceN.toFixed(1)}N · {activeStats.tested}/{activeStats.total}
-        </span>
-      </div>
-
-      <div className="panel-inset p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <div className={`w-2 h-2 rounded-full ${measurementStatus.state === 'CAPTURED' ? 'bg-success' : measurementStatus.state === 'MEASURING' ? 'bg-warning status-live' : measurementStatus.state === 'ARMING' ? 'bg-primary status-live' : 'bg-muted-foreground'}`} />
-          <span className="text-xs tracking-wider text-foreground uppercase">
-            {measurementStatus.state === 'IDLE' ? 'Waiting for load…' : measurementStatus.state === 'ARMING' ? 'Arming…' : measurementStatus.state === 'MEASURING' ? 'Measuring…' : 'Captured!'}
-          </span>
-        </div>
-        {measurementStatus.cell && (
-          <div className="text-xs text-muted-foreground mt-1">Cell [<span className="font-mono">{measurementStatus.cell.row},{measurementStatus.cell.col}</span>]</div>
-        )}
-        {measurementStatus.reason && (
-          <div className="text-xs text-muted-foreground mt-1">{measurementStatus.reason}</div>
-        )}
-        {(measurementStatus.state === 'ARMING' || measurementStatus.state === 'MEASURING') && (
-          <div className="w-full h-1 bg-background rounded-full overflow-hidden mt-2">
-            <div className={`h-full rounded-full transition-all duration-100 ${measurementStatus.state === 'ARMING' ? 'bg-primary' : 'bg-warning'}`} style={{ width: `${(measurementStatus.progressMs / 1000) * 100}%` }} />
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -577,28 +614,41 @@ function SummaryBody() {
   const totalCells = gridRows * gridCols
   const stageResults = stages.map((stage) => {
     const stats = stageStats(measurements, stage.index, totalCells)
-    return { ...stage, ...stats }
+    const errors = stageErrorStats(measurements, stage.index, stage.targetN)
+    return { ...stage, ...stats, ...errors }
   })
-  const overallTested = stageResults.reduce((s, r) => s + r.tested, 0)
-  const overallPassed = stageResults.reduce((s, r) => s + r.passed, 0)
-  const overallTotal = stageResults.reduce((s, r) => s + r.total, 0)
+
+  const shortLabel = (type: string) => (type === 'dumbbell' ? 'DB' : type === 'two_leg' ? '2L' : '1L')
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="panel-inset p-3">
-        <div className="grid grid-cols-3 gap-3 text-center">
-          <div><div className="telemetry-label">Tested</div><div className="telemetry-value">{overallTested}</div></div>
-          <div><div className="telemetry-label">Passed</div><div className="telemetry-value text-success">{overallPassed}</div></div>
-          <div><div className="telemetry-label">Total</div><div className="telemetry-value">{overallTotal}</div></div>
-        </div>
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {stageResults.map((r) => (
-          <div key={r.index} className="flex items-center justify-between text-xs px-2 py-1.5 rounded bg-background">
-            <span className="text-muted-foreground">{r.name} ({r.location})</span>
-            <span className={`font-mono ${r.passed === r.tested && r.tested > 0 ? 'text-success' : 'text-foreground'}`}>{r.passed}/{r.tested}</span>
-          </div>
-        ))}
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_auto] gap-x-2 gap-y-1 text-[10px] font-mono items-baseline">
+        <div className="telemetry-label">Stage</div>
+        <div className="telemetry-label text-right">Signed</div>
+        <div className="telemetry-label text-right">MAE</div>
+        <div className="telemetry-label text-right">Std</div>
+        <div className="telemetry-label text-right">Pass</div>
+
+        {stageResults.map((r) => {
+          const fullPass = r.passed === r.tested && r.tested > 0
+          return (
+            <div className="contents" key={r.index}>
+              <div className="text-foreground tracking-wider">{shortLabel(r.type)}·{r.location}</div>
+              <div className="text-right text-foreground">
+                {r.tested > 0 ? formatSignedPct(r.signedPct) : '—'}
+              </div>
+              <div className="text-right text-muted-foreground">
+                {r.tested > 0 ? `${r.maePct.toFixed(1)}%` : '—'}
+              </div>
+              <div className="text-right text-muted-foreground">
+                {r.tested > 0 ? `${r.stdPct.toFixed(1)}%` : '—'}
+              </div>
+              <div className={`text-right ${fullPass ? 'text-success' : 'text-foreground'}`}>
+                {r.passed}/{r.tested}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
