@@ -10,7 +10,7 @@ import { TempGauge } from '../../components/canvas/TempGauge'
 import { DeviceList } from '../../components/shared/DeviceList'
 import { DataModeToggle } from '../../components/shared/DataModeToggle'
 import { ControlPanel } from './ControlPanel'
-import { HistoryPage } from './HistoryPage'
+import { DashboardPage } from './DashboardPage'
 import { ModelsPage } from './ModelsPage'
 import { ModelPackager } from './ModelPackager'
 import { getSocket } from '../../lib/socket'
@@ -222,7 +222,7 @@ export function FluxLitePage() {
           </div>
         )}
 
-        {activeLitePage === 'history' && <HistoryPage />}
+        {activeLitePage === 'history' && <DashboardPage />}
         {activeLitePage === 'models' && <ModelsPage />}
       </div>
 
