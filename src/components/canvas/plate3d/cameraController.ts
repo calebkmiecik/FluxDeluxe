@@ -2,11 +2,12 @@
  * Camera state machine for the 3D plate canvas.
  *
  * States:
- *   INTRO_SWOOP    — 1.2s perspective→ortho landing on first mount per session
- *   ORTHO_LOCKED   — resting top-down ortho (default interactive state)
- *   PEEK_ORBIT    — user-dragged perspective (clamped elevation)
- *   PEEK_RETURN    — 0.4s eased return to ortho top
- *   ROTATE_ANIMATE — 0.5s plate mesh spin (camera stays put)
+ *   INTRO_SWOOP  — 1.2s perspective→ortho landing on first mount per session
+ *   ORTHO_LOCKED — resting top-down ortho (default interactive state)
+ *   PEEK_ORBIT   — user-dragged perspective (clamped elevation)
+ *   PEEK_RETURN  — 0.4s eased return to ortho top
+ *
+ * Mesh rotation is animated independently of camera state via its own track.
  *
  * This module is pure state + time — it does NOT touch three.js.
  * The React component feeds it deltaTime each frame and reads the
@@ -30,7 +31,6 @@ export type CameraState =
   | 'ORTHO_LOCKED'
   | 'PEEK_ORBIT'
   | 'PEEK_RETURN'
-  | 'ROTATE_ANIMATE'
 
 export interface CameraPose {
   azimuth: number
@@ -60,13 +60,18 @@ export class CameraController {
   private rotationQuadrant: number | null = null // last-known rotation prop
   private liveTesting = false
 
-  // Animation state (valid only when state is a *_ANIMATE / *_SWOOP / *_RETURN)
+  // Camera animation state (valid during INTRO_SWOOP / PEEK_RETURN)
   private animStart = 0
   private animDuration = 0
   private animFromPose: CameraPose | null = null
   private animToPose: CameraPose | null = null
-  private animFromRotation = 0
-  private animToRotation = 0
+
+  // Independent rotation animation track
+  private rotAnimating = false
+  private rotAnimStart = 0
+  private rotAnimDuration = 0
+  private rotAnimFrom = 0
+  private rotAnimTo = 0
 
   private elapsedMs = 0
 
@@ -127,14 +132,17 @@ export class CameraController {
         this.state = 'ORTHO_LOCKED'
         this.pose = this.orthoTop()
       })
-    } else if (this.state === 'ROTATE_ANIMATE') {
-      this.progressAnim((t) => {
-        const e = easing.cubicOut(t)
-        this.meshRotation = this.animFromRotation + (this.animToRotation - this.animFromRotation) * e
-      }, () => {
-        this.state = 'ORTHO_LOCKED'
-        this.meshRotation = this.animToRotation
-      })
+    }
+
+    // Rotation animation runs independently of camera state
+    if (this.rotAnimating) {
+      const t = CLAMP((this.elapsedMs - this.rotAnimStart) / this.rotAnimDuration, 0, 1)
+      const e = easing.cubicOut(t)
+      this.meshRotation = this.rotAnimFrom + (this.rotAnimTo - this.rotAnimFrom) * e
+      if (t >= 1) {
+        this.meshRotation = this.rotAnimTo
+        this.rotAnimating = false
+      }
     }
   }
 
@@ -198,11 +206,12 @@ export class CameraController {
     }
     if (this.rotationQuadrant === quadrant) return
     this.rotationQuadrant = quadrant
-    this.animStart = this.elapsedMs
-    this.animDuration = ROTATE_ANIMATE_MS
-    this.animFromRotation = this.meshRotation
-    this.animToRotation = targetRad
-    this.state = 'ROTATE_ANIMATE'
+    this.rotAnimStart = this.elapsedMs
+    this.rotAnimDuration = ROTATE_ANIMATE_MS
+    this.rotAnimFrom = this.meshRotation
+    this.rotAnimTo = targetRad
+    this.rotAnimating = true
+    // Camera state is NOT changed
   }
 
   getPose(): CameraPose {
@@ -217,7 +226,13 @@ export class CameraController {
     return this.state === 'ORTHO_LOCKED' || this.state === 'PEEK_ORBIT'
   }
 
+  /** Whether a mesh rotation animation is currently in progress. */
+  isRotating(): boolean {
+    return this.rotAnimating
+  }
+
   applyWheelZoom(deltaY: number) {
+    if (this.state !== 'ORTHO_LOCKED' && this.state !== 'PEEK_ORBIT') return
     const lo = this.fitDistance * (1 - 0.15)
     const hi = this.fitDistance * (1 + 0.15)
     this.pose.distance = CLAMP(this.pose.distance + deltaY * 0.001, lo, hi)

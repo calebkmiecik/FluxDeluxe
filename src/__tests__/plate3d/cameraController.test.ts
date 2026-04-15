@@ -89,21 +89,35 @@ describe('CameraController — rotation', () => {
     expect(c.getMeshRotation()).toBeCloseTo(Math.PI, 3)
   })
 
-  it('rotation change triggers ROTATE_ANIMATE', () => {
+  it('rotation change starts animating without changing camera state', () => {
     const c = makeController()
-    c.update(1200)
+    c.update(1200) // finish swoop → ORTHO_LOCKED
     c.setRotation(0) // initial
     c.setRotation(1) // change
-    expect(c.state).toBe('ROTATE_ANIMATE')
+    expect(c.state).toBe('ORTHO_LOCKED')
+    expect(c.isRotating()).toBe(true)
   })
 
-  it('ROTATE_ANIMATE completes after ROTATE_ANIMATE_MS', () => {
+  it('rotation fires from PEEK and leaves camera in PEEK_ORBIT', () => {
+    const c = makeController()
+    c.update(1200)
+    c.setRotation(0)
+    c.beginDrag() // → PEEK_ORBIT
+    c.setRotation(1)
+    expect(c.state).toBe('PEEK_ORBIT')
+    expect(c.isRotating()).toBe(true)
+    c.update(500) // finish rotation
+    expect(c.state).toBe('PEEK_ORBIT') // still peeked!
+    expect(c.isRotating()).toBe(false)
+  })
+
+  it('rotation animation completes after ROTATE_ANIMATE_MS', () => {
     const c = makeController()
     c.update(1200)
     c.setRotation(0)
     c.setRotation(1)
     c.update(500) // ROTATE_ANIMATE_MS
-    expect(c.state).toBe('ORTHO_LOCKED')
+    expect(c.isRotating()).toBe(false)
     expect(c.getMeshRotation()).toBeCloseTo(Math.PI / 2, 3)
   })
 })
@@ -123,5 +137,13 @@ describe('CameraController — wheel zoom clamp', () => {
     c.update(1200)
     for (let i = 0; i < 100; i++) c.applyWheelZoom(-1000)
     expect(c.getPose().distance).toBeCloseTo(0.85, 2)
+  })
+
+  it('wheel zoom during INTRO_SWOOP is ignored', () => {
+    const c = makeController()
+    expect(c.state).toBe('INTRO_SWOOP')
+    const before = c.getPose().distance
+    c.applyWheelZoom(1000)
+    expect(c.getPose().distance).toBeCloseTo(before, 5)
   })
 })
