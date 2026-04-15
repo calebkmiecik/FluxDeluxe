@@ -17,6 +17,8 @@ import {
   rowForPhase,
   rowStatus,
   formatMetaSummary,
+  stageStats,
+  stagesStartedCount,
   type StepperRowId,
   type StepperRowStatus,
 } from './controlPanelHelpers'
@@ -39,6 +41,9 @@ export function ControlPanel() {
   const warmupTriggered = useLiveTestStore((s) => s.warmupTriggered)
   const warmupStartMs = useLiveTestStore((s) => s.warmupStartMs)
   const tareStartMs = useLiveTestStore((s) => s.tareStartMs)
+  const measurements = useLiveTestStore((s) => s.measurements)
+  const gridRows = useLiveTestStore((s) => s.gridRows)
+  const gridCols = useLiveTestStore((s) => s.gridCols)
   const startSession = useLiveTestStore((s) => s.startSession)
   const endSession = useLiveTestStore((s) => s.endSession)
   const setPhase = useLiveTestStore((s) => s.setPhase)
@@ -165,7 +170,7 @@ export function ControlPanel() {
           id="test"
           label="Test"
           status={rowStatus('test', phase)}
-          summary={testSummary(phase, stages.length)}
+          summary={testSummary(phase, measurements, stages.length, gridRows * gridCols * stages.length)}
           expanded={expandedRow === 'test'}
           onToggle={() => setExpandedRow('test')}
         >
@@ -422,6 +427,70 @@ function TareBody({
   )
 }
 
+function StageGrid({
+  stages, activeStageIndex, measurements, totalCells, onSelect,
+}: {
+  stages: StageDefinition[]
+  activeStageIndex: number
+  measurements: ReadonlyMap<string, CellMeasurement>
+  totalCells: number
+  onSelect: (index: number) => void
+}) {
+  // Group by location — rely on the order in STAGE_TEMPLATES (A then B)
+  const locA = stages.filter((s) => s.location === 'A')
+  const locB = stages.filter((s) => s.location === 'B')
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="grid grid-cols-[2rem_1fr_1fr_1fr] gap-1 items-stretch text-[10px]">
+        <div />
+        <div className="telemetry-label text-center">Dumbbell</div>
+        <div className="telemetry-label text-center">Two Leg</div>
+        <div className="telemetry-label text-center">One Leg</div>
+
+        <div className="telemetry-label self-center text-center">A</div>
+        {locA.map((s) => (
+          <StageCell key={s.index} stage={s} active={s.index === activeStageIndex} stats={stageStats(measurements, s.index, totalCells)} onClick={() => onSelect(s.index)} />
+        ))}
+
+        <div className="telemetry-label self-center text-center">B</div>
+        {locB.map((s) => (
+          <StageCell key={s.index} stage={s} active={s.index === activeStageIndex} stats={stageStats(measurements, s.index, totalCells)} onClick={() => onSelect(s.index)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function StageCell({
+  stage, active, stats, onClick,
+}: {
+  stage: StageDefinition
+  active: boolean
+  stats: { tested: number; passed: number; total: number }
+  onClick: () => void
+}) {
+  const complete = stats.tested === stats.total && stats.total > 0
+  const dot = complete ? '✓' : active ? '●' : ''
+  return (
+    <button
+      onClick={onClick}
+      className={`relative rounded-md border px-2 py-1.5 text-left transition-all ${
+        active ? 'border-primary bg-primary/10' : complete ? 'border-success/50 bg-success/5' : 'border-border bg-background/50 hover:bg-white/[0.03]'
+      }`}
+    >
+      <div className="absolute top-1 right-1.5 text-[10px] text-muted-foreground">{dot}</div>
+      <div className="text-[10px] font-mono text-foreground">
+        {stage.type === 'dumbbell' ? 'DB' : stage.type === 'two_leg' ? '2L' : '1L'}·{stage.location}
+      </div>
+      <div className="text-[10px] text-muted-foreground font-mono">{stats.tested}/{stats.total} done</div>
+      <div className="text-[10px] text-muted-foreground font-mono">
+        {stats.tested > 0 ? `${stats.passed}/${stats.tested} pass` : '—'}
+      </div>
+    </button>
+  )
+}
+
 function TestBody({
   phase, stages, activeStageIndex, activeStage, measurementStatus,
 }: {
@@ -432,40 +501,34 @@ function TestBody({
   measurementStatus: MeasurementStatus
 }) {
   const setActiveStage = useLiveTestStore((s) => s.setActiveStage)
-  const getStageProgress = useLiveTestStore((s) => s.getStageProgress)
+  const measurements = useLiveTestStore((s) => s.measurements)
+  const gridRows = useLiveTestStore((s) => s.gridRows)
+  const gridCols = useLiveTestStore((s) => s.gridCols)
+  const totalCells = gridRows * gridCols
 
   if (phase === 'IDLE' || phase === 'WARMUP' || phase === 'TARE' || !activeStage) {
     return <p className="text-xs text-muted-foreground">Testing starts after tare completes.</p>
   }
 
-  const progress = getStageProgress(activeStageIndex)
-  const progressPct = progress.total > 0 ? (progress.done / progress.total) * 100 : 0
+  const activeStats = stageStats(measurements, activeStageIndex, totalCells)
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <button onClick={() => setActiveStage(Math.max(0, activeStageIndex - 1))} disabled={activeStageIndex === 0} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
-          <ChevronLeft size={18} />
-        </button>
-        <div className="text-center">
-          <div className="text-sm font-medium text-foreground">{activeStage.name}</div>
-          <div className="text-xs text-muted-foreground">Location {activeStage.location}</div>
-        </div>
-        <button onClick={() => setActiveStage(Math.min(stages.length - 1, activeStageIndex + 1))} disabled={activeStageIndex === stages.length - 1} className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
-          <ChevronRight size={18} />
-        </button>
-      </div>
+      <StageGrid
+        stages={stages}
+        activeStageIndex={activeStageIndex}
+        measurements={measurements}
+        totalCells={totalCells}
+        onSelect={setActiveStage}
+      />
 
-      <div className="panel-inset p-3 grid grid-cols-2 gap-3">
-        <div><div className="telemetry-label">Target</div><div className="telemetry-value">{activeStage.targetN.toFixed(0)}N</div></div>
-        <div><div className="telemetry-label">Tolerance</div><div className="telemetry-value">&plusmn;{activeStage.toleranceN.toFixed(1)}N</div></div>
-      </div>
-
-      <div>
-        <div className="flex justify-between text-xs text-muted-foreground mb-1"><span>Cells</span><span className="font-mono">{progress.done} / {progress.total}</span></div>
-        <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-          <div className="h-full bg-primary rounded-full transition-all duration-300" style={{ width: `${progressPct}%` }} />
-        </div>
+      <div className="flex items-center justify-between text-xs border-t border-border pt-3">
+        <span className="text-muted-foreground">
+          Active: <span className="text-foreground font-medium">{activeStage.location} · {activeStage.name}</span>
+        </span>
+        <span className="font-mono text-muted-foreground">
+          {activeStage.targetN.toFixed(0)}N &plusmn;{activeStage.toleranceN.toFixed(1)}N · {activeStats.tested}/{activeStats.total}
+        </span>
       </div>
 
       <div className="panel-inset p-3">
@@ -477,6 +540,14 @@ function TestBody({
         </div>
         {measurementStatus.cell && (
           <div className="text-xs text-muted-foreground mt-1">Cell [<span className="font-mono">{measurementStatus.cell.row},{measurementStatus.cell.col}</span>]</div>
+        )}
+        {measurementStatus.reason && (
+          <div className="text-xs text-muted-foreground mt-1">{measurementStatus.reason}</div>
+        )}
+        {(measurementStatus.state === 'ARMING' || measurementStatus.state === 'MEASURING') && (
+          <div className="w-full h-1 bg-background rounded-full overflow-hidden mt-2">
+            <div className={`h-full rounded-full transition-all duration-100 ${measurementStatus.state === 'ARMING' ? 'bg-primary' : 'bg-warning'}`} style={{ width: `${(measurementStatus.progressMs / 1000) * 100}%` }} />
+          </div>
         )}
       </div>
     </div>
@@ -541,8 +612,15 @@ function tareSummary(phase: string, startMs: number | null): string {
   }
   return '✓ Tared'
 }
-function testSummary(phase: string, totalStages: number): string {
+function testSummary(
+  phase: string,
+  measurements: ReadonlyMap<string, CellMeasurement>,
+  totalStages: number,
+  totalCellsAll: number,
+): string {
   if (phase === 'IDLE' || phase === 'WARMUP' || phase === 'TARE') return 'Pending'
   if (phase === 'SUMMARY') return '✓ All stages complete'
-  return `Stage ${totalStages > 0 ? '…' : '—'} active`
+  const started = stagesStartedCount(measurements)
+  const totalTested = measurements.size
+  return `${started}/${totalStages} stages · ${totalTested}/${totalCellsAll} cells`
 }
