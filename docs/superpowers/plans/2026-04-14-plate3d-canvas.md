@@ -787,6 +787,24 @@ describe('CameraController — rotation', () => {
     expect(c.getMeshRotation()).toBeCloseTo(Math.PI / 2, 3)
   })
 })
+
+describe('CameraController — wheel zoom clamp', () => {
+  beforeEach(() => resetIntroSwoopForTesting())
+
+  it('extreme positive wheel deltas cannot exceed fitDistance * 1.15', () => {
+    const c = new CameraController({ fitDistance: 1.0 })
+    c.update(1200)
+    for (let i = 0; i < 100; i++) c.applyWheelZoom(1000)
+    expect(c.getPose().distance).toBeCloseTo(1.15, 2)
+  })
+
+  it('extreme negative wheel deltas cannot fall below fitDistance * 0.85', () => {
+    const c = new CameraController({ fitDistance: 1.0 })
+    c.update(1200)
+    for (let i = 0; i < 100; i++) c.applyWheelZoom(-1000)
+    expect(c.getPose().distance).toBeCloseTo(0.85, 2)
+  })
+})
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1019,8 +1037,9 @@ export class CameraController {
   }
 
   applyWheelZoom(deltaY: number) {
-    // Clamp is applied by the caller against fit distance limits
-    this.pose.distance += deltaY * 0.001
+    const lo = this.fitDistance * (1 - 0.15)
+    const hi = this.fitDistance * (1 + 0.15)
+    this.pose.distance = CLAMP(this.pose.distance + deltaY * 0.001, lo, hi)
   }
 }
 ```
@@ -1691,6 +1710,14 @@ export function PlateCanvas({
   const splitRef = useRef<{ upper: EdgeSegments | null; lower: EdgeSegments | null }>({ upper: null, lower: null })
   const fatalRef = useRef(false)
 
+  // Render-loop data refs — keep the RAF loop stable across prop updates.
+  // Without these, the loop would tear down every time cellColors / cellTexts /
+  // activeCell / rotation change, which is very frequent during live testing.
+  const propsRef = useRef({
+    deviceType, rotation, cellColors, cellTexts, activeCell,
+  })
+  propsRef.current = { deviceType, rotation, cellColors, cellTexts, activeCell }
+
   const lastFrameRef = useRef<number | null>(null)
   const rafRef = useRef<number | null>(null)
 
@@ -1925,6 +1952,8 @@ export function PlateCanvas({
   }, [deviceType, rotation])
 
   // ── Render loop ──────────────────────────────────────────────────
+  // Intentionally EMPTY dep array — loop is set up once, reads latest
+  // props via propsRef. Prevents RAF teardown on every live-testing update.
   useEffect(() => {
     const v3 = new THREE.Vector3()
     const draw = (now: number) => {
@@ -1943,6 +1972,14 @@ export function PlateCanvas({
       const ctx = main.getContext('2d')
       const eCtx = edge.getContext('2d')
       if (!ctx || !eCtx) return
+
+      const {
+        deviceType: deviceTypeNow,
+        rotation: rotationNow,
+        cellColors: cellColorsNow,
+        cellTexts: cellTextsNow,
+        activeCell: activeCellNow,
+      } = propsRef.current
 
       cam.update(delta)
       scene.setMeshRotation(cam.getMeshRotation())
@@ -1965,20 +2002,20 @@ export function PlateCanvas({
 
       // Update cell fills
       scene.clearAllCellFills() // simple rebuild; cell count is small
-      const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
-      for (const [key, bin] of cellColors.entries()) {
+      const grid = GRID_DIMS[deviceTypeNow] ?? { rows: 3, cols: 3 }
+      for (const [key, bin] of cellColorsNow.entries()) {
         const [rStr, cStr] = key.split(',')
         const canonR = Number(rStr), canonC = Number(cStr)
         if (isNaN(canonR) || isNaN(canonC)) continue
         const rgba = COLOR_BIN_RGBA[bin]
         if (!rgba) continue
-        const rect = canonicalCellRect(canonR, canonC, deviceType, rotation, geom.bounds)
+        const rect = canonicalCellRect(canonR, canonC, deviceTypeNow, rotationNow, geom.bounds)
         scene.setCellFill(key, rect, geom.floorY + 0.05, rgba)
       }
 
       // Active cell ring + pulse
-      if (activeCell) {
-        const rect = canonicalCellRect(activeCell.row, activeCell.col, deviceType, rotation, geom.bounds)
+      if (activeCellNow) {
+        const rect = canonicalCellRect(activeCellNow.row, activeCellNow.col, deviceTypeNow, rotationNow, geom.bounds)
         const pulse = 0.8 + 0.2 * (0.5 + 0.5 * Math.sin((now / ACTIVE_PULSE_MS) * Math.PI * 2))
         scene.setActiveRing(rect, geom.floorY + 0.05, pulse)
       } else {
@@ -2000,11 +2037,11 @@ export function PlateCanvas({
       drawEdges(ctx, camObj, splitRef.current.upper, 0.8, W, H, cam.getMeshRotation())
 
       // Cell text labels (projected)
-      for (const [key, text] of cellTexts.entries()) {
+      for (const [key, text] of cellTextsNow.entries()) {
         const [rStr, cStr] = key.split(',')
         const canonR = Number(rStr), canonC = Number(cStr)
         if (isNaN(canonR) || isNaN(canonC)) continue
-        const rect = canonicalCellRect(canonR, canonC, deviceType, rotation, geom.bounds)
+        const rect = canonicalCellRect(canonR, canonC, deviceTypeNow, rotationNow, geom.bounds)
         const cx = rect.x + rect.w / 2
         const cz = rect.z + rect.h / 2
         const rad = cam.getMeshRotation()
@@ -2047,21 +2084,22 @@ export function PlateCanvas({
       }
 
       // Bottom readout
-      const dims = PLATE_DIMENSIONS[deviceType] ?? { width: 400, height: 400 }
-      const rotated = rotation % 2 === 1
+      const dims = PLATE_DIMENSIONS[deviceTypeNow] ?? { width: 400, height: 400 }
+      const rotated = rotationNow % 2 === 1
       drawBottomReadout(ctx, W, H, {
-        deviceType,
+        deviceType: deviceTypeNow,
         widthMm: rotated ? dims.height : dims.width,
         heightMm: rotated ? dims.width : dims.height,
         rows: rotated ? grid.cols : grid.rows,
         cols: rotated ? grid.rows : grid.cols,
         cameraStateLabel: cameraStateLabel(cam.state),
-        activeCell,
+        activeCell: activeCellNow,
       })
     }
     rafRef.current = requestAnimationFrame(draw)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [deviceType, rotation, cellColors, cellTexts, activeCell])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Render tree ──────────────────────────────────────────────────
   return (
@@ -2309,11 +2347,21 @@ Expected: Electron app launches, no console errors, PlateCanvas area renders.
 
 Run: `git grep "components/canvas/PlateCanvas'"` — should return no hits outside the plate3d folder.
 
-- [ ] **Step 7: Apply any fixes needed**
+- [ ] **Step 7: Check framerate**
+
+If frame drops are visible (scene feels sluggish, especially during PEEK), the most likely culprit is the floor grid: `drawFloorGrid` projects ~3600 line segments per frame. Cheap tuning knobs in `PlateCanvas.tsx`:
+
+- Reduce `extent` from 3 to 1.5 (halves segment count)
+- Increase `step` from 0.1 to 0.2 (quarters segment count)
+- Skip the grid draw entirely when `scene.getCamera()` is ortho and far-grid segments would be culled by `alpha < 0.01` anyway
+
+Apply whichever gets framerate back to 60 fps without visibly changing the near-plate grid density.
+
+- [ ] **Step 8: Apply any fixes needed**
 
 If any of the above fail, fix and commit each fix as a small commit (`fix(plate3d): ...`).
 
-- [ ] **Step 8: Final commit (if none needed, skip)**
+- [ ] **Step 9: Final commit (if none needed, skip)**
 
 ```bash
 git status
