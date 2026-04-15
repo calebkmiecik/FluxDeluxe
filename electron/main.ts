@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { DynamoManager } from './dynamo'
 import { initUpdater } from './updater'
+import { createLiveTestDeps, registerLiveTestIpc, runRetryOnStart } from './ipc/liveTest'
 
 let mainWindow: BrowserWindow | null = null
 let dynamo: DynamoManager | null = null
@@ -34,6 +35,12 @@ function createWindow(): void {
 
   ipcMain.removeHandler('app:version')
   ipcMain.handle('app:version', () => app.getVersion())
+
+  // Live test persistence
+  const liveTestDeps = createLiveTestDeps()
+  registerLiveTestIpc(liveTestDeps)
+  // Fire-and-forget retry on start
+  runRetryOnStart(liveTestDeps).catch((err) => console.warn('[liveTest] retry failed:', err))
 }
 
 app.whenReady().then(createWindow)

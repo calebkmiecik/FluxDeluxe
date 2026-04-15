@@ -11,4 +11,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('dynamo:status-change', (_event, status) => callback(status)),
   onUpdateAvailable: (callback: (info: unknown) => void) =>
     ipcRenderer.on('updater:available', (_event, info) => callback(info)),
+
+  // Live test persistence
+  liveTest: {
+    saveSession: (payload: unknown) => ipcRenderer.invoke('liveTest:saveSession', payload),
+    listSessions: (opts: unknown) => ipcRenderer.invoke('liveTest:listSessions', opts),
+    getSession: (id: string) => ipcRenderer.invoke('liveTest:getSession', id),
+    getOverview: (opts: unknown) => ipcRenderer.invoke('liveTest:getOverview', opts),
+    retryQueued: () => ipcRenderer.invoke('liveTest:retryQueued'),
+    queueStatus: () => ipcRenderer.invoke('liveTest:queueStatus'),
+  },
 })
