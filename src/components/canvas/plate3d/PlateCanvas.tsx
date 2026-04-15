@@ -519,7 +519,7 @@ export function PlateCanvas({
       <div
         className="absolute flex items-center overflow-hidden"
         style={{
-          bottom: 12, right: 12, height: 32,
+          bottom: 12, left: 12, height: 32,
           zIndex: 3,
           background: 'rgba(20, 20, 20, 0.65)',
           border: `1px solid ${plate3d.edgeCyan}20`,
