@@ -503,14 +503,6 @@ export function PlateCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Derived HUD data (non-animated, React-driven) ────────────────
-  const dims = PLATE_DIMENSIONS[deviceType] ?? { width: 400, height: 400 }
-  const rotated = rotation % 2 === 1
-  const hudWidthMm = rotated ? dims.height : dims.width
-  const hudHeightMm = rotated ? dims.width : dims.height
-  const grid = GRID_DIMS[deviceType] ?? { rows: 3, cols: 3 }
-  const hudRows = rotated ? grid.cols : grid.rows
-  const hudCols = rotated ? grid.rows : grid.cols
 
   // ── Render tree ──────────────────────────────────────────────────
   return (
@@ -523,11 +515,11 @@ export function PlateCanvas({
       <canvas ref={webglCanvasRef} style={{ position: 'absolute', inset: 0, zIndex: 1 }} />
       <canvas ref={canvasRef}      style={{ position: 'absolute', inset: 0, zIndex: 2 }} />
 
-      {/* Bottom HUD strip — segmented control */}
+      {/* Bottom HUD strip — action buttons only */}
       <div
         className="absolute flex items-center overflow-hidden"
         style={{
-          bottom: 12, left: 12, right: 12, height: 32,
+          bottom: 12, right: 12, height: 32,
           zIndex: 3,
           background: 'rgba(20, 20, 20, 0.65)',
           border: `1px solid ${plate3d.edgeCyan}20`,
@@ -538,10 +530,6 @@ export function PlateCanvas({
           color: plate3d.hudTextColor,
         }}
       >
-        <HudSection>{deviceType}</HudSection>
-        <HudSection>{hudWidthMm.toFixed(0)}×{hudHeightMm.toFixed(0)} mm</HudSection>
-        <HudSection>{hudRows}×{hudCols}</HudSection>
-        <div className="flex-1" />
         <HudActionButton onClick={onTare}>TARE</HudActionButton>
         <HudActionButton onClick={onRotate}>ROTATE 90°</HudActionButton>
         <HudActionButton
@@ -550,9 +538,6 @@ export function PlateCanvas({
         >
           ▲ TOP
         </HudActionButton>
-        {activeCell && (
-          <HudSection amber>R{activeCell.row},C{activeCell.col}</HudSection>
-        )}
       </div>
     </div>
   )
@@ -562,29 +547,6 @@ export function PlateCanvas({
 
 const DIVIDER: CSSProperties = {
   borderRight: `1px solid ${plate3d.edgeCyan}1A`,
-}
-
-function HudSection({
-  children,
-  amber,
-}: {
-  children: React.ReactNode
-  amber?: boolean
-}) {
-  return (
-    <div
-      style={{
-        padding: '0 12px',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        color: amber ? plate3d.activeAmber : undefined,
-        ...DIVIDER,
-      }}
-    >
-      {children}
-    </div>
-  )
 }
 
 const HudActionButton = forwardRef<
