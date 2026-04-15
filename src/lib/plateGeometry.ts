@@ -16,9 +16,9 @@ export function mapCellForRotation(
 ): [number, number] {
   const q = ((k % 4) + 4) % 4
   if (q === 0) return [row, col]
-  if (q === 1) return [col, cols - 1 - row]
+  if (q === 1) return [col, rows - 1 - row]
   if (q === 2) return [rows - 1 - row, cols - 1 - col]
-  return [rows - 1 - col, row]
+  return [cols - 1 - col, row]
 }
 
 /** Invert rotation mapping (for click → canonical cell). */
@@ -27,9 +27,9 @@ export function invertRotation(
 ): [number, number] {
   const q = ((k % 4) + 4) % 4
   if (q === 0) return [row, col]
-  if (q === 1) return [cols - 1 - col, row]
+  if (q === 1) return [rows - 1 - col, row]
   if (q === 2) return [rows - 1 - row, cols - 1 - col]
-  return [col, rows - 1 - row]
+  return [col, cols - 1 - row]
 }
 
 /** Invert device mapping (for click → canonical cell). */
