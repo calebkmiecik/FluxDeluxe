@@ -541,9 +541,9 @@ export function PlateCanvas({
         <HudSection>{deviceType}</HudSection>
         <HudSection>{hudWidthMm.toFixed(0)}×{hudHeightMm.toFixed(0)} mm</HudSection>
         <HudSection>{hudRows}×{hudCols}</HudSection>
+        <div className="flex-1" />
         <HudActionButton onClick={onTare}>TARE</HudActionButton>
         <HudActionButton onClick={onRotate}>ROTATE 90°</HudActionButton>
-        <div className="flex-1" />
         <HudActionButton
           ref={cameraStateButtonRef}
           onClick={() => cameraRef.current?.dismissPeek()}
