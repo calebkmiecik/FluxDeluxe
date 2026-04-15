@@ -27,6 +27,10 @@ describe('base64ToFloat32Array', () => {
   it('returns empty array for empty string', () => {
     expect(base64ToFloat32Array('').length).toBe(0)
   })
+
+  it('returns empty array for invalid base64 (graceful fallback per spec §11)', () => {
+    expect(base64ToFloat32Array('!!!invalid!!!').length).toBe(0)
+  })
 })
 
 describe('parsePlateJSON', () => {
@@ -82,5 +86,19 @@ describe('splitEdgesByY', () => {
     const { upper, lower } = splitEdgesByY(edges)
     expect(upper).not.toBeNull()
     expect(lower).toBeNull()
+  })
+
+  it('edge pair at exactly midY goes to upper bucket', () => {
+    // minY = 0, maxY = 1 → midY = 0.5. Edge at exactly y=0.5 on both endpoints.
+    const edges = new Float32Array([
+      0, 0, 0,  1, 0, 0,         // pair #1 — anchors minY=0
+      0, 1, 0,  1, 1, 0,         // pair #2 — anchors maxY=1
+      0, 0.5, 0,  1, 0.5, 0,     // pair #3 — exactly at midY
+    ])
+    const { upper, lower } = splitEdgesByY(edges)
+    expect(lower).not.toBeNull()
+    expect(upper).not.toBeNull()
+    expect(lower!.length).toBe(6)  // only pair #1
+    expect(upper!.length).toBe(12) // pairs #2 and #3
   })
 })

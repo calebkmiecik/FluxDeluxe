@@ -40,10 +40,14 @@ interface RawPlateJSON {
 
 export function base64ToFloat32Array(b64: string): Float32Array {
   if (!b64) return new Float32Array(0)
-  const bin = atob(b64)
-  const bytes = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-  return new Float32Array(bytes.buffer)
+  try {
+    const bin = atob(b64)
+    const bytes = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+    return new Float32Array(bytes.buffer)
+  } catch {
+    return new Float32Array(0)
+  }
 }
 
 export function parsePlateJSON(json: unknown): PlateGeometry {
