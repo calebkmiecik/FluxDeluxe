@@ -48,6 +48,17 @@ The row header is a clickable button that toggles expansion. Clicking a row **do
 - When `phase` changes (auto-advance, e.g. warmup timer completes), `expandedRow` auto-follows to the new phase's row.
 - User clicks override auto-follow for the current phase; the next phase change resets to following again.
 
+**Phase → row mapping:**
+
+| Phase | Row |
+|---|---|
+| `IDLE` | `meta` |
+| `WARMUP` | `warmup` |
+| `TARE` | `tare` |
+| `TESTING` | `test` |
+| `STAGE_SWITCH` | `test` |
+| `SUMMARY` | `summary` |
+
 ## Per-row behavior
 
 ### Row 1 — Meta Data
@@ -141,6 +152,8 @@ The existing measurement status (`Waiting for load…` / `Arming…` / `Measurin
 | Active | `{stagesStartedCount}/6 stages · {totalTested}/{totalCells} cells tested` |
 | All complete | `✓ All stages complete` |
 
+`stagesStartedCount` is derived — count distinct `stageIndex` values in the `measurements` map that have at least one entry. No new store field.
+
 ### Row 5 — Summary
 
 | Phase state | Collapsed summary | Expanded body |
@@ -219,5 +232,6 @@ No other files touched.
 ## Open questions / risks
 
 - **Narrow panel width.** The 2×3 stage grid will be tight if the panel gets narrower than ~280px. If we see clipping, the grid can fall back to a 1-column list at narrow widths via a CSS grid breakpoint. Not solving upfront — validate during implementation.
+- **Hardcoded 2×3 shape.** The stage grid assumes exactly 6 stages structured as 3 types × 2 locations, matching `STAGE_TEMPLATES` today. If the template ever changes (more stage types, more locations, different counts), the grid layout will need to adapt. Acceptable now since `STAGE_TEMPLATES` is stable; flag if it changes.
 - **"Breathing" status dot.** The existing `.status-live` class animates opacity. We'll reuse it on active row dots to maintain consistency with the phase badge and active device LED.
 - **`completed` detection for Warmup/Tare.** Neither the store nor phase distinguishes "warmup ran to completion" from "warmup was skipped." Both end up as `phase === TARE`. For the status dot, treat "phase has passed this row" as complete regardless of skip. No new state needed.
