@@ -4,7 +4,7 @@ import { useDeviceStore } from '../../stores/deviceStore'
 import { useLiveDataStore } from '../../stores/liveDataStore'
 import { ForcePlot } from '../../components/canvas/ForcePlot'
 import { COPVisualization } from '../../components/canvas/COPVisualization'
-import { PlateCanvas } from '../../components/canvas/PlateCanvas'
+import { PlateCanvas } from '../../components/canvas/plate3d/PlateCanvas'
 import { getSocket } from '../../lib/socket'
 
 export function LiveView() {
@@ -50,7 +50,7 @@ export function LiveView() {
           <div className={`w-2 h-2 rounded-full ${
             phase === 'CAPTURING' ? 'bg-danger animate-pulse' : 'bg-success'
           }`} />
-          <span className="font-mono text-xs uppercase tracking-widest">
+          <span className="text-sm">
             {phase === 'ARMED' ? 'Waiting for subject...' :
              phase === 'STABLE' ? 'Stable — ready to capture' :
              phase === 'CAPTURING' ? 'Capturing...' : phase}
@@ -82,6 +82,7 @@ export function LiveView() {
             onRotate={() => setRotation((r) => (r + 1) % 4)}
             onTare={handleTare}
             onRefresh={handleRefresh}
+            liveTesting={phase === 'CAPTURING'}
           />
         </div>
 

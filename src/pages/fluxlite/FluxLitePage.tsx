@@ -4,9 +4,11 @@ import { useDeviceStore } from '../../stores/deviceStore'
 import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useLiveTestStore } from '../../stores/liveTestStore'
 import { ForcePlot } from '../../components/canvas/ForcePlot'
-import { PlateCanvas } from '../../components/canvas/PlateCanvas'
+import { ForceGauges } from '../../components/canvas/ForceGauges'
+import { PlateCanvas } from '../../components/canvas/plate3d/PlateCanvas'
 import { TempGauge } from '../../components/canvas/TempGauge'
-import { MomentsStrip } from '../../components/canvas/MomentsStrip'
+import { DeviceList } from '../../components/shared/DeviceList'
+import { DataModeToggle } from '../../components/shared/DataModeToggle'
 import { ControlPanel } from './ControlPanel'
 import { HistoryPage } from './HistoryPage'
 import { ModelsPage } from './ModelsPage'
@@ -14,14 +16,13 @@ import { ModelPackager } from './ModelPackager'
 import { getSocket } from '../../lib/socket'
 import { measurementEngine } from '../../lib/measurementEngine'
 import { WARMUP_TRIGGER_N, TARE_THRESHOLD_N } from '../../lib/liveTestTypes'
+import { type Axis as DataModeAxis, type DataMode, getModeConfig } from '../../lib/dataMode'
 
 const LITE_NAV = [
-  { id: 'live' as const, label: 'Live' },
-  { id: 'history' as const, label: 'History' },
+  { id: 'history' as const, label: 'Dashboard' },
+  { id: 'live' as const, label: 'Live Testing' },
   { id: 'models' as const, label: 'Models' },
 ] as const
-
-type Axis = 'fx' | 'fy' | 'fz'
 
 export function FluxLitePage() {
   const { activeLitePage, setActiveLitePage } = useUiStore()
@@ -37,15 +38,20 @@ export function FluxLitePage() {
   const [rotation, setRotation] = useState(0)
   const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null)
 
-  const [enabledAxes, setEnabledAxes] = useState<Set<Axis>>(new Set(['fz']))
-  const toggleAxis = useCallback((axis: Axis) => {
+  const [dataMode, setDataMode] = useState<DataMode>('forces')
+  // Separate enabled sets per mode so toggling keeps your selection per view
+  const [enabledForceAxes, setEnabledForceAxes] = useState<Set<DataModeAxis>>(new Set(['fz']))
+  const [enabledMomentAxes, setEnabledMomentAxes] = useState<Set<DataModeAxis>>(new Set(['mz']))
+  const enabledAxes = dataMode === 'forces' ? enabledForceAxes : enabledMomentAxes
+  const setEnabledAxes = dataMode === 'forces' ? setEnabledForceAxes : setEnabledMomentAxes
+  const toggleAxis = useCallback((axis: DataModeAxis) => {
     setEnabledAxes((prev) => {
       const next = new Set(prev)
       if (next.has(axis)) next.delete(axis)
       else next.add(axis)
       return next
     })
-  }, [])
+  }, [setEnabledAxes])
 
   const selectedDevice = devices.find((d) => d.axfId === selectedDeviceId)
   const deviceType = metadata?.deviceType || selectedDevice?.deviceTypeId || '07'
@@ -136,21 +142,28 @@ export function FluxLitePage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Sub-nav tabs */}
-      <div className="flex gap-0 px-4 pt-2 pb-0 border-b border-border">
-        {LITE_NAV.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setActiveLitePage(item.id)}
-            className={`px-4 py-2 text-xs font-mono tracking-widest uppercase transition-all duration-150 border-b-2 ${
-              activeLitePage === item.id
-                ? 'text-foreground border-primary'
-                : 'text-muted-foreground border-transparent hover:text-foreground hover:border-border'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
+      {/* Top bar: brand + sub-nav tabs */}
+      <div className="flex items-center px-4 pt-2 pb-0 border-b border-border">
+        <div className="flex items-center pr-4 pb-2">
+          <span className="text-lg font-semibold tracking-tight text-foreground">
+            FluxLite
+          </span>
+        </div>
+        <div className="flex gap-0 flex-1">
+          {LITE_NAV.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveLitePage(item.id)}
+              className={`px-4 py-2 text-sm transition-all duration-150 border-b-2 ${
+                activeLitePage === item.id
+                  ? 'text-foreground border-primary'
+                  : 'text-muted-foreground border-transparent hover:text-foreground hover:border-border'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Page content */}
@@ -159,8 +172,12 @@ export function FluxLitePage() {
           <div className="flex h-full">
             {/* Main visualization area */}
             <div className="flex-[2] flex flex-col min-w-0">
-              {/* PlateCanvas + TempGauge — top ~60% */}
+              {/* Top row: DeviceList + PlateCanvas + TempGauge */}
               <div className="flex-[3] min-h-0 flex p-2">
+                {/* Device list — left column */}
+                <div className="w-52 flex-shrink-0 mr-2 border-r border-border pr-2">
+                  <DeviceList />
+                </div>
                 <div className="flex-1 min-w-0">
                   <PlateCanvas
                     deviceType={deviceType}
@@ -172,20 +189,29 @@ export function FluxLitePage() {
                     onRotate={() => setRotation((r) => (r + 1) % 4)}
                     onTare={handleTare}
                     onRefresh={handleRefresh}
+                    liveTesting={phase === 'TESTING'}
                   />
                 </div>
-                {/* Temperature bar — slim vertical strip */}
-                <div className="w-10 flex-shrink-0 ml-1">
-                  <TempGauge />
+                {/* Temperature bar — slim vertical strip, ~1/3 height, top-aligned */}
+                <div className="w-10 flex-shrink-0 ml-1 flex items-start justify-center">
+                  <div className="w-full h-1/3">
+                    <TempGauge />
+                  </div>
                 </div>
               </div>
-              {/* ForcePlot — bottom ~38% */}
-              <div className="flex-[2] min-h-0 p-2 pt-0">
-                <ForcePlot enabledAxes={enabledAxes} onToggleAxis={toggleAxis} />
-              </div>
-              {/* Moments strip — thin footer */}
-              <div className="h-7 flex-shrink-0 border-t border-border">
-                <MomentsStrip />
+              {/* Bottom row: ForcePlot + ForceGauges */}
+              <div className="flex-[2] min-h-0 flex p-2 pt-0 gap-2">
+                {/* Plot panel: canvas + floating toggle overlay */}
+                <div className="flex-1 min-w-0 rounded-md border border-border bg-surface-dark overflow-hidden relative">
+                  <ForcePlot mode={dataMode} enabledAxes={enabledAxes} />
+                  <div className="absolute top-2 right-2 z-10">
+                    <DataModeToggle mode={dataMode} onChange={setDataMode} />
+                  </div>
+                </div>
+                {/* Gauges */}
+                <div className="w-40 flex-shrink-0">
+                  <ForceGauges mode={dataMode} enabledAxes={enabledAxes} onToggleAxis={toggleAxis} />
+                </div>
               </div>
             </div>
 
