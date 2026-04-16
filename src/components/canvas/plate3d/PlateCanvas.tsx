@@ -451,11 +451,8 @@ export function PlateCanvas({
       // 2D passes
       const camObj = scene.getCamera()
 
-      // Floor grid on edge canvas
-      // Fade grid by viewing angle: at low elevation, grid fades to suppress horizon effect
-      const elevationFactor = Math.pow(Math.max(0, Math.sin(pose.elevation)), 4)
-      const finalGridOpacity = gridOpacityRef.current * elevationFactor
-      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, finalGridOpacity)
+      // Floor grid on edge canvas — always visible, small radius around plate
+      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, gridOpacityRef.current)
 
       // Wireframes (below + above fill)
       drawEdges(eCtx, camObj, geom.footEdges, 0.3, W, H, cam.getMeshRotation())
@@ -615,9 +612,9 @@ function drawFloorGrid(
   bounds: Bounds,
   opacityScale: number = 1,
 ) {
-  const extent = 3
+  const extent = 1.5
   const step = 0.1
-  const fade = 3 // matches production — lines beyond 3m are exactly 0 alpha
+  const fade = 1.5 // ~1m past largest plate edge, fades to 0 at boundary
   const v = new THREE.Vector3()
   ctx.save()
   ctx.strokeStyle = plate3d.floorGrid
