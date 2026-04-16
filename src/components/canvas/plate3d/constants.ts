@@ -31,7 +31,7 @@ export const INTRO_START_AZIMUTH = 1.110
 export const INTRO_START_ELEVATION = 0.510
 export const INTRO_DISTANCE_MULT = 1.25
 export const FIT_DISTANCE_MULT = 1.15
-export const MIN_PEEK_ELEVATION = 0.15
+export const MIN_PEEK_ELEVATION = 0.35 // ~20° — avoids grid horizon at very low angles
 export const MAX_ELEVATION = Math.PI / 2
 export const WHEEL_ZOOM_CLAMP = 0.15 // ±15% of fit distance
 

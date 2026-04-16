@@ -452,7 +452,10 @@ export function PlateCanvas({
       const camObj = scene.getCamera()
 
       // Floor grid on edge canvas
-      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, gridOpacityRef.current)
+      // Fade grid by viewing angle: at low elevation, grid fades to suppress horizon effect
+      const elevationFactor = Math.pow(Math.max(0, Math.sin(pose.elevation)), 1.5)
+      const finalGridOpacity = gridOpacityRef.current * elevationFactor
+      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, finalGridOpacity)
 
       // Wireframes (below + above fill)
       drawEdges(eCtx, camObj, geom.footEdges, 0.3, W, H, cam.getMeshRotation())
