@@ -498,7 +498,12 @@ export function PlateCanvas({
           sx1 = Math.min(sx1, p.x); sy1 = Math.min(sy1, p.y)
           sx2 = Math.max(sx2, p.x); sy2 = Math.max(sy2, p.y)
         }
-        drawBrackets(ctx, { x: sx1, y: sy1, w: sx2 - sx1, h: sy2 - sy1 }, bracketOpacityRef.current * 0.7)
+        const pad = 10 // px of air between plate edge and brackets
+        drawBrackets(
+          ctx,
+          { x: sx1 - pad, y: sy1 - pad, w: (sx2 - sx1) + pad * 2, h: (sy2 - sy1) + pad * 2 },
+          bracketOpacityRef.current * 0.7,
+        )
       }
 
       // Hover reticle (only when not peeking)
