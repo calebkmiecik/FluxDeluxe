@@ -242,25 +242,28 @@ export class PlateScene {
     if (!this.copGroup) {
       this.copGroup = new THREE.Group()
 
-      // Shared geometry
+      // Core — bright white-blue center, renders on top of plate
       const sphereGeo = new THREE.SphereGeometry(1, 24, 16)
-
-      // Core — bright white-blue center
       this.copCore = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
         color: new THREE.Color('#AAD4FF'),
         transparent: true,
         opacity: 0.95,
+        depthTest: false,
       }))
+      this.copCore.renderOrder = 10
       this.copGroup.add(this.copCore)
 
-      // Halo — soft additive glow
-      this.copHalo = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
+      // Halo — soft additive glow, top hemisphere only so it doesn't bleed below plate
+      const haloGeo = new THREE.SphereGeometry(1, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2)
+      this.copHalo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
         color: new THREE.Color('#0066FF'),
         transparent: true,
         opacity: 0.12,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        depthTest: false,
       }))
+      this.copHalo.renderOrder = 9
       this.copGroup.add(this.copHalo)
 
       this.platePivot.add(this.copGroup)
