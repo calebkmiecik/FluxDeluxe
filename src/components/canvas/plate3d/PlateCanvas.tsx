@@ -615,9 +615,9 @@ function drawFloorGrid(
   bounds: Bounds,
   opacityScale: number = 1,
 ) {
-  const extent = 5
+  const extent = 3
   const step = 0.1
-  const fade = 5
+  const fade = 3 // matches production — lines beyond 3m are exactly 0 alpha
   const v = new THREE.Vector3()
   ctx.save()
   ctx.strokeStyle = plate3d.floorGrid
@@ -627,6 +627,7 @@ function drawFloorGrid(
     const p1 = projectToScreen(v, camera, W, H)
     v.set(x2, floorY, z2)
     const p2 = projectToScreen(v, camera, W, H)
+    if (!p1.visible || !p2.visible) return // clip behind-camera segments
     const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
     const dist = Math.hypot(cx, cz)
     const alpha = 0.5 * Math.max(0, 1 - dist / fade) ** 2 * opacityScale
