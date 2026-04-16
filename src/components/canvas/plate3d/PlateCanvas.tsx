@@ -453,7 +453,7 @@ export function PlateCanvas({
 
       // Floor grid on edge canvas
       // Fade grid by viewing angle: at low elevation, grid fades to suppress horizon effect
-      const elevationFactor = Math.pow(Math.max(0, Math.sin(pose.elevation)), 1.5)
+      const elevationFactor = Math.pow(Math.max(0, Math.sin(pose.elevation)), 4)
       const finalGridOpacity = gridOpacityRef.current * elevationFactor
       drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, finalGridOpacity)
 
