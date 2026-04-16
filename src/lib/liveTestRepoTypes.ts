@@ -23,9 +23,12 @@ export interface SessionDetail {
 
 export interface OverviewResult {
   session_count: number
+  sessions_passed: number
   cells_captured: number
   device_count: number
   overall_pass_rate: number | null
+  /** ISO timestamp of the earliest session in the filtered set (for computing rates). */
+  earliest_session_at: string | null
   /** Mean |error/target| across all cells, as a fraction (0.02 = 2%). `null` if no cells. */
   mae_pct: number | null
   /** Mean (signed_error/target) across all cells, as a fraction. `null` if no cells. */

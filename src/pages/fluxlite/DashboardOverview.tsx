@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
+import { effectiveTimeRange } from '../../lib/dashboardFilters'
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -59,12 +60,26 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     )
   }
 
+  // Compute passed-per-week from earliest session to now (or the time range bounds)
+  const passedPerWeek = (() => {
+    if (loading || !data || data.sessions_passed === 0) return null
+    const { fromIso } = effectiveTimeRange(filter)
+    // Use whichever is later: the filter's from-date or the earliest session
+    const rangeStart = fromIso
+      ? new Date(Math.max(new Date(fromIso).getTime(), data.earliest_session_at ? new Date(data.earliest_session_at).getTime() : 0))
+      : data.earliest_session_at ? new Date(data.earliest_session_at) : null
+    if (!rangeStart) return null
+    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 1)
+    return data.sessions_passed / weeks
+  })()
+
   return (
     <div className="flex flex-col gap-3">
       <h3 className="telemetry-label">Overview</h3>
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-2">
         <Tile label="Devices"  value={loading ? '…' : String(data?.device_count ?? 0)} />
         <Tile label="Sessions" value={loading ? '…' : String(data?.session_count ?? 0)} />
+        <Tile label="Passed / week" value={loading ? '…' : passedPerWeek !== null ? passedPerWeek.toFixed(1) : '—'} />
         <Tile label="Pass rate" value={loading ? '…' : fmtPct(data?.overall_pass_rate ?? null)} />
         <Tile
           label="Accuracy"

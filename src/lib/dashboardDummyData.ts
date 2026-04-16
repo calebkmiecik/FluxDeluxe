@@ -353,7 +353,12 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
   const mae_pct = allErrorPcts.length === 0 ? null : allErrorPcts.reduce((a, b) => a + b, 0) / allErrorPcts.length
   const signed_error_pct = allSignedPcts.length === 0 ? null : allSignedPcts.reduce((a, b) => a + b, 0) / allSignedPcts.length
 
-  return { session_count, cells_captured, device_count, overall_pass_rate, mae_pct, signed_error_pct, per_stage_type }
+  const sessions_passed = subset.filter((b) => b.session_passed === true).length
+  const earliest_session_at = subset.length > 0
+    ? subset.reduce((min, b) => b.listRow.started_at < min ? b.listRow.started_at : min, subset[0].listRow.started_at)
+    : null
+
+  return { session_count, sessions_passed, cells_captured, device_count, overall_pass_rate, earliest_session_at, mae_pct, signed_error_pct, per_stage_type }
 }
 
 // ── Enable / disable ──────────────────────────────────────────

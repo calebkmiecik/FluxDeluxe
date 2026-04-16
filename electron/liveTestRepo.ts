@@ -95,7 +95,7 @@ export class LiveTestRepo {
   }
 
   async getOverview(filter: DashboardFilters): Promise<OverviewResult> {
-    let sessQuery = this.client.from('sessions').select('id, device_id, n_cells_captured, overall_pass_rate')
+    let sessQuery = this.client.from('sessions').select('id, device_id, started_at, n_cells_captured, overall_pass_rate, session_passed')
 
     const { fromIso, toIso } = effectiveTimeRange(filter)
     if (fromIso) sessQuery = sessQuery.gte('started_at', fromIso)
@@ -152,11 +152,17 @@ export class LiveTestRepo {
     const overall_pass_rate = passRates.length === 0 ? null : passRates.reduce((a: number, b: number) => a + b, 0) / passRates.length
     const device_count = new Set((sessions ?? []).map((r: any) => r.device_id)).size
 
+    const sessions_passed = (sessions ?? []).filter((r: any) => r.session_passed === true).length
+    const dates = (sessions ?? []).map((r: any) => r.started_at as string).filter(Boolean)
+    const earliest_session_at = dates.length > 0 ? dates.reduce((a, b) => a < b ? a : b) : null
+
     return {
       session_count: sessions?.length ?? 0,
+      sessions_passed,
       cells_captured,
       device_count,
       overall_pass_rate,
+      earliest_session_at,
       mae_pct: null,           // TODO: compute from session_cells once schema adds % fields
       signed_error_pct: null,  // TODO: compute from session_cells once schema adds % fields
       per_stage_type,
