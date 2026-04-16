@@ -154,8 +154,13 @@ export class CameraController {
   }
 
   private lerpPose(a: CameraPose, b: CameraPose, t: number): CameraPose {
+    // Azimuth uses shortest-arc interpolation so a return to ortho top
+    // doesn't "unwind" accumulated rotations from PEEK_ORBIT dragging.
+    const TAU = Math.PI * 2
+    let azDelta = b.azimuth - a.azimuth
+    azDelta = ((azDelta + Math.PI) % TAU + TAU) % TAU - Math.PI
     return {
-      azimuth: a.azimuth + (b.azimuth - a.azimuth) * t,
+      azimuth: a.azimuth + azDelta * t,
       elevation: a.elevation + (b.elevation - a.elevation) * t,
       distance: a.distance + (b.distance - a.distance) * t,
       ortho: a.ortho, // overridden per-state

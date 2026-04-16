@@ -147,3 +147,32 @@ describe('CameraController — wheel zoom clamp', () => {
     expect(c.getPose().distance).toBeCloseTo(before, 5)
   })
 })
+
+describe('CameraController — shortest-arc snap-back from peek', () => {
+  beforeEach(() => resetIntroSwoopForTesting())
+
+  it('peek return from accumulated azimuth takes shortest arc', () => {
+    const c = makeController()
+    c.update(1200) // finish swoop → ORTHO_LOCKED
+    c.beginDrag() // → PEEK_ORBIT
+    // Simulate a lot of dragging: push azimuth to a large negative value
+    // (each applyDrag uses dx * 0.005, so dx=-4000 → +20 rad shift).
+    // Easier: reach into the pose via applyDrag repeatedly.
+    for (let i = 0; i < 1000; i++) c.applyDrag(-10, 0) // accumulates positive azimuth
+    const startAz = c.getPose().azimuth
+    expect(Math.abs(startAz)).toBeGreaterThan(Math.PI * 4) // several rotations worth
+
+    c.dismissPeek() // → PEEK_RETURN
+    // Halfway through the animation, azimuth should have moved by at most π (shortest arc),
+    // NOT by half of the accumulated value.
+    c.update(200) // 50% of PEEK_RETURN_MS (400ms)
+    const halfwayAz = c.getPose().azimuth
+    const moved = Math.abs(halfwayAz - startAz)
+    expect(moved).toBeLessThan(Math.PI) // shortest-arc at t=0.5 ≤ π/2 ... leave margin
+
+    c.update(200) // finish animation
+    expect(c.state).toBe('ORTHO_LOCKED')
+    // Final azimuth should be ortho-top's 0, reached via shortest arc
+    expect(c.getPose().azimuth).toBeCloseTo(0, 3)
+  })
+})
