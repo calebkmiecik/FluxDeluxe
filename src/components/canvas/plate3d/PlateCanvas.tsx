@@ -472,7 +472,11 @@ export function PlateCanvas({
         const sc = smoothCopRef.current
         sc.x += (targetX - sc.x) * alpha
         sc.z += (targetZ - sc.z) * alpha
-        scene.setCopSphere(sc.x, sc.z, geom.floorY + 0.05, radius)
+        // Clamp to plate bounds
+        const b = geom.bounds
+        const cx = Math.max(b.minX, Math.min(b.maxX, sc.x))
+        const cz = Math.max(b.minZ, Math.min(b.maxZ, sc.z))
+        scene.setCopSphere(cx, cz, geom.floorY + 0.05, radius)
       } else {
         scene.setCopSphere(null, null, 0, 0)
       }
