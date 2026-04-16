@@ -627,7 +627,7 @@ function drawFloorGrid(
     if (!p1.visible || !p2.visible) return // clip behind-camera segments
     const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
     const dist = Math.hypot(cx, cz)
-    const alpha = 0.5 * Math.max(0, 1 - dist / fade) ** 2 * opacityScale
+    const alpha = 0.7 * Math.max(0, 1 - dist / fade) ** 2 * opacityScale
     if (alpha < 0.01) return
     ctx.globalAlpha = alpha
     ctx.beginPath()
