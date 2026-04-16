@@ -531,8 +531,12 @@ export function PlateCanvas({
       <canvas ref={canvasRef}      style={{ position: 'absolute', inset: 0, zIndex: 2 }} />
 
       {/* Bottom HUD strip — action buttons only */}
+      {/* stopPropagation prevents button clicks from bubbling to the
+          container as dblclick (which would fire dismissPeek) */}
       <div
         className="absolute flex items-center overflow-hidden"
+        onPointerDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
         style={{
           bottom: 12, left: 12, height: 32,
           zIndex: 3,
