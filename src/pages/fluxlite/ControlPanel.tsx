@@ -761,7 +761,7 @@ function StageCell({
   return (
     <button
       onClick={onClick}
-      className={`relative border px-2.5 py-2 text-left transition-all flex flex-col gap-0.5 ${
+      className={`relative border px-3 py-2.5 text-left transition-all flex flex-col gap-1 ${
         active
           ? 'border-foreground/60'
           : complete
@@ -770,17 +770,14 @@ function StageCell({
       }`}
     >
       {indicator && (
-        <div className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${indicator}`} />
+        <div className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${indicator}`} />
       )}
-      <div className="text-xs font-mono text-foreground tracking-wider">{label}·{stage.location}</div>
-      <div className="text-[10px] text-muted-foreground font-mono">{stats.tested}/{stats.total} done</div>
-      <div className="text-[10px] text-muted-foreground font-mono">
-        {stats.tested > 0 ? `${stats.passed}/${stats.tested} pass` : '— pass'}
-      </div>
-      <div className="text-[10px] font-mono text-foreground">
+      <div className="text-sm font-mono text-foreground tracking-wider">{label}·{stage.location}</div>
+      <div className="text-xs text-muted-foreground font-mono">{stats.tested}/{stats.total} done · {stats.tested > 0 ? `${stats.passed} pass` : '—'}</div>
+      <div className="text-sm font-mono text-foreground leading-tight">
         {errorStats.tested > 0 ? formatSignedPct(errorStats.signedPct) : '—'}
       </div>
-      <div className="text-[10px] text-muted-foreground font-mono">
+      <div className="text-xs text-muted-foreground font-mono">
         {errorStats.tested > 0 ? `MAE ${errorStats.maePct.toFixed(1)}%` : '—'}
       </div>
     </button>
