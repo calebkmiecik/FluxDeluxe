@@ -612,9 +612,9 @@ function drawFloorGrid(
   bounds: Bounds,
   opacityScale: number = 1,
 ) {
-  const extent = 3
+  const extent = 5
   const step = 0.1
-  const fade = 3
+  const fade = 5
   const v = new THREE.Vector3()
   ctx.save()
   ctx.strokeStyle = plate3d.floorGrid
@@ -637,27 +637,6 @@ function drawFloorGrid(
     for (let z = -extent; z < extent; z += step) segment(x, z, x, z + step)
   for (let z = -extent; z <= extent; z += step)
     for (let x = -extent; x < extent; x += step) segment(x, z, x + step, z)
-
-  // Finite-pad border so the grid doesn't read as an infinite plane
-  // when the camera is tilted into perspective. Same style as grid lines
-  // but slightly bolder and non-faded.
-  const cornersXZ: Array<[number, number]> = [
-    [-extent, -extent],
-    [extent, -extent],
-    [extent, extent],
-    [-extent, extent],
-  ]
-  const borderPts = cornersXZ.map(([x, z]) => {
-    v.set(x, floorY, z)
-    return projectToScreen(v, camera, W, H)
-  })
-  ctx.globalAlpha = 0.45 * opacityScale
-  ctx.lineWidth = 1.25
-  ctx.beginPath()
-  ctx.moveTo(borderPts[0].x, borderPts[0].y)
-  for (let i = 1; i < borderPts.length; i++) ctx.lineTo(borderPts[i].x, borderPts[i].y)
-  ctx.closePath()
-  ctx.stroke()
 
   ctx.restore()
 }
