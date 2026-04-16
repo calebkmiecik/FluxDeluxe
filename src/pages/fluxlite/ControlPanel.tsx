@@ -241,6 +241,20 @@ export function ControlPanel() {
       return next
     })
   }, [phase])
+
+  // Auto-collapse warmup/tare 1s after their phase completes (lets the user see the filled bar)
+  useEffect(() => {
+    if (phase === 'TARE') {
+      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('warmup'); return n }), 1000)
+      return () => clearTimeout(id)
+    }
+  }, [phase])
+  useEffect(() => {
+    if (phase === 'TESTING') {
+      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('tare'); return n }), 1000)
+      return () => clearTimeout(id)
+    }
+  }, [phase])
   const toggleRow = (row: StepperRowId) => {
     setExpandedRows((prev) => {
       const next = new Set(prev)
