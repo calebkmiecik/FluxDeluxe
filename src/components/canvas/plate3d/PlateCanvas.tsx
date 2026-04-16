@@ -455,7 +455,7 @@ export function PlateCanvas({
       // COP circle — latest frame for the selected device only
       const selectedId = useDeviceStore.getState().selectedDeviceId
       const liveFrame = selectedId ? getLatestFrameForDevice(selectedId) : null
-      if (liveFrame) {
+      if (liveFrame && Math.abs(liveFrame.fz) >= 5) {
         const totalForce = Math.sqrt(
           liveFrame.fx ** 2 + liveFrame.fy ** 2 + liveFrame.fz ** 2,
         )
