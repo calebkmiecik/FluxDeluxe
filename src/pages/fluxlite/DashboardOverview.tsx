@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
-
-type Range = 'all' | '30d' | '7d'
+import type { DashboardFilters } from '../../lib/dashboardFilters'
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -23,22 +22,21 @@ function fmtPct(n: number | null | undefined): string {
   return `${(n * 100).toFixed(1)}%`
 }
 
-export function DashboardOverview() {
-  const [range, setRange] = useState<Range>('all')
+export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const [data, setData] = useState<OverviewResult | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    liveTestClient.getOverview({ range }).then((res) => {
+    liveTestClient.getOverview({ filter }).then((res) => {
       if (!cancelled) {
         setData(res)
         setLoading(false)
       }
     })
     return () => { cancelled = true }
-  }, [range])
+  }, [filter])
 
   const stageTile = (type: 'dumbbell' | 'two_leg' | 'one_leg', label: string) => {
     const r = data?.per_stage_type.find((p) => p.stage_type === type)
@@ -55,18 +53,7 @@ export function DashboardOverview() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm uppercase tracking-wider text-muted-foreground">Overview</h3>
-        <select
-          value={range}
-          onChange={(e) => setRange(e.target.value as Range)}
-          className="bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground"
-        >
-          <option value="all">All time</option>
-          <option value="30d">Last 30 days</option>
-          <option value="7d">Last 7 days</option>
-        </select>
-      </div>
+      <h3 className="text-sm uppercase tracking-wider text-muted-foreground">Overview</h3>
 
       <div className="grid grid-cols-4 gap-2">
         <Tile label="Sessions" value={loading ? '…' : String(data?.session_count ?? 0)} />

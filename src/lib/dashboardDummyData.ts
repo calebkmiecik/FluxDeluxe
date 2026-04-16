@@ -12,6 +12,9 @@ import type {
   OverviewResult,
 } from './liveTestRepoTypes'
 import { setDummyImpl } from './liveTestClient'
+import type { DashboardFilters } from './dashboardFilters'
+import { effectiveTimeRange, effectiveDeviceTypes } from './dashboardFilters'
+import { deviceTypeToFamily } from './deviceFamily'
 
 // ── Realistic session generator ────────────────────────────────
 
@@ -98,21 +101,24 @@ function daysAgoIso(d: number, hourOffset = 0): string {
 }
 
 const SESSION_SPECS: FakeSessionSpec[] = [
-  // Recent week — active
-  { id: 'dummy-001', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)', deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(0, -2),  profile: PROFILES.great },
-  { id: 'dummy-002', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)', deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(0, -6),  profile: PROFILES.solid },
-  { id: 'dummy-003', deviceId: 'AXF-11-0045', deviceNickname: null,            deviceType: '11', testerName: 'jane',   modelId: 'v2.0', bodyWeightN: 620, startedAt: daysAgoIso(1, -3),  profile: PROFILES.solid },
-  { id: 'dummy-004', deviceId: 'AXF-11-0045', deviceNickname: null,            deviceType: '11', testerName: 'jane',   modelId: 'v2.0', bodyWeightN: 620, startedAt: daysAgoIso(2, -4),  profile: PROFILES.drifting,
+  // Recent week — active, all 4 families represented
+  { id: 'dummy-001', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)',   deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(0, -2),  profile: PROFILES.great },
+  { id: 'dummy-002', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)',   deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(0, -6),  profile: PROFILES.solid },
+  { id: 'dummy-003', deviceId: 'AXF-11-0045', deviceNickname: null,              deviceType: '11', testerName: 'jane',   modelId: 'v2.0', bodyWeightN: 620, startedAt: daysAgoIso(1, -3),  profile: PROFILES.solid },
+  { id: 'dummy-004', deviceId: 'AXF-11-0045', deviceNickname: null,              deviceType: '11', testerName: 'jane',   modelId: 'v2.0', bodyWeightN: 620, startedAt: daysAgoIso(2, -4),  profile: PROFILES.drifting,
     skip: [{ stageIndex: 5, cells: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2],[2,0]] }] /* only 2 cells captured in 1L-B */ },
-  { id: 'dummy-005', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',  deviceType: '08', testerName: 'marcus', modelId: 'v2.1', bodyWeightN: 890, startedAt: daysAgoIso(3, -1),  profile: PROFILES.great },
-  { id: 'dummy-006', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)', deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(4, -5),  profile: PROFILES.solid },
-  { id: 'dummy-007', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',  deviceType: '08', testerName: 'marcus', modelId: 'v2.1', bodyWeightN: 890, startedAt: daysAgoIso(6, -2),  profile: PROFILES.drifting },
+  { id: 'dummy-005', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',    deviceType: '08', testerName: 'marcus', modelId: 'v2.1', bodyWeightN: 890, startedAt: daysAgoIso(3, -1),  profile: PROFILES.great },
+  { id: 'dummy-006', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)',   deviceType: '07', testerName: 'caleb',  modelId: 'v2.1', bodyWeightN: 780, startedAt: daysAgoIso(4, -5),  profile: PROFILES.solid },
+  { id: 'dummy-007', deviceId: 'AXF-06-0011', deviceNickname: 'Lite bench',      deviceType: '06', testerName: 'alex',   modelId: 'v2.1', bodyWeightN: 710, startedAt: daysAgoIso(5, -8),  profile: PROFILES.great },
+  { id: 'dummy-008', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',    deviceType: '08', testerName: 'marcus', modelId: 'v2.1', bodyWeightN: 890, startedAt: daysAgoIso(6, -2),  profile: PROFILES.drifting },
+  { id: 'dummy-009', deviceId: 'AXF-06-0011', deviceNickname: 'Lite bench',      deviceType: '06', testerName: 'alex',   modelId: 'v2.0', bodyWeightN: 710, startedAt: daysAgoIso(6, -10), profile: PROFILES.solid },
   // Older — shows 30d vs 7d range makes a difference
-  { id: 'dummy-008', deviceId: 'AXF-11-0045', deviceNickname: null,            deviceType: '11', testerName: 'jane',   modelId: 'v1.9', bodyWeightN: 620, startedAt: daysAgoIso(10, 0),  profile: PROFILES.great },
-  { id: 'dummy-009', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)', deviceType: '07', testerName: 'caleb',  modelId: 'v2.0', bodyWeightN: 780, startedAt: daysAgoIso(14, 0),  profile: PROFILES.solid },
-  { id: 'dummy-010', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',  deviceType: '08', testerName: 'marcus', modelId: 'v1.9', bodyWeightN: 890, startedAt: daysAgoIso(22, 0),  profile: PROFILES.drifting },
-  { id: 'dummy-011', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)', deviceType: '07', testerName: 'caleb',  modelId: 'v1.9', bodyWeightN: 780, startedAt: daysAgoIso(40, 0),  profile: PROFILES.great },
-  { id: 'dummy-012', deviceId: 'AXF-11-0045', deviceNickname: null,            deviceType: '11', testerName: 'jane',   modelId: 'v1.8', bodyWeightN: 620, startedAt: daysAgoIso(55, 0),  profile: PROFILES.solid },
+  { id: 'dummy-010', deviceId: 'AXF-11-0045', deviceNickname: null,              deviceType: '11', testerName: 'jane',   modelId: 'v1.9', bodyWeightN: 620, startedAt: daysAgoIso(10, 0),  profile: PROFILES.great },
+  { id: 'dummy-011', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)',   deviceType: '07', testerName: 'caleb',  modelId: 'v2.0', bodyWeightN: 780, startedAt: daysAgoIso(14, 0),  profile: PROFILES.solid },
+  { id: 'dummy-012', deviceId: 'AXF-08-0302', deviceNickname: 'Plate C (QA)',    deviceType: '08', testerName: 'marcus', modelId: 'v1.9', bodyWeightN: 890, startedAt: daysAgoIso(22, 0),  profile: PROFILES.drifting },
+  { id: 'dummy-013', deviceId: 'AXF-06-0011', deviceNickname: 'Lite bench',      deviceType: '06', testerName: 'alex',   modelId: 'v1.9', bodyWeightN: 710, startedAt: daysAgoIso(35, 0),  profile: PROFILES.solid },
+  { id: 'dummy-014', deviceId: 'AXF-07-0123', deviceNickname: 'Plate A (lab)',   deviceType: '07', testerName: 'caleb',  modelId: 'v1.9', bodyWeightN: 780, startedAt: daysAgoIso(40, 0),  profile: PROFILES.great },
+  { id: 'dummy-015', deviceId: 'AXF-11-0045', deviceNickname: null,              deviceType: '11', testerName: 'jane',   modelId: 'v1.8', bodyWeightN: 620, startedAt: daysAgoIso(55, 0),  profile: PROFILES.solid },
 ]
 
 interface BuiltSession {
@@ -233,8 +239,10 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
     id: spec.id,
     started_at: spec.startedAt,
     device_id: spec.deviceId,
+    device_type: spec.deviceType,
     tester_name: spec.testerName,
     model_id: spec.modelId,
+    body_weight_n: spec.bodyWeightN,
     n_cells_captured: totalCaptured,
     n_cells_expected,
     overall_pass_rate,
@@ -263,14 +271,41 @@ const BUILT: BuiltSession[] = SESSION_SPECS
 
 const DETAIL_BY_ID = new Map<string, SessionDetail>(BUILT.map((b) => [b.listRow.id, b.detail]))
 
-function filterByRange(range: 'all' | '30d' | '7d'): BuiltSession[] {
-  if (range === 'all') return BUILT
-  const cutoff = Date.now() - (range === '30d' ? 30 : 7) * 24 * 3600 * 1000
-  return BUILT.filter((b) => new Date(b.listRow.started_at).getTime() >= cutoff)
+function applyFilter(filter: DashboardFilters): BuiltSession[] {
+  const { fromIso, toIso } = effectiveTimeRange(filter)
+  const types = effectiveDeviceTypes(filter)
+  const search = filter.search.trim().toLowerCase()
+
+  return BUILT.filter((b) => {
+    const t = new Date(b.listRow.started_at).getTime()
+    if (fromIso && t < new Date(fromIso).getTime()) return false
+    if (toIso && t > new Date(toIso).getTime()) return false
+
+    if (types && !types.includes(b.listRow.device_type)) return false
+
+    const weight = b.listRow.body_weight_n
+    if (filter.weightMinN !== null && (weight === null || weight < filter.weightMinN)) return false
+    if (filter.weightMaxN !== null && (weight === null || weight > filter.weightMaxN)) return false
+
+    if (search) {
+      const family = deviceTypeToFamily(b.listRow.device_type) ?? ''
+      const hay = [
+        b.listRow.device_id,
+        b.listRow.device_nickname ?? '',
+        b.listRow.tester_name,
+        b.listRow.model_id,
+        b.listRow.device_type,
+        family,
+      ].join(' ').toLowerCase()
+      if (!hay.includes(search)) return false
+    }
+
+    return true
+  })
 }
 
-function buildOverview(range: 'all' | '30d' | '7d'): OverviewResult {
-  const subset = filterByRange(range)
+function buildOverview(filter: DashboardFilters): OverviewResult {
+  const subset = applyFilter(filter)
   const session_count = subset.length
   const cells_captured = subset.reduce((s, b) => s + b.n_cells_captured, 0)
   const passRates = subset.map((b) => b.overall_pass_rate).filter((x): x is number => x !== null)
@@ -297,9 +332,9 @@ function buildOverview(range: 'all' | '30d' | '7d'): OverviewResult {
 
 export function enableDummy(): void {
   setDummyImpl({
-    getOverview: async ({ range }: { range: 'all' | '30d' | '7d' }) => buildOverview(range),
-    listSessions: async ({ limit, offset }: { limit: number; offset: number }) =>
-      BUILT.slice(offset, offset + limit).map((b) => b.listRow),
+    getOverview: async ({ filter }: { filter: DashboardFilters }) => buildOverview(filter),
+    listSessions: async ({ limit, offset, filter }: { limit: number; offset: number; filter: DashboardFilters }) =>
+      applyFilter(filter).slice(offset, offset + limit).map((b) => b.listRow),
     getSession: async (id: string) => DETAIL_BY_ID.get(id) ?? null,
     queueStatus: async () => ({ queued: 0, poison: 0 }),
     retryQueued: async () => ({ uploaded: 0, stillQueued: 0, errors: [] }),

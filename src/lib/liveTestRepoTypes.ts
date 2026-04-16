@@ -4,8 +4,10 @@ export interface SessionListRow {
   id: string
   started_at: string
   device_id: string
+  device_type: string
   tester_name: string
   model_id: string
+  body_weight_n: number | null
   n_cells_captured: number
   n_cells_expected: number
   overall_pass_rate: number | null

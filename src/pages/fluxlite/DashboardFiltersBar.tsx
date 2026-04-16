@@ -1,0 +1,129 @@
+import type { DashboardFilters, TimePreset } from '../../lib/dashboardFilters'
+import { DEFAULT_FILTERS, isDefaultFilters } from '../../lib/dashboardFilters'
+import { ALL_FAMILIES, familyLabel } from '../../lib/deviceFamily'
+
+const TIME_PRESETS: { value: TimePreset; label: string }[] = [
+  { value: 'all',   label: 'All time' },
+  { value: '7d',    label: 'Last 7 days' },
+  { value: '30d',   label: 'Last 30 days' },
+  { value: '90d',   label: 'Last 90 days' },
+  { value: 'ytd',   label: 'Year to date' },
+  { value: 'custom', label: 'Custom…' },
+]
+
+const inputClass =
+  'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground'
+
+export function DashboardFiltersBar({
+  filters,
+  onChange,
+}: {
+  filters: DashboardFilters
+  onChange: (next: DashboardFilters) => void
+}) {
+  const set = <K extends keyof DashboardFilters>(key: K, value: DashboardFilters[K]) => {
+    onChange({ ...filters, [key]: value })
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 bg-card border border-border rounded-md px-3 py-2">
+      {/* Time */}
+      <label className="flex items-center gap-1 text-xs uppercase tracking-wider text-muted-foreground">
+        Time
+      </label>
+      <select
+        value={filters.timePreset}
+        onChange={(e) => {
+          const next = e.target.value as TimePreset
+          onChange({ ...filters, timePreset: next, timeFrom: next === 'custom' ? filters.timeFrom : null, timeTo: next === 'custom' ? filters.timeTo : null })
+        }}
+        className={inputClass}
+      >
+        {TIME_PRESETS.map((p) => (
+          <option key={p.value} value={p.value}>{p.label}</option>
+        ))}
+      </select>
+      {filters.timePreset === 'custom' && (
+        <>
+          <input
+            type="date"
+            value={filters.timeFrom ?? ''}
+            onChange={(e) => set('timeFrom', e.target.value || null)}
+            className={inputClass}
+            aria-label="From"
+          />
+          <span className="text-muted-foreground text-xs">to</span>
+          <input
+            type="date"
+            value={filters.timeTo ?? ''}
+            onChange={(e) => set('timeTo', e.target.value || null)}
+            className={inputClass}
+            aria-label="To"
+          />
+        </>
+      )}
+
+      <span className="w-px h-5 bg-border mx-1" />
+
+      {/* Device family */}
+      <label className="flex items-center gap-1 text-xs uppercase tracking-wider text-muted-foreground">
+        Device
+      </label>
+      <select
+        value={filters.deviceFamily ?? ''}
+        onChange={(e) => set('deviceFamily', (e.target.value || null) as DashboardFilters['deviceFamily'])}
+        className={inputClass}
+      >
+        <option value="">All</option>
+        {ALL_FAMILIES.map((f) => (
+          <option key={f} value={f}>{familyLabel(f)}</option>
+        ))}
+      </select>
+
+      <span className="w-px h-5 bg-border mx-1" />
+
+      {/* Weight range */}
+      <label className="flex items-center gap-1 text-xs uppercase tracking-wider text-muted-foreground">
+        Weight
+      </label>
+      <input
+        type="number"
+        value={filters.weightMinN ?? ''}
+        onChange={(e) => set('weightMinN', e.target.value === '' ? null : Number(e.target.value))}
+        className={`${inputClass} w-20`}
+        placeholder="min"
+        min={0}
+      />
+      <span className="text-muted-foreground text-xs">–</span>
+      <input
+        type="number"
+        value={filters.weightMaxN ?? ''}
+        onChange={(e) => set('weightMaxN', e.target.value === '' ? null : Number(e.target.value))}
+        className={`${inputClass} w-20`}
+        placeholder="max"
+        min={0}
+      />
+      <span className="text-muted-foreground text-xs">N</span>
+
+      <span className="w-px h-5 bg-border mx-1" />
+
+      {/* Search */}
+      <input
+        type="text"
+        value={filters.search}
+        onChange={(e) => set('search', e.target.value)}
+        placeholder="Search device, tester, family…"
+        className={`${inputClass} flex-1 min-w-[160px]`}
+      />
+
+      {/* Clear */}
+      <button
+        onClick={() => onChange(DEFAULT_FILTERS)}
+        disabled={isDefaultFilters(filters)}
+        className="ml-auto px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        Clear
+      </button>
+    </div>
+  )
+}

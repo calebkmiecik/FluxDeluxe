@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { SessionListRow } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
+import type { DashboardFilters } from '../../lib/dashboardFilters'
+import { deviceTypeToFamily, familyLabel } from '../../lib/deviceFamily'
 
 const PAGE = 50
 
-export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
+export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOpen: (id: string) => void }) {
   const [rows, setRows] = useState<SessionListRow[]>([])
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -13,7 +15,7 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    liveTestClient.listSessions({ limit: PAGE, offset: 0 }).then((r) => {
+    liveTestClient.listSessions({ limit: PAGE, offset: 0, filter }).then((r) => {
       if (cancelled) return
       setRows(r)
       setOffset(r.length)
@@ -21,11 +23,11 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [])
+  }, [filter])
 
   const loadMore = async () => {
     setLoading(true)
-    const more = await liveTestClient.listSessions({ limit: PAGE, offset })
+    const more = await liveTestClient.listSessions({ limit: PAGE, offset, filter })
     setRows((prev) => [...prev, ...more])
     setOffset(offset + more.length)
     if (more.length < PAGE) setDone(true)
@@ -40,29 +42,38 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
           <tr className="text-left border-b border-border">
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Date</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Device</th>
+            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Type</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Tester</th>
+            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Weight</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Model</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Pass</th>
             <th className="pb-2 text-muted-foreground text-xs uppercase tracking-wider">Cells</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.id}
-              onClick={() => onOpen(r.id)}
-              className="border-b border-border/50 hover:bg-white/5 transition-colors cursor-pointer"
-            >
-              <td className="py-2 pr-4 text-muted-foreground">{new Date(r.started_at).toLocaleString()}</td>
-              <td className="py-2 pr-4 text-foreground">{r.device_nickname ?? r.device_id}</td>
-              <td className="py-2 pr-4 text-muted-foreground">{r.tester_name || '—'}</td>
-              <td className="py-2 pr-4 text-muted-foreground">{r.model_id || '—'}</td>
-              <td className="py-2 pr-4 text-muted-foreground">
-                {r.overall_pass_rate === null ? '—' : `${(r.overall_pass_rate * 100).toFixed(0)}%`}
-              </td>
-              <td className="py-2 text-muted-foreground">{r.n_cells_captured}/{r.n_cells_expected}</td>
-            </tr>
-          ))}
+          {rows.map((r) => {
+            const family = deviceTypeToFamily(r.device_type)
+            return (
+              <tr
+                key={r.id}
+                onClick={() => onOpen(r.id)}
+                className="border-b border-border/50 hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <td className="py-2 pr-4 text-muted-foreground">{new Date(r.started_at).toLocaleString()}</td>
+                <td className="py-2 pr-4 text-foreground">{r.device_nickname ?? r.device_id}</td>
+                <td className="py-2 pr-4 text-muted-foreground">{family ? familyLabel(family) : r.device_type}</td>
+                <td className="py-2 pr-4 text-muted-foreground">{r.tester_name || '—'}</td>
+                <td className="py-2 pr-4 text-muted-foreground">
+                  {r.body_weight_n === null ? '—' : `${r.body_weight_n.toFixed(0)}N`}
+                </td>
+                <td className="py-2 pr-4 text-muted-foreground">{r.model_id || '—'}</td>
+                <td className="py-2 pr-4 text-muted-foreground">
+                  {r.overall_pass_rate === null ? '—' : `${(r.overall_pass_rate * 100).toFixed(0)}%`}
+                </td>
+                <td className="py-2 text-muted-foreground">{r.n_cells_captured}/{r.n_cells_expected}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
@@ -72,7 +83,7 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
         </button>
       )}
       {!loading && rows.length === 0 && (
-        <p className="text-muted-foreground text-sm">No sessions yet.</p>
+        <p className="text-muted-foreground text-sm">No sessions match.</p>
       )}
     </div>
   )

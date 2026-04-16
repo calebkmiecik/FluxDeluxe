@@ -57,9 +57,9 @@ export function registerLiveTestIpc(deps: LiveTestIpcDeps): void {
     return deps.repo.getSession(id)
   })
 
-  ipcMain.handle('liveTest:getOverview', async (_e, opts: { range: 'all' | '30d' | '7d' }) => {
+  ipcMain.handle('liveTest:getOverview', async (_e, opts: { filter: import('../../src/lib/dashboardFilters').DashboardFilters }) => {
     if (!deps.repo) return null
-    return deps.repo.getOverview(opts.range)
+    return deps.repo.getOverview(opts.filter)
   })
 
   ipcMain.handle('liveTest:queueStatus', async () => deps.queue.status())

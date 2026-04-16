@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { SaveSessionPayload } from '../src/lib/liveTestPayload'
 import type { SessionListRow, SessionDetail, OverviewResult } from '../src/lib/liveTestRepoTypes'
+import type { DashboardFilters } from '../src/lib/dashboardFilters'
+import { effectiveTimeRange, effectiveDeviceTypes } from '../src/lib/dashboardFilters'
 
 export type { SessionListRow, SessionDetail, OverviewResult }  // re-export for main-process callers
 
@@ -26,24 +28,43 @@ export class LiveTestRepo {
   async listSessions(opts: {
     limit: number
     offset: number
-    filterDeviceId?: string
-    filterTesterName?: string
+    filter: DashboardFilters
   }): Promise<SessionListRow[]> {
     let q = this.client
       .from('sessions')
-      .select('id, started_at, device_id, tester_name, model_id, n_cells_captured, n_cells_expected, overall_pass_rate, devices(nickname)')
+      .select('id, started_at, device_id, device_type, tester_name, model_id, body_weight_n, n_cells_captured, n_cells_expected, overall_pass_rate, devices(nickname)')
       .order('started_at', { ascending: false })
       .range(opts.offset, opts.offset + opts.limit - 1)
-    if (opts.filterDeviceId)   q = q.eq('device_id', opts.filterDeviceId)
-    if (opts.filterTesterName) q = q.eq('tester_name', opts.filterTesterName)
+
+    const { fromIso, toIso } = effectiveTimeRange(opts.filter)
+    if (fromIso) q = q.gte('started_at', fromIso)
+    if (toIso)   q = q.lte('started_at', toIso)
+
+    const types = effectiveDeviceTypes(opts.filter)
+    if (types && types.length > 0) q = q.in('device_type', types)
+
+    if (opts.filter.weightMinN !== null) q = q.gte('body_weight_n', opts.filter.weightMinN)
+    if (opts.filter.weightMaxN !== null) q = q.lte('body_weight_n', opts.filter.weightMaxN)
+
+    const searchTerm = opts.filter.search.trim()
+    if (searchTerm) {
+      // Match device_id, tester_name, device_type, model_id, or joined devices.nickname
+      const escaped = searchTerm.replace(/[%_]/g, '\\$&')
+      q = q.or(
+        `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
+      )
+    }
+
     const { data, error } = await q
     if (error) throw new Error(`listSessions failed: ${error.message}`)
     return (data ?? []).map((r: any) => ({
       id: r.id,
       started_at: r.started_at,
       device_id: r.device_id,
+      device_type: r.device_type,
       tester_name: r.tester_name,
       model_id: r.model_id,
+      body_weight_n: r.body_weight_n,
       n_cells_captured: r.n_cells_captured,
       n_cells_expected: r.n_cells_expected,
       overall_pass_rate: r.overall_pass_rate,
@@ -67,13 +88,27 @@ export class LiveTestRepo {
     }
   }
 
-  async getOverview(range: 'all' | '30d' | '7d'): Promise<OverviewResult> {
-    const since = range === 'all' ? null
-      : range === '30d' ? new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
-      : new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString()
-
+  async getOverview(filter: DashboardFilters): Promise<OverviewResult> {
     let sessQuery = this.client.from('sessions').select('id, device_id, n_cells_captured, overall_pass_rate')
-    if (since) sessQuery = sessQuery.gte('started_at', since)
+
+    const { fromIso, toIso } = effectiveTimeRange(filter)
+    if (fromIso) sessQuery = sessQuery.gte('started_at', fromIso)
+    if (toIso)   sessQuery = sessQuery.lte('started_at', toIso)
+
+    const types = effectiveDeviceTypes(filter)
+    if (types && types.length > 0) sessQuery = sessQuery.in('device_type', types)
+
+    if (filter.weightMinN !== null) sessQuery = sessQuery.gte('body_weight_n', filter.weightMinN)
+    if (filter.weightMaxN !== null) sessQuery = sessQuery.lte('body_weight_n', filter.weightMaxN)
+
+    const searchTerm = filter.search.trim()
+    if (searchTerm) {
+      const escaped = searchTerm.replace(/[%_]/g, '\\$&')
+      sessQuery = sessQuery.or(
+        `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
+      )
+    }
+
     const { data: sessions, error: sErr } = await sessQuery
     if (sErr) throw new Error(`getOverview sessions failed: ${sErr.message}`)
     const ids = (sessions ?? []).map((s: any) => s.id)

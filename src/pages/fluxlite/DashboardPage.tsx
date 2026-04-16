@@ -2,18 +2,34 @@ import { useEffect, useState } from 'react'
 import { DashboardOverview } from './DashboardOverview'
 import { SessionList } from './SessionList'
 import { SessionDetailModal } from './SessionDetailModal'
+import { DashboardFiltersBar } from './DashboardFiltersBar'
 import { toast } from 'sonner'
 import { enableDummy, disableDummy } from '../../lib/dashboardDummyData'
 import { liveTestClient } from '../../lib/liveTestClient'
+import { DEFAULT_FILTERS, type DashboardFilters } from '../../lib/dashboardFilters'
 
 const DUMMY_KEY = 'fluxdeluxe.dashboardDummy'
+const FILTERS_KEY = 'fluxdeluxe.dashboardFilters'
+
+function loadFilters(): DashboardFilters {
+  try {
+    const raw = localStorage.getItem(FILTERS_KEY)
+    if (!raw) return DEFAULT_FILTERS
+    const parsed = JSON.parse(raw)
+    return { ...DEFAULT_FILTERS, ...parsed }
+  } catch {
+    return DEFAULT_FILTERS
+  }
+}
 
 export function DashboardPage() {
   const [openId, setOpenId] = useState<string | null>(null)
   const [queued, setQueued] = useState(0)
   const [poison, setPoison] = useState(0)
   const [retrying, setRetrying] = useState(false)
-  // Lazy init applies the patch BEFORE children mount & fire their fetches.
+  const [filters, setFiltersState] = useState<DashboardFilters>(loadFilters)
+
+  // Lazy init applies the dummy patch BEFORE children mount & fire their fetches.
   const [dummy, setDummyState] = useState<boolean>(() => {
     const on = localStorage.getItem(DUMMY_KEY) === '1'
     if (on) enableDummy()
@@ -21,13 +37,16 @@ export function DashboardPage() {
   })
 
   const setDummy = (next: boolean) => {
-    // Apply the patch synchronously BEFORE the re-render so remounted
-    // children see the right window.electronAPI.liveTest on their first fetch.
     if (next) enableDummy()
     else disableDummy()
     localStorage.setItem(DUMMY_KEY, next ? '1' : '0')
     setDummyState(next)
     refreshStatus()
+  }
+
+  const setFilters = (next: DashboardFilters) => {
+    setFiltersState(next)
+    localStorage.setItem(FILTERS_KEY, JSON.stringify(next))
   }
 
   const refreshStatus = async () => {
@@ -48,7 +67,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="flex-1 flex flex-col p-4 gap-6 overflow-auto">
+    <div className="flex-1 flex flex-col p-4 gap-4 overflow-auto">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Dashboard</h2>
         <div className="flex items-center gap-2">
@@ -75,8 +94,13 @@ export function DashboardPage() {
           </button>
         </div>
       </div>
-      <DashboardOverview key={`overview-${dummy}`} />
-      <SessionList key={`list-${dummy}`} onOpen={setOpenId} />
+
+      <DashboardFiltersBar filters={filters} onChange={setFilters} />
+
+      <div className="flex flex-col gap-6">
+        <DashboardOverview key={`overview-${dummy}`} filter={filters} />
+        <SessionList key={`list-${dummy}`} filter={filters} onOpen={setOpenId} />
+      </div>
       {openId && <SessionDetailModal id={openId} onClose={() => setOpenId(null)} />}
     </div>
   )
