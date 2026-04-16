@@ -145,6 +145,8 @@ export class LiveTestRepo {
       cells_captured,
       device_count,
       overall_pass_rate,
+      mae_pct: null,           // TODO: compute from session_cells once schema adds % fields
+      signed_error_pct: null,  // TODO: compute from session_cells once schema adds % fields
       per_stage_type,
     }
   }

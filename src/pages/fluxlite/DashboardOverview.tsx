@@ -13,20 +13,15 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
   )
 }
 
-function fmtN(n: number | null | undefined, digits = 1): string {
-  if (n === null || n === undefined) return '—'
-  return `${n.toFixed(digits)}N`
-}
 function fmtPct(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   return `${(n * 100).toFixed(1)}%`
 }
 
-/** Average non-null values from per_stage_type for a given key. */
-function avgStageMetric(data: OverviewResult, key: 'mae' | 'signed_mean_error'): number | null {
-  const vals = data.per_stage_type.map((s) => s[key]).filter((v): v is number => v !== null)
-  if (vals.length === 0) return null
-  return vals.reduce((a, b) => a + b, 0) / vals.length
+function fmtSignedPct(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '—'
+  const pct = n * 100
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 }
 
 export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
@@ -45,9 +40,6 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return () => { cancelled = true }
   }, [filter])
 
-  const overallMae = data ? avgStageMetric(data, 'mae') : null
-  const overallSigned = data ? avgStageMetric(data, 'signed_mean_error') : null
-
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-sm uppercase tracking-wider text-muted-foreground">Overview</h3>
@@ -57,8 +49,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         <Tile label="Pass rate" value={loading ? '…' : fmtPct(data?.overall_pass_rate ?? null)} />
         <Tile
           label="Accuracy"
-          value={loading ? '…' : `MAE ${fmtN(overallMae)}`}
-          sub={loading ? undefined : `Signed ${fmtN(overallSigned)}`}
+          value={loading ? '…' : `${fmtPct(data?.mae_pct ?? null)} MAE  /  ${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
         />
       </div>
     </div>

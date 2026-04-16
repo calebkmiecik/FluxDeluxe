@@ -130,6 +130,10 @@ interface BuiltSession {
   n_cells_captured: number
   /** Overall pass rate (for overview pass-rate tile) */
   overall_pass_rate: number | null
+  /** Per-cell |error/target| ratios, for computing overview mae_pct */
+  cellErrorPcts: number[]
+  /** Per-cell signed_error/target ratios, for computing overview signed_error_pct */
+  cellSignedPcts: number[]
 }
 
 function buildSession(spec: FakeSessionSpec): BuiltSession {
@@ -146,6 +150,8 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
   const capturedByStageType: Record<'dumbbell'|'two_leg'|'one_leg', Array<{ errorN: number; signedErrorN: number; pass: boolean }>> = {
     dumbbell: [], two_leg: [], one_leg: [],
   }
+  const cellErrorPcts: number[] = []
+  const cellSignedPcts: number[] = []
   let totalCaptured = 0
   let totalPassed = 0
 
@@ -191,6 +197,10 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
           captured_at,
         })
         capturedByStageType[stage.type].push({ errorN, signedErrorN, pass })
+        if (stage.targetN > 0) {
+          cellErrorPcts.push(errorN / stage.targetN)
+          cellSignedPcts.push(signedErrorN / stage.targetN)
+        }
         totalCaptured++
         if (pass) totalPassed++
       }
@@ -255,7 +265,7 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
     aggregates: aggRows.map((a) => ({ session_id: spec.id, ...a } as unknown as Record<string, unknown>)),
   }
 
-  return { listRow, detail, aggRows, n_cells_captured: totalCaptured, overall_pass_rate }
+  return { listRow, detail, aggRows, n_cells_captured: totalCaptured, overall_pass_rate, cellErrorPcts, cellSignedPcts }
 }
 
 function hash(s: string): number {
@@ -325,7 +335,13 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
     }
   })
 
-  return { session_count, cells_captured, device_count, overall_pass_rate, per_stage_type }
+  // Compute % error metrics from per-cell error/target ratios
+  const allErrorPcts = subset.flatMap((b) => b.cellErrorPcts)
+  const allSignedPcts = subset.flatMap((b) => b.cellSignedPcts)
+  const mae_pct = allErrorPcts.length === 0 ? null : allErrorPcts.reduce((a, b) => a + b, 0) / allErrorPcts.length
+  const signed_error_pct = allSignedPcts.length === 0 ? null : allSignedPcts.reduce((a, b) => a + b, 0) / allSignedPcts.length
+
+  return { session_count, cells_captured, device_count, overall_pass_rate, mae_pct, signed_error_pct, per_stage_type }
 }
 
 // ── Enable / disable ──────────────────────────────────────────

@@ -25,6 +25,10 @@ export interface OverviewResult {
   cells_captured: number
   device_count: number
   overall_pass_rate: number | null
+  /** Mean |error/target| across all cells, as a fraction (0.02 = 2%). `null` if no cells. */
+  mae_pct: number | null
+  /** Mean (signed_error/target) across all cells, as a fraction. `null` if no cells. */
+  signed_error_pct: number | null
   per_stage_type: Array<{
     stage_type: StageType
     mae: number | null
