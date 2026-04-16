@@ -70,7 +70,7 @@ export const useLiveTestStore = create<LiveTestState>()((set, get) => ({
   measurementStatus: { state: 'IDLE', cell: null, progressMs: 0 },
 
   startSession: (meta) => {
-    const stages = buildStages(meta.deviceType, meta.bodyWeightN)
+    const stages = buildStages(meta.deviceType, meta.bodyWeightN, meta.dbToleranceN, meta.bwTolerancePct)
     const grid = getGridDims(meta.deviceType)
     set({
       metadata: meta,

@@ -71,13 +71,30 @@ export function ControlPanel() {
   // Local metadata form state — only used when Meta Data row is editable (phase === IDLE)
   const [testerName, setTesterName] = useState('')
   const [bodyWeightNInput, setBodyWeightNInput] = useState('')
+  const [dbThresholdNInput, setDbThresholdNInput] = useState('')
+  const [bwThresholdPctInput, setBwThresholdPctInput] = useState('')
+
+  // Initialize threshold inputs from device-type defaults when plate is selected
+  useEffect(() => {
+    if (!selectedDevice) return
+    const dt = selectedDevice.deviceTypeId
+    setDbThresholdNInput(String(THRESHOLDS_DB_N[dt] ?? 6.0))
+    setBwThresholdPctInput(String((THRESHOLDS_BW_PCT[dt] ?? 0.015) * 100))
+  }, [selectedDevice?.deviceTypeId])
+
   useEffect(() => {
     if (metadata) {
       setTesterName(metadata.testerName)
       setBodyWeightNInput(String(Math.round(metadata.bodyWeightN)))
+      if (metadata.dbToleranceN != null) setDbThresholdNInput(String(metadata.dbToleranceN))
+      if (metadata.bwTolerancePct != null) setBwThresholdPctInput(String(metadata.bwTolerancePct * 100))
     }
   }, [metadata])
+
   const bodyWeightN = parseFloat(bodyWeightNInput || '0')
+  const dbThresholdN = parseFloat(dbThresholdNInput || '0')
+  const bwThresholdPct = parseFloat(bwThresholdPctInput || '0') / 100 // stored as fraction
+  const bwThresholdN = bodyWeightN > 0 ? bodyWeightN * bwThresholdPct : 0
   const metadataValid =
     !!selectedDevice && testerName.trim().length > 0 && bodyWeightN > 0
 
@@ -116,6 +133,8 @@ export function ControlPanel() {
       deviceType: selectedDevice.deviceTypeId,
       modelId: attachedModel?.modelId ?? selectedDevice.deviceTypeId,
       startedAt: Date.now(),
+      dbToleranceN: dbThresholdN > 0 ? dbThresholdN : undefined,
+      bwTolerancePct: bwThresholdPct > 0 ? bwThresholdPct : undefined,
     }
     startSession(meta)
   }
@@ -160,6 +179,12 @@ export function ControlPanel() {
             setTesterName={setTesterName}
             bodyWeightNInput={bodyWeightNInput}
             setBodyWeightNInput={setBodyWeightNInput}
+            dbThresholdNInput={dbThresholdNInput}
+            setDbThresholdNInput={setDbThresholdNInput}
+            bwThresholdPctInput={bwThresholdPctInput}
+            setBwThresholdPctInput={setBwThresholdPctInput}
+            bodyWeightN={bodyWeightN}
+            bwThresholdN={bwThresholdN}
             onOpenModels={() => setActiveLitePage('models')}
           />
         </StepperRow>
@@ -208,8 +233,6 @@ export function ControlPanel() {
             stages={stages}
             activeStageIndex={activeStageIndex}
             activeStage={activeStage}
-            bodyWeightN={metadata?.bodyWeightN ?? bodyWeightN}
-            deviceType={metadata?.deviceType ?? selectedDevice?.deviceTypeId ?? '07'}
           />
         </StepperRow>
 
@@ -286,7 +309,11 @@ function StepperRow({
 
 function MetaDataBody({
   phase, selectedDevice, attachedModelLabel, metadata,
-  testerName, setTesterName, bodyWeightNInput, setBodyWeightNInput, onOpenModels,
+  testerName, setTesterName, bodyWeightNInput, setBodyWeightNInput,
+  dbThresholdNInput, setDbThresholdNInput,
+  bwThresholdPctInput, setBwThresholdPctInput,
+  bodyWeightN, bwThresholdN,
+  onOpenModels,
 }: {
   phase: string
   selectedDevice: { axfId: string; name: string; deviceTypeId: string } | undefined
@@ -296,8 +323,19 @@ function MetaDataBody({
   setTesterName: (v: string) => void
   bodyWeightNInput: string
   setBodyWeightNInput: (v: string) => void
+  dbThresholdNInput: string
+  setDbThresholdNInput: (v: string) => void
+  bwThresholdPctInput: string
+  setBwThresholdPctInput: (v: string) => void
+  bodyWeightN: number
+  bwThresholdN: number
   onOpenModels: () => void
 }) {
+  const inputClass = "w-full bg-background border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none transition-colors"
+  const dbPct = bodyWeightN > 0
+    ? ((parseFloat(dbThresholdNInput || '0') / 206.3) * 100).toFixed(1)
+    : null
+
   // Read-only view once a session has started
   if (phase !== 'IDLE' && metadata) {
     return (
@@ -310,6 +348,18 @@ function MetaDataBody({
         <span className="text-sm text-foreground truncate px-2 py-1">{metadata.testerName}</span>
         <span className="telemetry-label">Weight (N)</span>
         <span className="text-sm text-foreground truncate px-2 py-1">{Math.round(metadata.bodyWeightN)}</span>
+        <span className="telemetry-label">DB Tol</span>
+        <span className="text-sm text-foreground truncate px-2 py-1">
+          {metadata.dbToleranceN?.toFixed(1) ?? '—'}N
+          {dbPct && <span className="text-muted-foreground ml-1">· {dbPct}%</span>}
+        </span>
+        <span className="telemetry-label">BW Tol</span>
+        <span className="text-sm text-foreground truncate px-2 py-1">
+          {metadata.bwTolerancePct != null ? `${(metadata.bwTolerancePct * 100).toFixed(1)}%` : '—'}
+          {metadata.bwTolerancePct != null && metadata.bodyWeightN > 0 && (
+            <span className="text-muted-foreground ml-1">· {(metadata.bodyWeightN * metadata.bwTolerancePct).toFixed(1)}N</span>
+          )}
+        </span>
       </div>
     )
   }
@@ -331,23 +381,40 @@ function MetaDataBody({
       )}
 
       <label className="telemetry-label">Name</label>
-      <input
-        type="text"
-        value={testerName}
-        onChange={(e) => setTesterName(e.target.value)}
-        placeholder="Enter name..."
-        className="w-full bg-background border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none transition-colors"
-      />
+      <input type="text" value={testerName} onChange={(e) => setTesterName(e.target.value)} placeholder="Enter name..." className={inputClass} />
 
       <label className="telemetry-label">Weight (N)</label>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={bodyWeightNInput}
-        onChange={(e) => setBodyWeightNInput(e.target.value.replace(/[^0-9.]/g, ''))}
-        placeholder="e.g. 800"
-        className="w-full bg-background border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none transition-colors"
-      />
+      <input type="text" inputMode="decimal" value={bodyWeightNInput} onChange={(e) => setBodyWeightNInput(e.target.value.replace(/[^0-9.]/g, ''))} placeholder="e.g. 800" className={inputClass} />
+
+      <label className="telemetry-label">DB Tol</label>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={dbThresholdNInput}
+          onChange={(e) => setDbThresholdNInput(e.target.value.replace(/[^0-9.]/g, ''))}
+          placeholder="N"
+          className={inputClass + ' flex-1'}
+        />
+        <span className="text-xs text-muted-foreground font-mono shrink-0">N</span>
+        {dbPct && <span className="text-xs text-muted-foreground font-mono shrink-0">· {dbPct}%</span>}
+      </div>
+
+      <label className="telemetry-label">BW Tol</label>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          inputMode="decimal"
+          value={bwThresholdPctInput}
+          onChange={(e) => setBwThresholdPctInput(e.target.value.replace(/[^0-9.]/g, ''))}
+          placeholder="%"
+          className={inputClass + ' flex-1'}
+        />
+        <span className="text-xs text-muted-foreground font-mono shrink-0">%</span>
+        {bodyWeightN > 0 && bwThresholdN > 0 && (
+          <span className="text-xs text-muted-foreground font-mono shrink-0">· {bwThresholdN.toFixed(1)}N</span>
+        )}
+      </div>
     </div>
   )
 }
@@ -563,14 +630,12 @@ function StageCell({
 }
 
 function TestBody({
-  phase, stages, activeStageIndex, activeStage, bodyWeightN, deviceType,
+  phase, stages, activeStageIndex, activeStage,
 }: {
   phase: string
   stages: StageDefinition[]
   activeStageIndex: number
   activeStage: StageDefinition | undefined
-  bodyWeightN: number
-  deviceType: string
 }) {
   const setActiveStage = useLiveTestStore((s) => s.setActiveStage)
   const measurements = useLiveTestStore((s) => s.measurements)
@@ -582,36 +647,14 @@ function TestBody({
     return <p className="text-xs text-muted-foreground">Testing starts after tare completes.</p>
   }
 
-  const bwPct = THRESHOLDS_BW_PCT[deviceType] ?? 0.015
-  const bwThresholdN = bodyWeightN * bwPct
-  const dbThresholdN = THRESHOLDS_DB_N[deviceType] ?? 6.0
-
   return (
-    <div className="flex flex-col gap-3">
-      {/* Passing thresholds header */}
-      <div className="flex flex-col gap-1">
-        <div className="telemetry-label">Passing thresholds</div>
-        <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-muted-foreground">BW</span>
-            <span className="text-foreground">{(bwPct * 100).toFixed(1)}%</span>
-            <span className="text-muted-foreground">· {bwThresholdN.toFixed(1)}N</span>
-          </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-muted-foreground">DB</span>
-            <span className="text-foreground">{dbThresholdN.toFixed(1)}N</span>
-          </div>
-        </div>
-      </div>
-
-      <StageGrid
-        stages={stages}
-        activeStageIndex={activeStageIndex}
-        measurements={measurements}
-        totalCells={totalCells}
-        onSelect={setActiveStage}
-      />
-    </div>
+    <StageGrid
+      stages={stages}
+      activeStageIndex={activeStageIndex}
+      measurements={measurements}
+      totalCells={totalCells}
+      onSelect={setActiveStage}
+    />
   )
 }
 

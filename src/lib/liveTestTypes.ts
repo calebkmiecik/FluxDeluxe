@@ -32,9 +32,14 @@ export const STAGE_TEMPLATES: Omit<StageDefinition, 'targetN' | 'toleranceN'>[] 
 
 export const DUMBBELL_TARGET_N = 206.3
 
-export function buildStages(deviceType: string, bodyWeightN: number): StageDefinition[] {
-  const dbTol = THRESHOLDS_DB_N[deviceType] ?? 6.0
-  const bwPct = THRESHOLDS_BW_PCT[deviceType] ?? 0.015
+export function buildStages(
+  deviceType: string,
+  bodyWeightN: number,
+  dbToleranceN?: number,
+  bwTolerancePct?: number,
+): StageDefinition[] {
+  const dbTol = dbToleranceN ?? THRESHOLDS_DB_N[deviceType] ?? 6.0
+  const bwPct = bwTolerancePct ?? THRESHOLDS_BW_PCT[deviceType] ?? 0.015
   const bwTol = bodyWeightN > 0 ? bodyWeightN * bwPct : dbTol
 
   return STAGE_TEMPLATES.map((t) => ({
@@ -81,6 +86,8 @@ export interface SessionMetadata {
   deviceType: string
   modelId: string       // active model on the device
   startedAt: number     // epoch ms
+  dbToleranceN?: number   // custom dumbbell threshold (overrides THRESHOLDS_DB_N)
+  bwTolerancePct?: number // custom bodyweight threshold as fraction (overrides THRESHOLDS_BW_PCT)
 }
 
 // ── Thresholds & Constants ──────────────────────────────────────
