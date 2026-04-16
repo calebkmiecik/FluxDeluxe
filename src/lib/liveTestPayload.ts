@@ -15,6 +15,7 @@ export interface SessionRow {
   n_cells_captured: number
   n_cells_expected: number
   overall_pass_rate: number | null
+  session_passed: boolean | null
   app_version: string
 }
 
@@ -60,6 +61,8 @@ export interface BuildPayloadInput {
   gridCols: number
   appVersion: string
   endedAt: number
+  /** Session-level pass/fail, determined by operator against a threshold. null if not yet determined. */
+  sessionPassed?: boolean | null
   // optional, for deterministic tests
   id?: string
 }
@@ -126,6 +129,7 @@ export function buildSessionPayload(input: BuildPayloadInput): SaveSessionPayloa
     n_cells_captured: cellsArr.length,
     n_cells_expected: gridRows * gridCols * 6,
     overall_pass_rate: overallPass,
+    session_passed: input.sessionPassed ?? null,
     app_version: appVersion,
   }
 

@@ -46,7 +46,7 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Tester</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Weight</th>
             <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Model</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Pass</th>
+            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Result</th>
             <th className="pb-2 text-muted-foreground text-xs uppercase tracking-wider">Cells</th>
           </tr>
         </thead>
@@ -67,8 +67,21 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
                   {r.body_weight_n === null ? '—' : `${r.body_weight_n.toFixed(0)}N`}
                 </td>
                 <td className="py-2 pr-4 text-muted-foreground">{r.model_id || '—'}</td>
-                <td className="py-2 pr-4 text-muted-foreground">
-                  {r.overall_pass_rate === null ? '—' : `${(r.overall_pass_rate * 100).toFixed(0)}%`}
+                <td className="py-2 pr-4">
+                  {r.session_passed === true && (
+                    <span className="text-success text-xs font-medium uppercase">Pass</span>
+                  )}
+                  {r.session_passed === false && (
+                    <span className="text-danger text-xs font-medium uppercase">Fail</span>
+                  )}
+                  {r.session_passed === null && (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                  {r.overall_pass_rate !== null && (
+                    <span className="text-muted-foreground text-xs ml-1.5">
+                      {(r.overall_pass_rate * 100).toFixed(0)}%
+                    </span>
+                  )}
                 </td>
                 <td className="py-2 text-muted-foreground">{r.n_cells_captured}/{r.n_cells_expected}</td>
               </tr>

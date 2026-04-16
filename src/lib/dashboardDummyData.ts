@@ -130,6 +130,8 @@ interface BuiltSession {
   n_cells_captured: number
   /** Overall pass rate (for overview pass-rate tile) */
   overall_pass_rate: number | null
+  /** Session-level pass/fail determined by threshold */
+  session_passed: boolean | null
   /** Per-cell |error/target| ratios, for computing overview mae_pct */
   cellErrorPcts: number[]
   /** Per-cell signed_error/target ratios, for computing overview signed_error_pct */
@@ -227,6 +229,9 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
 
   const n_cells_expected = gridRows * gridCols * 6
   const overall_pass_rate = totalCaptured === 0 ? null : totalPassed / totalCaptured
+  // Default pass threshold: 85% of cells within tolerance
+  const PASS_THRESHOLD = 0.85
+  const session_passed = overall_pass_rate === null ? null : overall_pass_rate >= PASS_THRESHOLD
 
   const sessionRow = {
     id: spec.id,
@@ -242,6 +247,7 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
     n_cells_captured: totalCaptured,
     n_cells_expected,
     overall_pass_rate,
+    session_passed,
     app_version: 'dummy',
   }
 
@@ -256,6 +262,7 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
     n_cells_captured: totalCaptured,
     n_cells_expected,
     overall_pass_rate,
+    session_passed,
     device_nickname: spec.deviceNickname,
   }
 
@@ -265,7 +272,7 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
     aggregates: aggRows.map((a) => ({ session_id: spec.id, ...a } as unknown as Record<string, unknown>)),
   }
 
-  return { listRow, detail, aggRows, n_cells_captured: totalCaptured, overall_pass_rate, cellErrorPcts, cellSignedPcts }
+  return { listRow, detail, aggRows, n_cells_captured: totalCaptured, overall_pass_rate, session_passed, cellErrorPcts, cellSignedPcts }
 }
 
 function hash(s: string): number {
@@ -299,13 +306,13 @@ function applyFilter(filter: DashboardFilters): BuiltSession[] {
 
     // All tags must match (AND logic)
     for (const tag of tags) {
-      // Magic tags
+      // Magic tags — filter on session_passed (threshold-based), not raw pass rate
       if (tag === 'pass') {
-        if (b.overall_pass_rate === null || b.overall_pass_rate < 1.0) return false
+        if (b.session_passed !== true) return false
         continue
       }
       if (tag === 'fail') {
-        if (b.overall_pass_rate === null || b.overall_pass_rate >= 1.0) return false
+        if (b.session_passed !== false) return false
         continue
       }
       // Free-text tag — match against metadata fields

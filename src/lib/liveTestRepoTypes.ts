@@ -11,6 +11,7 @@ export interface SessionListRow {
   n_cells_captured: number
   n_cells_expected: number
   overall_pass_rate: number | null
+  session_passed: boolean | null
   device_nickname: string | null
 }
 

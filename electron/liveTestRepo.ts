@@ -32,7 +32,7 @@ export class LiveTestRepo {
   }): Promise<SessionListRow[]> {
     let q = this.client
       .from('sessions')
-      .select('id, started_at, device_id, device_type, tester_name, model_id, body_weight_n, n_cells_captured, n_cells_expected, overall_pass_rate, devices(nickname)')
+      .select('id, started_at, device_id, device_type, tester_name, model_id, body_weight_n, n_cells_captured, n_cells_expected, overall_pass_rate, session_passed, devices(nickname)')
       .order('started_at', { ascending: false })
       .range(opts.offset, opts.offset + opts.limit - 1)
 
@@ -50,8 +50,8 @@ export class LiveTestRepo {
     for (const tag of opts.filter.searchTags) {
       const t = tag.trim().toLowerCase()
       if (!t) continue
-      if (t === 'pass') { q = q.eq('overall_pass_rate', 1.0); continue }
-      if (t === 'fail') { q = q.lt('overall_pass_rate', 1.0); continue }
+      if (t === 'pass') { q = q.eq('session_passed', true); continue }
+      if (t === 'fail') { q = q.eq('session_passed', false); continue }
       const escaped = t.replace(/[%_]/g, '\\$&')
       q = q.or(
         `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
@@ -71,6 +71,7 @@ export class LiveTestRepo {
       n_cells_captured: r.n_cells_captured,
       n_cells_expected: r.n_cells_expected,
       overall_pass_rate: r.overall_pass_rate,
+      session_passed: r.session_passed ?? null,
       device_nickname: r.devices?.nickname ?? null,
     }))
   }
@@ -107,8 +108,8 @@ export class LiveTestRepo {
     for (const tag of filter.searchTags) {
       const t = tag.trim().toLowerCase()
       if (!t) continue
-      if (t === 'pass') { sessQuery = sessQuery.eq('overall_pass_rate', 1.0); continue }
-      if (t === 'fail') { sessQuery = sessQuery.lt('overall_pass_rate', 1.0); continue }
+      if (t === 'pass') { sessQuery = sessQuery.eq('session_passed', true); continue }
+      if (t === 'fail') { sessQuery = sessQuery.eq('session_passed', false); continue }
       const escaped = t.replace(/[%_]/g, '\\$&')
       sessQuery = sessQuery.or(
         `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,

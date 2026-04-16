@@ -31,6 +31,7 @@ create table if not exists public.sessions (
   n_cells_captured   int  not null,
   n_cells_expected   int  not null,
   overall_pass_rate  numeric,
+  session_passed     boolean,
   app_version        text
 );
 create index if not exists sessions_started_at_desc
@@ -104,7 +105,7 @@ begin
   insert into public.sessions (
     id, started_at, ended_at, device_id, device_type, model_id, tester_name,
     body_weight_n, grid_rows, grid_cols, n_cells_captured, n_cells_expected,
-    overall_pass_rate, app_version
+    overall_pass_rate, session_passed, app_version
   )
   values (
     (payload->'session'->>'id')::uuid,
@@ -120,6 +121,7 @@ begin
     (payload->'session'->>'n_cells_captured')::int,
     (payload->'session'->>'n_cells_expected')::int,
     nullif(payload->'session'->>'overall_pass_rate','')::numeric,
+    nullif(payload->'session'->>'session_passed','')::boolean,
     payload->'session'->>'app_version'
   )
   on conflict (id) do nothing
