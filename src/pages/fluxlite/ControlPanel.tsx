@@ -242,16 +242,16 @@ export function ControlPanel() {
     })
   }, [phase])
 
-  // Auto-collapse warmup/tare 1s after their phase completes (lets the user see the filled bar)
+  // Auto-collapse warmup/tare 0.5s after their phase completes (lets the user see the filled bar)
   useEffect(() => {
     if (phase === 'TARE') {
-      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('warmup'); return n }), 1000)
+      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('warmup'); return n }), 500)
       return () => clearTimeout(id)
     }
   }, [phase])
   useEffect(() => {
     if (phase === 'TESTING') {
-      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('tare'); return n }), 1000)
+      const id = setTimeout(() => setExpandedRows((prev) => { const n = new Set(prev); n.delete('tare'); return n }), 500)
       return () => clearTimeout(id)
     }
   }, [phase])
@@ -426,6 +426,25 @@ function StepperRow({
   onToggle: () => void
   children: React.ReactNode
 }) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+
+  // Measure content height whenever expanded state or children change
+  useEffect(() => {
+    if (!contentRef.current) return
+    if (expanded) {
+      // Use ResizeObserver to track dynamic content height changes
+      const ro = new ResizeObserver(() => {
+        if (contentRef.current) setHeight(contentRef.current.scrollHeight)
+      })
+      ro.observe(contentRef.current)
+      setHeight(contentRef.current.scrollHeight)
+      return () => ro.disconnect()
+    } else {
+      setHeight(0)
+    }
+  }, [expanded])
+
   const dotClass =
     status === 'active' ? 'bg-primary status-live' :
     status === 'complete' ? 'bg-success' :
@@ -446,7 +465,14 @@ function StepperRow({
           className={`flex-shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-0' : '-rotate-90'}`}
         />
       </button>
-      {expanded && <div className="px-4 pb-4">{children}</div>}
+      <div
+        className="overflow-hidden transition-[max-height] duration-300 ease-in-out"
+        style={{ maxHeight: height }}
+      >
+        <div ref={contentRef} className="px-4 pb-4">
+          {children}
+        </div>
+      </div>
     </div>
   )
 }
