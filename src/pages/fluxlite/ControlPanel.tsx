@@ -773,12 +773,11 @@ function StageCell({
         <div className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${indicator}`} />
       )}
       <div className="text-sm font-mono text-foreground tracking-wider">{label}·{stage.location}</div>
-      <div className="text-xs text-muted-foreground font-mono">{stats.tested}/{stats.total} done · {stats.tested > 0 ? `${stats.passed} pass` : '—'}</div>
+      <div className="text-xs text-muted-foreground font-mono">
+        {stats.tested}/{stats.total} done{stats.tested > 0 ? ` · ${Math.round((stats.passed / stats.tested) * 100)}% pass` : ''}
+      </div>
       <div className="text-sm font-mono text-foreground leading-tight">
         {errorStats.tested > 0 ? formatSignedPct(errorStats.signedPct) : '—'}
-      </div>
-      <div className="text-xs text-muted-foreground font-mono">
-        {errorStats.tested > 0 ? `MAE ${errorStats.maePct.toFixed(1)}%` : '—'}
       </div>
     </button>
   )
