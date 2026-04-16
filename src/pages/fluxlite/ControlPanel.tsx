@@ -7,10 +7,14 @@ import { getSocket } from '../../lib/socket'
 import {
   WARMUP_DURATION_MS,
   TARE_DURATION_MS, TARE_THRESHOLD_N,
+  PERIODIC_TARE_INTERVAL_MS,
   type SessionMetadata,
   type StageDefinition,
   type CellMeasurement,
 } from '../../lib/liveTestTypes'
+import type { SocketResponse } from '../../lib/types'
+
+const PERIODIC_STEPOFF_MS = 10_000
 import { ChevronDown } from 'lucide-react'
 import {
   rowForPhase,
@@ -144,6 +148,85 @@ export function ControlPanel() {
   const metadataValid =
     !!selectedDevice && testerName.trim().length > 0 && bodyWeightN > 0
 
+  // ── Periodic tare during TESTING ──────────────────────────────
+  // 90s countdown → 10s step-off → auto-tareAll → restart.
+  // Resets on any successful tare (manual or auto) via socket listener.
+  const [periodicTareMs, setPeriodicTareMs] = useState(0)     // ms since last tare reset
+  const [stepOffActive, setStepOffActive] = useState(false)    // 90s expired, awaiting step-off
+  const [stepOffMs, setStepOffMs] = useState(0)                // ms of continuous off-plate
+  const periodicTareRef = useRef<number>(0)                    // epoch ms of last reset
+  const autoTareStepOffRef = useRef(false)                     // latch so auto-tare fires once
+
+  // Start / stop the 100ms tick that drives the periodic tare timer
+  useEffect(() => {
+    if (phase !== 'TESTING' && phase !== 'STAGE_SWITCH') {
+      setPeriodicTareMs(0)
+      setStepOffActive(false)
+      setStepOffMs(0)
+      return
+    }
+    periodicTareRef.current = Date.now()
+    const id = setInterval(() => {
+      const elapsed = Date.now() - periodicTareRef.current
+      setPeriodicTareMs(elapsed)
+
+      if (elapsed >= PERIODIC_TARE_INTERVAL_MS && !stepOffActive) {
+        setStepOffActive(true)
+        setStepOffMs(0)
+        autoTareStepOffRef.current = false
+      }
+    }, 200)
+    return () => clearInterval(id)
+  }, [phase])
+
+  // During step-off: monitor Fz at 100ms. Once off plate for 10s, auto-tare.
+  useEffect(() => {
+    if (!stepOffActive) return
+    let offSince: number | null = null
+    const id = setInterval(() => {
+      const frame = useLiveDataStore.getState().currentFrame
+      const fz = frame ? Math.abs(frame.fz) : 999
+      if (fz < TARE_THRESHOLD_N) {
+        if (!offSince) offSince = Date.now()
+        const offMs = Date.now() - offSince
+        setStepOffMs(offMs)
+        if (!autoTareStepOffRef.current && offMs >= PERIODIC_STEPOFF_MS) {
+          autoTareStepOffRef.current = true
+          getSocket().emit('tareAll')
+          // reset happens via the tareAllStatus listener below
+        }
+      } else {
+        offSince = null
+        setStepOffMs(0)
+      }
+    }, 100)
+    return () => clearInterval(id)
+  }, [stepOffActive])
+
+  // Reset periodic tare on ANY successful tare (manual or automatic)
+  useEffect(() => {
+    if (phase !== 'TESTING' && phase !== 'STAGE_SWITCH') return
+    const socket = getSocket()
+    const onTareStatus = (data: unknown) => {
+      const resp = data as SocketResponse
+      if (resp.status === 'success') {
+        periodicTareRef.current = Date.now()
+        setPeriodicTareMs(0)
+        setStepOffActive(false)
+        setStepOffMs(0)
+        autoTareStepOffRef.current = false
+      }
+    }
+    socket.on('tareAllStatus', onTareStatus)
+    socket.on('tareStatus', onTareStatus)
+    return () => { socket.off('tareAllStatus', onTareStatus); socket.off('tareStatus', onTareStatus) }
+  }, [phase])
+
+  // Derived display values
+  const periodicTareCountdownSec = Math.max(0, Math.ceil((PERIODIC_TARE_INTERVAL_MS - periodicTareMs) / 1000))
+  const stepOffCountdownSec = Math.max(0, Math.ceil((PERIODIC_STEPOFF_MS - stepOffMs) / 1000))
+  const showPeriodicTare = phase === 'TESTING' || phase === 'STAGE_SWITCH'
+
   // Multi-expand state: a set of row IDs that are currently open.
   // Phase changes ADD the new active row (never remove) — users can collapse anything manually.
   const [expandedRows, setExpandedRows] = useState<Set<StepperRowId>>(
@@ -200,10 +283,17 @@ export function ControlPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Phase badge — unchanged */}
+      {/* Phase badge + periodic tare countdown */}
       <div className="px-4 py-3 border-b border-border flex items-center gap-3">
         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${phaseInfo.color} ${phaseInfo.className ?? ''}`} />
         <span className="text-xs tracking-widest text-foreground uppercase">{phaseInfo.label}</span>
+        {showPeriodicTare && (
+          <span className={`ml-auto text-xs font-mono ${stepOffActive ? 'text-warning' : 'text-muted-foreground'}`}>
+            {stepOffActive
+              ? `Step off · ${stepOffCountdownSec}s`
+              : `Tare: ${periodicTareCountdownSec}s`}
+          </span>
+        )}
       </div>
 
       {/* Stepper rows */}
