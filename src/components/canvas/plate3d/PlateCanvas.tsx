@@ -465,8 +465,8 @@ export function PlateCanvas({
         const baseRadius = 0.008
         const radius = baseRadius + Math.sqrt(Math.max(0, totalForce)) * 0.001
         // Exponential smoothing — frame-rate independent
-        const targetX = liveFrame.cop.x
-        const targetZ = -liveFrame.cop.y
+        const targetX = liveFrame.cop.y
+        const targetZ = -liveFrame.cop.x
         const smoothSpeed = 12 // higher = more responsive, lower = smoother
         const alpha = 1 - Math.exp(-smoothSpeed * (delta / 1000))
         const sc = smoothCopRef.current
