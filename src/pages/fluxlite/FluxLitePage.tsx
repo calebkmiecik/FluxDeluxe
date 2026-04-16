@@ -17,12 +17,7 @@ import { getSocket } from '../../lib/socket'
 import { measurementEngine } from '../../lib/measurementEngine'
 import { WARMUP_TRIGGER_N, TARE_THRESHOLD_N } from '../../lib/liveTestTypes'
 import { type Axis as DataModeAxis, type DataMode, getModeConfig } from '../../lib/dataMode'
-
-/** Extract plate type from axfId prefix (e.g. "07.abc12345" -> "07") */
-function deviceTypeFromAxfId(axfId: string): string {
-  const m = /^([A-Fa-f0-9]{2})\./.exec(axfId)
-  return m ? m[1] : ''
-}
+import { deviceTypeFromAxfId } from '../../lib/deviceIds'
 
 const LITE_NAV = [
   { id: 'history' as const, label: 'Dashboard' },

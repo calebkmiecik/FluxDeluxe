@@ -6,12 +6,7 @@ import { ForcePlot } from '../../components/canvas/ForcePlot'
 import { COPVisualization } from '../../components/canvas/COPVisualization'
 import { PlateCanvas } from '../../components/canvas/plate3d/PlateCanvas'
 import { getSocket } from '../../lib/socket'
-
-/** Extract plate type from axfId prefix (e.g. "07.abc12345" -> "07") */
-function deviceTypeFromAxfId(axfId: string): string {
-  const m = /^([A-Fa-f0-9]{2})\./.exec(axfId)
-  return m ? m[1] : ''
-}
+import { deviceTypeFromAxfId } from '../../lib/deviceIds'
 
 export function LiveView() {
   const phase = useSessionStore((s) => s.sessionPhase)
