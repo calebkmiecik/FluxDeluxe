@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { useLiveTestStore } from '../../stores/liveTestStore'
 import { useLiveDataStore } from '../../stores/liveDataStore'
@@ -230,7 +230,7 @@ export function ControlPanel() {
         <button
           onClick={handleActionBar}
           disabled={phase === 'IDLE' && (!metadataValid || connectionState !== 'READY')}
-          className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] tracking-[0.2em] uppercase border border-foreground/30 text-foreground bg-transparent hover:bg-foreground hover:text-background transition-colors disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-foreground"
+          className="w-full py-2.5 px-4 text-sm text-foreground bg-white/[0.04] border border-border rounded-md hover:bg-white/[0.08] hover:border-foreground/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white/[0.04] disabled:hover:border-border"
         >
           {phase === 'IDLE' && 'Start Session'}
           {phase === 'SUMMARY' && 'New Session'}
@@ -362,9 +362,13 @@ function WarmupBody({
 }) {
   const setPhaseInStore = useLiveTestStore((s) => s.setPhase)
   const [elapsed, setElapsed] = useState(0)
+  // Latch so auto-advance fires exactly once per warmup cycle — without it, the
+  // 100ms interval keeps the condition true after threshold, re-firing the effect.
+  const autoAdvancedRef = useRef(false)
 
   useEffect(() => {
     if (!warmupStartMs) return
+    autoAdvancedRef.current = false
     const id = setInterval(() => setElapsed(Date.now() - warmupStartMs), 100)
     return () => clearInterval(id)
   }, [warmupStartMs])
@@ -373,7 +377,10 @@ function WarmupBody({
   const progress = warmupTriggered ? Math.min(elapsed / WARMUP_DURATION_MS, 1) : 0
 
   useEffect(() => {
-    if (warmupTriggered && elapsed >= WARMUP_DURATION_MS) setPhaseInStore('TARE')
+    if (!autoAdvancedRef.current && warmupTriggered && elapsed >= WARMUP_DURATION_MS) {
+      autoAdvancedRef.current = true
+      setPhaseInStore('TARE')
+    }
   }, [warmupTriggered, elapsed, setPhaseInStore])
 
   if (phase === 'IDLE') return <p className="text-xs text-muted-foreground">Warmup starts after you begin the session.</p>
@@ -408,8 +415,13 @@ function TareBody({
   const setPhaseInStore = useLiveTestStore((s) => s.setPhase)
   const [elapsed, setElapsed] = useState(0)
   const [currentFz, setCurrentFz] = useState(0)
+  // Latch so the auto-tare-and-advance fires exactly once per tare cycle.
+  // Without this, the 100ms interval keeps the threshold condition true and
+  // spams `tareAll` emits + queued setPhase calls until tareStartMs clears.
+  const autoTaredRef = useRef(false)
 
   useEffect(() => {
+    if (tareStartMs) autoTaredRef.current = false
     const id = setInterval(() => {
       const frame = useLiveDataStore.getState().currentFrame
       if (frame) setCurrentFz(Math.abs(frame.fz))
@@ -423,7 +435,8 @@ function TareBody({
   const isOffPlate = currentFz < TARE_THRESHOLD_N
 
   useEffect(() => {
-    if (tareStartMs && elapsed >= TARE_DURATION_MS) {
+    if (!autoTaredRef.current && tareStartMs && elapsed >= TARE_DURATION_MS) {
+      autoTaredRef.current = true
       getSocket().emit('tareAll')
       setTimeout(() => setPhaseInStore('TESTING'), 500)
     }
