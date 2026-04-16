@@ -71,12 +71,14 @@ export function ControlPanel() {
   // Local metadata form state — only used when Meta Data row is editable (phase === IDLE)
   const [testerName, setTesterName] = useState('')
   const [bodyWeightNInput, setBodyWeightNInput] = useState('')
-  const [dbNInput, setDbNInput] = useState('')
-  const [dbPctInput, setDbPctInput] = useState('')
-  const [bwNInput, setBwNInput] = useState('')
-  const [bwPctInput, setBwPctInput] = useState('')
-
   const DUMBBELL_TARGET = 206.3
+  const defaultDbN = 6.0
+  const defaultBwPct = 1.5
+
+  const [dbNInput, setDbNInput] = useState(String(defaultDbN))
+  const [dbPctInput, setDbPctInput] = useState(((defaultDbN / DUMBBELL_TARGET) * 100).toFixed(1))
+  const [bwNInput, setBwNInput] = useState('')
+  const [bwPctInput, setBwPctInput] = useState(String(defaultBwPct))
 
   // Initialize threshold inputs from device-type defaults when plate is selected
   useEffect(() => {
