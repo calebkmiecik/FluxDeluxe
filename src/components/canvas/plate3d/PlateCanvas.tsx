@@ -312,7 +312,7 @@ export function PlateCanvas({
     const camera = cameraRef.current
     const geom = geomRef.current
     const container = containerRef.current
-    if (!scene || !camera || !geom || !container || !camera.isInteractive()) return
+    if (!scene || !camera || !geom || !container || !camera.isInteractive() || !liveTesting) return
     const rect = container.getBoundingClientRect()
     const ndc = new THREE.Vector2(
       (px / rect.width) * 2 - 1,
