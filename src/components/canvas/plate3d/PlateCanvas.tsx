@@ -84,10 +84,8 @@ function resolvePlateJson(deviceType: string): unknown {
 }
 
 function cameraStateLabel(state: string): string {
-  if (state === 'INTRO_SWOOP') return '◌ SWOOP'
-  if (state === 'PEEK_ORBIT') return '⤴ PEEK'
-  if (state === 'PEEK_RETURN') return '↺ RETURN'
-  return '▲ TOP'
+  if (state === 'PEEK_ORBIT') return 'FREE'
+  return 'TOP'
 }
 
 export function PlateCanvas({
@@ -590,7 +588,7 @@ export function PlateCanvas({
           ref={cameraStateButtonRef}
           onClick={() => cameraRef.current?.dismissPeek()}
         >
-          ▲ TOP
+          TOP
         </HudActionButton>
       </div>
     </div>
