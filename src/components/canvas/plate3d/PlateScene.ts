@@ -64,9 +64,7 @@ export class PlateScene {
   private fillMesh: THREE.Mesh | null = null
   private cellMeshes = new Map<string, THREE.Mesh>() // "canonR,canonC" -> mesh
   private activeRing: THREE.LineLoop | null = null
-  private copGroup: THREE.Group | null = null
-  private copCore: THREE.Mesh | null = null
-  private copHalo: THREE.Mesh | null = null
+  private copSphere: THREE.Mesh | null = null
 
   constructor(opts: PlateSceneOptions) {
     this.renderer = getOrCreateRenderer(opts.canvas)
@@ -236,50 +234,24 @@ export class PlateScene {
     radius: number,
   ) {
     if (worldX === null || worldZ === null || radius <= 0) {
-      if (this.copGroup) this.copGroup.visible = false
+      if (this.copSphere) this.copSphere.visible = false
       return
     }
-    if (!this.copGroup) {
-      this.copGroup = new THREE.Group()
-
-      // Core — bright white-blue center, renders on top of plate
-      const sphereGeo = new THREE.SphereGeometry(1, 24, 16)
-      this.copCore = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
+    if (!this.copSphere) {
+      const geo = new THREE.SphereGeometry(1, 24, 16)
+      const mat = new THREE.MeshBasicMaterial({
         color: new THREE.Color('#AAD4FF'),
         transparent: true,
         opacity: 0.95,
         depthTest: false,
-      }))
-      this.copCore.renderOrder = 10
-      this.copGroup.add(this.copCore)
-
-      // Halo — soft additive glow, top hemisphere only so it doesn't bleed below plate
-      const haloGeo = new THREE.SphereGeometry(1, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2)
-      this.copHalo = new THREE.Mesh(haloGeo, new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#0066FF'),
-        transparent: true,
-        opacity: 0.12,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: false,
-      }))
-      this.copHalo.renderOrder = 9
-      this.copGroup.add(this.copHalo)
-
-      this.platePivot.add(this.copGroup)
+      })
+      this.copSphere = new THREE.Mesh(geo, mat)
+      this.copSphere.renderOrder = 10
+      this.platePivot.add(this.copSphere)
     }
-
-    this.copGroup.visible = true
-
-    // Position the group at COP XZ, surface Y
-    this.copGroup.position.set(worldX, topY, worldZ)
-
-    // Scale each sub-mesh relative to core radius
-    this.copCore!.scale.setScalar(radius)
-    this.copCore!.position.y = radius // sit on surface
-
-    this.copHalo!.scale.setScalar(radius * 2.5)
-    this.copHalo!.position.y = radius // same center
+    this.copSphere.visible = true
+    this.copSphere.position.set(worldX, topY + radius, worldZ)
+    this.copSphere.scale.setScalar(radius)
   }
 
   render() {
@@ -291,16 +263,11 @@ export class PlateScene {
     this.clearPlateFill()
     this.clearAllCellFills()
     this.setActiveRing(null, 0)
-    if (this.copGroup) {
-      this.platePivot.remove(this.copGroup)
-      this.copGroup.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.geometry.dispose()
-          ;(obj.material as THREE.Material).dispose()
-        }
-      })
-      this.copGroup = null
-      this.copCore = this.copHalo = null
+    if (this.copSphere) {
+      this.platePivot.remove(this.copSphere)
+      this.copSphere.geometry.dispose()
+      ;(this.copSphere.material as THREE.Material).dispose()
+      this.copSphere = null
     }
   }
 
