@@ -16,6 +16,10 @@ const TIME_PRESETS: { value: TimePreset; label: string }[] = [
 const inputClass =
   'bg-white/[0.04] border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors'
 
+// Selects need a solid background so the native dropdown popup isn't white-on-white
+const selectClass =
+  'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors'
+
 export function DashboardFiltersBar({
   filters,
   onChange,
@@ -60,7 +64,7 @@ export function DashboardFiltersBar({
             const next = e.target.value as TimePreset
             onChange({ ...filters, timePreset: next, timeFrom: next === 'custom' ? filters.timeFrom : null, timeTo: next === 'custom' ? filters.timeTo : null })
           }}
-          className={inputClass}
+          className={selectClass}
         >
           {TIME_PRESETS.map((p) => (
             <option key={p.value} value={p.value}>{p.label}</option>
@@ -94,7 +98,7 @@ export function DashboardFiltersBar({
         <select
           value={filters.deviceFamily ?? ''}
           onChange={(e) => set('deviceFamily', (e.target.value || null) as DashboardFilters['deviceFamily'])}
-          className={inputClass}
+          className={selectClass}
         >
           <option value="">All</option>
           {ALL_FAMILIES.map((f) => (
