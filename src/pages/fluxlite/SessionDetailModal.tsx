@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SessionDetail } from '../../lib/liveTestRepoTypes'
+import { liveTestClient } from '../../lib/liveTestClient'
 
 function fmtN(n: unknown, digits = 1): string {
   if (n === null || n === undefined) return '—'
@@ -18,7 +19,7 @@ export function SessionDetailModal({ id, onClose }: { id: string; onClose: () =>
 
   useEffect(() => {
     let cancelled = false
-    window.electronAPI?.liveTest.getSession(id).then((d) => {
+    liveTestClient.getSession(id).then((d) => {
       if (!cancelled) {
         setData(d)
         setLoading(false)

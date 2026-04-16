@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { SessionListRow } from '../../lib/liveTestRepoTypes'
+import { liveTestClient } from '../../lib/liveTestClient'
 
 const PAGE = 50
 
@@ -12,7 +13,7 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    window.electronAPI?.liveTest.listSessions({ limit: PAGE, offset: 0 }).then((r) => {
+    liveTestClient.listSessions({ limit: PAGE, offset: 0 }).then((r) => {
       if (cancelled) return
       setRows(r)
       setOffset(r.length)
@@ -23,9 +24,8 @@ export function SessionList({ onOpen }: { onOpen: (id: string) => void }) {
   }, [])
 
   const loadMore = async () => {
-    if (!window.electronAPI?.liveTest) return
     setLoading(true)
-    const more = await window.electronAPI.liveTest.listSessions({ limit: PAGE, offset })
+    const more = await liveTestClient.listSessions({ limit: PAGE, offset })
     setRows((prev) => [...prev, ...more])
     setOffset(offset + more.length)
     if (more.length < PAGE) setDone(true)

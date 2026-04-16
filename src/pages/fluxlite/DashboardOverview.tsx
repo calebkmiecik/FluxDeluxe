@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
+import { liveTestClient } from '../../lib/liveTestClient'
 
 type Range = 'all' | '30d' | '7d'
 
@@ -30,7 +31,7 @@ export function DashboardOverview() {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    window.electronAPI?.liveTest.getOverview({ range }).then((res) => {
+    liveTestClient.getOverview({ range }).then((res) => {
       if (!cancelled) {
         setData(res)
         setLoading(false)

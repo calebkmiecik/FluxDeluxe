@@ -1,12 +1,9 @@
 /**
  * Dummy data for Dashboard preview.
  *
- * When enabled, monkey-patches the read methods on `window.electronAPI.liveTest`
- * so Dashboard components see a realistic body of sessions without touching
- * Supabase or requiring the migration to be applied.
- *
- * Write methods (saveSession, retryQueued) are NOT patched — those stay on the
- * real IPC so enabling dummy mode doesn't silently swallow real saves.
+ * When enabled, installs a dummy implementation on `liveTestClient` so the
+ * Dashboard components see a realistic body of sessions without touching
+ * Supabase or requiring the migration to be applied. Writes are NOT mocked.
  */
 
 import type {
@@ -14,6 +11,7 @@ import type {
   SessionDetail,
   OverviewResult,
 } from './liveTestRepoTypes'
+import { setDummyImpl } from './liveTestClient'
 
 // ── Realistic session generator ────────────────────────────────
 
@@ -297,37 +295,17 @@ function buildOverview(range: 'all' | '30d' | '7d'): OverviewResult {
 
 // ── Enable / disable ──────────────────────────────────────────
 
-type LiveTestApi = NonNullable<Window['electronAPI']>['liveTest']
-let savedOriginal: Partial<LiveTestApi> | null = null
-
-export function isDummyEnabled(): boolean {
-  return savedOriginal !== null
-}
-
 export function enableDummy(): void {
-  const api = window.electronAPI?.liveTest
-  if (!api || savedOriginal) return
-  savedOriginal = {
-    getOverview: api.getOverview,
-    listSessions: api.listSessions,
-    getSession: api.getSession,
-    queueStatus: api.queueStatus,
-    retryQueued: api.retryQueued,
-  }
-  api.getOverview = async ({ range }) => buildOverview(range)
-  api.listSessions = async ({ limit, offset }) => BUILT.slice(offset, offset + limit).map((b) => b.listRow)
-  api.getSession = async (id: string) => DETAIL_BY_ID.get(id) ?? null
-  api.queueStatus = async () => ({ queued: 0, poison: 0 })
-  api.retryQueued = async () => ({ uploaded: 0, stillQueued: 0, errors: [] })
+  setDummyImpl({
+    getOverview: async ({ range }: { range: 'all' | '30d' | '7d' }) => buildOverview(range),
+    listSessions: async ({ limit, offset }: { limit: number; offset: number }) =>
+      BUILT.slice(offset, offset + limit).map((b) => b.listRow),
+    getSession: async (id: string) => DETAIL_BY_ID.get(id) ?? null,
+    queueStatus: async () => ({ queued: 0, poison: 0 }),
+    retryQueued: async () => ({ uploaded: 0, stillQueued: 0, errors: [] }),
+  })
 }
 
 export function disableDummy(): void {
-  const api = window.electronAPI?.liveTest
-  if (!api || !savedOriginal) return
-  if (savedOriginal.getOverview)  api.getOverview  = savedOriginal.getOverview
-  if (savedOriginal.listSessions) api.listSessions = savedOriginal.listSessions
-  if (savedOriginal.getSession)   api.getSession   = savedOriginal.getSession
-  if (savedOriginal.queueStatus)  api.queueStatus  = savedOriginal.queueStatus
-  if (savedOriginal.retryQueued)  api.retryQueued  = savedOriginal.retryQueued
-  savedOriginal = null
+  setDummyImpl(null)
 }

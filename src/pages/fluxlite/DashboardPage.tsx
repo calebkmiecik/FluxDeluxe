@@ -4,6 +4,7 @@ import { SessionList } from './SessionList'
 import { SessionDetailModal } from './SessionDetailModal'
 import { toast } from 'sonner'
 import { enableDummy, disableDummy } from '../../lib/dashboardDummyData'
+import { liveTestClient } from '../../lib/liveTestClient'
 
 const DUMMY_KEY = 'fluxdeluxe.dashboardDummy'
 
@@ -30,8 +31,7 @@ export function DashboardPage() {
   }
 
   const refreshStatus = async () => {
-    if (!window.electronAPI?.liveTest) return
-    const s = await window.electronAPI.liveTest.queueStatus()
+    const s = await liveTestClient.queueStatus()
     setQueued(s.queued)
     setPoison(s.poison)
   }
@@ -39,9 +39,8 @@ export function DashboardPage() {
   useEffect(() => { refreshStatus() }, [])
 
   const retry = async () => {
-    if (!window.electronAPI?.liveTest) return
     setRetrying(true)
-    const result = await window.electronAPI.liveTest.retryQueued()
+    const result = await liveTestClient.retryQueued()
     await refreshStatus()
     setRetrying(false)
     if (result.uploaded > 0) toast.success(`Uploaded ${result.uploaded} session(s)`)
