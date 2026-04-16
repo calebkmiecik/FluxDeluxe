@@ -481,40 +481,7 @@ export function PlateCanvas({
       drawEdges(eCtx, camObj, splitRef.current.lower, 0.9, W, H, cam.getMeshRotation())
       drawEdges(ctx, camObj, splitRef.current.upper, 0.8, W, H, cam.getMeshRotation())
 
-      // COP crosshair on z=2 canvas (Mission Control precision overlay)
-      if (liveFrame && selectedId && liveFrame.id === selectedId) {
-        const copWorldX = liveFrame.cop.x
-        const copWorldZ = -liveFrame.cop.y
-        const copTopY = geom.floorY + 0.05
-        // Project COP position to screen (apply mesh rotation)
-        const meshRad = cam.getMeshRotation()
-        const cosR = Math.cos(meshRad), sinR = Math.sin(meshRad)
-        v3.set(
-          copWorldX * cosR + copWorldZ * sinR,
-          copTopY,
-          -copWorldX * sinR + copWorldZ * cosR,
-        )
-        const copScreen = projectToScreen(v3, camObj, W, H)
-        if (copScreen.visible) {
-          ctx.save()
-          ctx.strokeStyle = plate3d.edgeCyan
-          ctx.globalAlpha = 0.35
-          ctx.lineWidth = 0.5
-          // Vertical crosshair line (short, ~40px each direction)
-          ctx.beginPath()
-          ctx.moveTo(copScreen.x, copScreen.y - 30)
-          ctx.lineTo(copScreen.x, copScreen.y + 30)
-          ctx.stroke()
-          // Horizontal crosshair line
-          ctx.beginPath()
-          ctx.moveTo(copScreen.x - 30, copScreen.y)
-          ctx.lineTo(copScreen.x + 30, copScreen.y)
-          ctx.stroke()
-          ctx.restore()
-        }
-      }
-
-      // Cell text labels (projected)
+// Cell text labels (projected)
       for (const [key, text] of cellTextsNow.entries()) {
         const [rStr, cStr] = key.split(',')
         const canonR = Number(rStr), canonC = Number(cStr)

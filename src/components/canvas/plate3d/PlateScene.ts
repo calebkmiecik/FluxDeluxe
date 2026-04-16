@@ -66,9 +66,7 @@ export class PlateScene {
   private activeRing: THREE.LineLoop | null = null
   private copGroup: THREE.Group | null = null
   private copCore: THREE.Mesh | null = null
-  private copMid: THREE.Mesh | null = null
   private copHalo: THREE.Mesh | null = null
-  private copDisc: THREE.Mesh | null = null
 
   constructor(opts: PlateSceneOptions) {
     this.renderer = getOrCreateRenderer(opts.canvas)
@@ -244,9 +242,8 @@ export class PlateScene {
     if (!this.copGroup) {
       this.copGroup = new THREE.Group()
 
-      // Shared geometries
+      // Shared geometry
       const sphereGeo = new THREE.SphereGeometry(1, 24, 16)
-      const discGeo = new THREE.CircleGeometry(1, 32)
 
       // Core — bright white-blue center
       this.copCore = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
@@ -255,14 +252,6 @@ export class PlateScene {
         opacity: 0.95,
       }))
       this.copGroup.add(this.copCore)
-
-      // Mid — primary blue envelope
-      this.copMid = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#0066FF'),
-        transparent: true,
-        opacity: 0.6,
-      }))
-      this.copGroup.add(this.copMid)
 
       // Halo — soft additive glow
       this.copHalo = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({
@@ -273,17 +262,6 @@ export class PlateScene {
         depthWrite: false,
       }))
       this.copGroup.add(this.copHalo)
-
-      // Ground disc — light cast on plate surface
-      this.copDisc = new THREE.Mesh(discGeo, new THREE.MeshBasicMaterial({
-        color: new THREE.Color('#0051BA'),
-        transparent: true,
-        opacity: 0.25,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      }))
-      this.copDisc.rotation.x = -Math.PI / 2 // lay flat
-      this.copGroup.add(this.copDisc)
 
       this.platePivot.add(this.copGroup)
     }
@@ -297,14 +275,8 @@ export class PlateScene {
     this.copCore!.scale.setScalar(radius)
     this.copCore!.position.y = radius // sit on surface
 
-    this.copMid!.scale.setScalar(radius * 1.3)
-    this.copMid!.position.y = radius // same center as core
-
     this.copHalo!.scale.setScalar(radius * 2.5)
     this.copHalo!.position.y = radius // same center
-
-    this.copDisc!.scale.setScalar(radius * 3)
-    this.copDisc!.position.y = 0.0002 // just above surface (the group is already at topY)
   }
 
   render() {
@@ -325,7 +297,7 @@ export class PlateScene {
         }
       })
       this.copGroup = null
-      this.copCore = this.copMid = this.copHalo = this.copDisc = null
+      this.copCore = this.copHalo = null
     }
   }
 
