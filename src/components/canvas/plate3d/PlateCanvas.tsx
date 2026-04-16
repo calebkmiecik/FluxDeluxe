@@ -13,6 +13,8 @@
  */
 
 import { useEffect, useRef, useCallback, forwardRef, CSSProperties } from 'react'
+import { useLiveDataStore } from '../../../stores/liveDataStore'
+import { useDeviceStore } from '../../../stores/deviceStore'
 import * as THREE from 'three'
 import { plate3d } from '../../../lib/theme'
 import {
@@ -448,6 +450,21 @@ export function PlateCanvas({
         scene.setActiveRing(rect, geom.floorY + 0.05, pulse)
       } else {
         scene.setActiveRing(null, 0)
+      }
+
+      // COP sphere — read directly from store (no prop, avoids 100Hz re-renders)
+      const liveFrame = useLiveDataStore.getState().currentFrame
+      const selectedId = useDeviceStore.getState().selectedDeviceId
+      if (liveFrame && selectedId && liveFrame.id === selectedId) {
+        const totalForce = Math.sqrt(
+          liveFrame.fx ** 2 + liveFrame.fy ** 2 + liveFrame.fz ** 2,
+        )
+        const baseRadius = 0.008
+        const radius = baseRadius + Math.sqrt(Math.max(0, totalForce)) * 0.001
+        // cop.x → world X (left-right), cop.y → world -Z (forward-back, negated for screen-up = -Z)
+        scene.setCopSphere(liveFrame.cop.x, -liveFrame.cop.y, geom.floorY + 0.05, radius)
+      } else {
+        scene.setCopSphere(null, null, 0, 0)
       }
 
       scene.render()

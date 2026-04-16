@@ -64,6 +64,7 @@ export class PlateScene {
   private fillMesh: THREE.Mesh | null = null
   private cellMeshes = new Map<string, THREE.Mesh>() // "canonR,canonC" -> mesh
   private activeRing: THREE.LineLoop | null = null
+  private copSphere: THREE.Mesh | null = null
 
   constructor(opts: PlateSceneOptions) {
     this.renderer = getOrCreateRenderer(opts.canvas)
@@ -222,6 +223,36 @@ export class PlateScene {
     ;(this.activeRing.material as THREE.LineBasicMaterial).opacity = opacity
   }
 
+  /**
+   * Position and scale the COP sphere on the plate top.
+   * Pass null position to hide. Radius in meters.
+   */
+  setCopSphere(
+    worldX: number | null,
+    worldZ: number | null,
+    topY: number,
+    radius: number,
+  ) {
+    if (worldX === null || worldZ === null || radius <= 0) {
+      if (this.copSphere) this.copSphere.visible = false
+      return
+    }
+    if (!this.copSphere) {
+      const geo = new THREE.SphereGeometry(1, 24, 16)
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color('#0051BA'), // Axioforce primary blue
+        transparent: true,
+        opacity: 0.85,
+        depthTest: true,
+      })
+      this.copSphere = new THREE.Mesh(geo, mat)
+      this.platePivot.add(this.copSphere)
+    }
+    this.copSphere.visible = true
+    this.copSphere.position.set(worldX, topY + radius, worldZ)
+    this.copSphere.scale.setScalar(radius)
+  }
+
   render() {
     this.renderer.render(this.scene, this.camera)
   }
@@ -231,6 +262,12 @@ export class PlateScene {
     this.clearPlateFill()
     this.clearAllCellFills()
     this.setActiveRing(null, 0)
+    if (this.copSphere) {
+      this.platePivot.remove(this.copSphere)
+      this.copSphere.geometry.dispose()
+      ;(this.copSphere.material as THREE.Material).dispose()
+      this.copSphere = null
+    }
   }
 
   private clearPlateFill() {
