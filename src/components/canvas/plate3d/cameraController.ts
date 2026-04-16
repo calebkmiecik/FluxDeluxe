@@ -212,10 +212,16 @@ export class CameraController {
     }
     if (this.rotationQuadrant === quadrant) return
     this.rotationQuadrant = quadrant
+
+    // Shortest-arc delta so quadrant 3 → 0 rotates +π/2, not -3π/2.
+    const TAU = Math.PI * 2
+    let delta = targetRad - this.meshRotation
+    delta = ((delta + Math.PI) % TAU + TAU) % TAU - Math.PI
+
     this.rotAnimStart = this.elapsedMs
     this.rotAnimDuration = ROTATE_ANIMATE_MS
     this.rotAnimFrom = this.meshRotation
-    this.rotAnimTo = targetRad
+    this.rotAnimTo = this.meshRotation + delta
     this.rotAnimating = true
     // Camera state is NOT changed
   }

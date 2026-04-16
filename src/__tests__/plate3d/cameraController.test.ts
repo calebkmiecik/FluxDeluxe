@@ -176,3 +176,34 @@ describe('CameraController — shortest-arc snap-back from peek', () => {
     expect(c.getPose().azimuth).toBeCloseTo(0, 3)
   })
 })
+
+describe('CameraController — shortest-arc rotation wrap', () => {
+  beforeEach(() => resetIntroSwoopForTesting())
+
+  it('rotating from quadrant 3 → 0 takes +π/2 arc (not -3π/2)', () => {
+    const c = makeController()
+    c.update(1200)      // finish swoop
+    c.setRotation(0)    // initial, no animation
+    c.setRotation(3)    // → 3π/2
+    c.update(500)       // complete animation
+    // meshRotation may be 3π/2 or -π/2 (equivalent), check trig values
+    const rotAfter3 = c.getMeshRotation()
+    expect(Math.cos(rotAfter3)).toBeCloseTo(0, 3)
+    expect(Math.sin(rotAfter3)).toBeCloseTo(-1, 3)
+
+    c.setRotation(0)    // the fourth-rotate-in-a-row scenario
+    c.update(250)       // halfway through the animation
+    const halfway = c.getMeshRotation()
+    // Should have moved forward (positive) by ~π/4, not backward by ~3π/4
+    const moved = halfway - rotAfter3
+    expect(moved).toBeGreaterThan(0)
+    expect(moved).toBeLessThan(Math.PI) // nowhere near 3π/2
+
+    c.update(250)       // finish
+    expect(c.isRotating()).toBe(false)
+    // Final meshRotation is equivalent to 0 modulo 2π
+    const final = c.getMeshRotation()
+    expect(Math.cos(final)).toBeCloseTo(1, 3)
+    expect(Math.sin(final)).toBeCloseTo(0, 3)
+  })
+})
