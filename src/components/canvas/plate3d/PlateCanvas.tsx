@@ -267,8 +267,12 @@ export function PlateCanvas({
       }
       isDraggingRef.current = false
     }
-    const onDblClick = () => {
-      cameraRef.current?.dismissPeek()
+    const onDblClick = (e: MouseEvent) => {
+      // Only dismiss peek when double-clicking the canvas itself,
+      // not when rapidly clicking HUD buttons (which would bubble here).
+      if ((e.target as HTMLElement).tagName === 'CANVAS') {
+        cameraRef.current?.dismissPeek()
+      }
     }
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
