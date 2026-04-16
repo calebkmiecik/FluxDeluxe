@@ -154,9 +154,10 @@ export class PlateScene {
     let mesh = this.cellMeshes.get(key)
     if (!mesh) {
       const geo = new THREE.PlaneGeometry(1, 1)
-      const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })
+      const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, depthTest: false })
       mesh = new THREE.Mesh(geo, mat)
       mesh.rotation.x = -Math.PI / 2 // flat, facing up
+      mesh.renderOrder = 5 // above plate fill, below COP
       this.platePivot.add(mesh)
       this.cellMeshes.set(key, mesh)
     }
