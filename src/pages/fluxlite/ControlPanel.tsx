@@ -818,47 +818,119 @@ function SummaryBody() {
   const measurements = useLiveTestStore((s) => s.measurements)
   const gridRows = useLiveTestStore((s) => s.gridRows)
   const gridCols = useLiveTestStore((s) => s.gridCols)
+  const [resultOverride, setResultOverride] = useState<'pass' | 'fail' | null>(null)
 
   if (phase !== 'SUMMARY') return <p className="text-xs text-muted-foreground">Summary appears after the session ends.</p>
 
   const totalCells = gridRows * gridCols
-  const stageResults = stages.map((stage) => {
-    const stats = stageStats(measurements, stage.index, totalCells)
-    const errors = stageErrorStats(measurements, stage.index, stage.targetN)
-    return { ...stage, ...stats, ...errors }
-  })
+  const PASS_THRESHOLD = 88
 
-  const shortLabel = (type: string) => (type === 'dumbbell' ? 'DB' : type === 'two_leg' ? '2L' : '1L')
+  // Aggregate measurements across multiple stage indices
+  function aggregateStats(stageIndices: number[]) {
+    let tested = 0, passed = 0, total = 0
+    const pcts: number[] = []
+    let absSum = 0
+    for (const idx of stageIndices) {
+      const stage = stages[idx]
+      if (!stage) continue
+      total += totalCells
+      measurements.forEach((m) => {
+        if (m.stageIndex === idx) {
+          tested++
+          if (m.pass) passed++
+          const pct = (m.signedErrorN / stage.targetN) * 100
+          pcts.push(pct)
+          absSum += Math.abs(pct)
+        }
+      })
+    }
+    const signedPct = pcts.length > 0 ? pcts.reduce((s, p) => s + p, 0) / pcts.length : 0
+    const maePct = pcts.length > 0 ? absSum / pcts.length : 0
+    const passRate = tested > 0 ? (passed / tested) * 100 : 0
+    return { tested, passed, total, signedPct, maePct, passRate }
+  }
+
+  // Group by stage type (combine A + B locations)
+  const typeGroups = [
+    { label: 'Dumbbell', indices: stages.filter((s) => s.type === 'dumbbell').map((s) => s.index) },
+    { label: 'Two Leg',  indices: stages.filter((s) => s.type === 'two_leg').map((s) => s.index) },
+    { label: 'One Leg',  indices: stages.filter((s) => s.type === 'one_leg').map((s) => s.index) },
+  ]
+  const groupResults = typeGroups.map((g) => ({ ...g, ...aggregateStats(g.indices) }))
+  const overall = aggregateStats(stages.map((s) => s.index))
+  const autoResult: 'pass' | 'fail' = overall.passRate >= PASS_THRESHOLD ? 'pass' : 'fail'
+  const result = resultOverride ?? autoResult
+
+  const passRateClass = (rate: number) => rate >= PASS_THRESHOLD ? 'text-success' : 'text-danger'
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_auto] gap-x-2 gap-y-1 text-[10px] font-mono items-baseline">
-        <div className="telemetry-label">Stage</div>
+    <div className="flex flex-col gap-4">
+      {/* Per-type aggregated stats */}
+      <div className="grid grid-cols-[4.5rem_1fr_1fr_1fr] gap-x-3 gap-y-1.5 text-xs font-mono items-baseline">
+        <div className="telemetry-label">Type</div>
         <div className="telemetry-label text-right">Signed</div>
         <div className="telemetry-label text-right">MAE</div>
-        <div className="telemetry-label text-right">Std</div>
-        <div className="telemetry-label text-right">Pass</div>
+        <div className="telemetry-label text-right">Pass Rate</div>
 
-        {stageResults.map((r) => {
-          const fullPass = r.passed === r.tested && r.tested > 0
-          return (
-            <div className="contents" key={r.index}>
-              <div className="text-foreground tracking-wider">{shortLabel(r.type)}·{r.location}</div>
-              <div className="text-right text-foreground">
-                {r.tested > 0 ? formatSignedPct(r.signedPct) : '—'}
-              </div>
-              <div className="text-right text-muted-foreground">
-                {r.tested > 0 ? `${r.maePct.toFixed(1)}%` : '—'}
-              </div>
-              <div className="text-right text-muted-foreground">
-                {r.tested > 0 ? `${r.stdPct.toFixed(1)}%` : '—'}
-              </div>
-              <div className={`text-right ${fullPass ? 'text-success' : 'text-foreground'}`}>
-                {r.passed}/{r.tested}
-              </div>
+        {groupResults.map((g) => (
+          <div className="contents" key={g.label}>
+            <div className="text-foreground">{g.label}</div>
+            <div className="text-right text-foreground">
+              {g.tested > 0 ? formatSignedPct(g.signedPct) : '—'}
             </div>
-          )
-        })}
+            <div className="text-right text-muted-foreground">
+              {g.tested > 0 ? `${g.maePct.toFixed(1)}%` : '—'}
+            </div>
+            <div className={`text-right ${g.tested > 0 ? passRateClass(g.passRate) : 'text-muted-foreground'}`}>
+              {g.tested > 0 ? `${Math.round(g.passRate)}%` : '—'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Overall stats — large */}
+      <div className="border-t border-border pt-4">
+        <div className="telemetry-label mb-2">Overall</div>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <div className="text-lg font-mono text-foreground">{formatSignedPct(overall.signedPct)}</div>
+            <div className="telemetry-label mt-0.5">Signed</div>
+          </div>
+          <div>
+            <div className="text-lg font-mono text-muted-foreground">{overall.maePct.toFixed(1)}%</div>
+            <div className="telemetry-label mt-0.5">MAE</div>
+          </div>
+          <div>
+            <div className={`text-lg font-mono ${passRateClass(overall.passRate)}`}>{Math.round(overall.passRate)}%</div>
+            <div className="telemetry-label mt-0.5">Pass Rate</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Result recommendation — editable */}
+      <div className="border-t border-border pt-3">
+        <div className="flex items-center justify-between">
+          <span className="telemetry-label">Result Recommendation</span>
+          <button
+            onClick={() => {
+              if (resultOverride === null) setResultOverride(autoResult === 'pass' ? 'fail' : 'pass')
+              else if (resultOverride === autoResult) setResultOverride(null)
+              else setResultOverride(null)
+            }}
+            className={`text-lg font-mono font-semibold tracking-wider uppercase px-3 py-1 border rounded transition-colors ${
+              result === 'pass'
+                ? 'text-success border-success/40 hover:bg-success/10'
+                : 'text-danger border-danger/40 hover:bg-danger/10'
+            }`}
+          >
+            {result === 'pass' ? 'PASS' : 'FAIL'}
+          </button>
+        </div>
+        {resultOverride !== null && (
+          <div className="text-[10px] text-muted-foreground mt-1">
+            Auto: {autoResult.toUpperCase()} — overridden by user
+          </div>
+        )}
       </div>
     </div>
   )
