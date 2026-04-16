@@ -567,16 +567,19 @@ function WarmupBody({
 
   if (phase === 'IDLE') return <p className="text-xs text-muted-foreground">Warmup starts after you begin the session.</p>
 
+  const done = phase !== 'WARMUP'
+  const displayProgress = done ? 1 : progress
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">
-          {!warmupTriggered ? 'Jump on the plate to begin' : 'Keep jumping'}
+          {done ? '✓ Complete' : !warmupTriggered ? 'Jump on the plate to begin' : 'Keep jumping'}
         </span>
-        <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>
+        {!done && <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>}
       </div>
       <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-        <div className="h-full bg-warning rounded-full transition-all duration-200" style={{ width: `${progress * 100}%` }} />
+        <div className={`h-full rounded-full transition-all duration-200 ${done ? 'bg-success' : 'bg-warning'}`} style={{ width: `${displayProgress * 100}%` }} />
       </div>
       {phase === 'WARMUP' && (
         <button onClick={onSkip} className="self-end text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
