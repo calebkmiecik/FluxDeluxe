@@ -129,6 +129,7 @@ export function PlateCanvas({
   // HUD fade state
   const bracketOpacityRef = useRef(0)
   const hoverInsideRef = useRef(false)
+  const gridOpacityRef = useRef(0)
 
   // Camera state button — updated imperatively in RAF to avoid per-frame re-renders
   const cameraStateButtonRef = useRef<HTMLButtonElement>(null)
@@ -388,6 +389,15 @@ export function PlateCanvas({
       cam.update(delta)
       scene.setMeshRotation(cam.getMeshRotation())
 
+      // Grid fades out during transitioning states so the ortho/perspective
+      // projection flip isn't visible; fades back in once the camera settles.
+      const gridTarget =
+        cam.state === 'ORTHO_LOCKED' || cam.state === 'PEEK_ORBIT' ? 1 : 0
+      const gridFadeMs = 250
+      gridOpacityRef.current += Math.sign(gridTarget - gridOpacityRef.current) *
+        Math.min(Math.abs(gridTarget - gridOpacityRef.current), delta / gridFadeMs)
+      gridOpacityRef.current = Math.max(0, Math.min(1, gridOpacityRef.current))
+
       // Imperatively update camera state button (avoids per-frame React re-render)
       if (cam.state !== lastCameraStateRef.current) {
         lastCameraStateRef.current = cam.state
@@ -442,7 +452,7 @@ export function PlateCanvas({
       const camObj = scene.getCamera()
 
       // Floor grid on edge canvas
-      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds)
+      drawFloorGrid(eCtx, camObj, W, H, geom.floorY, geom.bounds, gridOpacityRef.current)
 
       // Wireframes (below + above fill)
       drawEdges(eCtx, camObj, geom.footEdges, 0.3, W, H, cam.getMeshRotation())
@@ -595,6 +605,7 @@ function drawFloorGrid(
   W: number, H: number,
   floorY: number,
   bounds: Bounds,
+  opacityScale: number = 1,
 ) {
   const extent = 3
   const step = 0.1
@@ -610,7 +621,7 @@ function drawFloorGrid(
     const p2 = projectToScreen(v, camera, W, H)
     const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2
     const dist = Math.hypot(cx, cz)
-    const alpha = 0.5 * Math.max(0, 1 - dist / fade) ** 2
+    const alpha = 0.5 * Math.max(0, 1 - dist / fade) ** 2 * opacityScale
     if (alpha < 0.01) return
     ctx.globalAlpha = alpha
     ctx.beginPath()
