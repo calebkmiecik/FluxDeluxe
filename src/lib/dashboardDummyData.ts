@@ -284,7 +284,7 @@ const DETAIL_BY_ID = new Map<string, SessionDetail>(BUILT.map((b) => [b.listRow.
 function applyFilter(filter: DashboardFilters): BuiltSession[] {
   const { fromIso, toIso } = effectiveTimeRange(filter)
   const types = effectiveDeviceTypes(filter)
-  const search = filter.search.trim().toLowerCase()
+  const tags = filter.searchTags.map((t) => t.trim().toLowerCase()).filter(Boolean)
 
   return BUILT.filter((b) => {
     const t = new Date(b.listRow.started_at).getTime()
@@ -297,7 +297,18 @@ function applyFilter(filter: DashboardFilters): BuiltSession[] {
     if (filter.weightMinN !== null && (weight === null || weight < filter.weightMinN)) return false
     if (filter.weightMaxN !== null && (weight === null || weight > filter.weightMaxN)) return false
 
-    if (search) {
+    // All tags must match (AND logic)
+    for (const tag of tags) {
+      // Magic tags
+      if (tag === 'pass') {
+        if (b.overall_pass_rate === null || b.overall_pass_rate < 1.0) return false
+        continue
+      }
+      if (tag === 'fail') {
+        if (b.overall_pass_rate === null || b.overall_pass_rate >= 1.0) return false
+        continue
+      }
+      // Free-text tag — match against metadata fields
       const family = deviceTypeToFamily(b.listRow.device_type) ?? ''
       const hay = [
         b.listRow.device_id,
@@ -307,7 +318,7 @@ function applyFilter(filter: DashboardFilters): BuiltSession[] {
         b.listRow.device_type,
         family,
       ].join(' ').toLowerCase()
-      if (!hay.includes(search)) return false
+      if (!hay.includes(tag)) return false
     }
 
     return true

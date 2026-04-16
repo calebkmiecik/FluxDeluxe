@@ -1,3 +1,4 @@
+import { useState, useRef, type KeyboardEvent } from 'react'
 import type { DashboardFilters, TimePreset } from '../../lib/dashboardFilters'
 import { DEFAULT_FILTERS, isDefaultFilters } from '../../lib/dashboardFilters'
 import { ALL_FAMILIES, familyLabel } from '../../lib/deviceFamily'
@@ -8,8 +9,10 @@ const TIME_PRESETS: { value: TimePreset; label: string }[] = [
   { value: '30d',   label: 'Last 30 days' },
   { value: '90d',   label: 'Last 90 days' },
   { value: 'ytd',   label: 'Year to date' },
-  { value: 'custom', label: 'Custom…' },
+  { value: 'custom', label: 'Custom...' },
 ]
+
+const MAGIC_TAGS = new Set(['pass', 'fail'])
 
 const inputClass =
   'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground'
@@ -23,6 +26,30 @@ export function DashboardFiltersBar({
 }) {
   const set = <K extends keyof DashboardFilters>(key: K, value: DashboardFilters[K]) => {
     onChange({ ...filters, [key]: value })
+  }
+
+  // Tag input state
+  const [draft, setDraft] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const addTag = (text: string) => {
+    const t = text.trim().toLowerCase()
+    if (!t || filters.searchTags.includes(t)) return
+    onChange({ ...filters, searchTags: [...filters.searchTags, t] })
+    setDraft('')
+  }
+
+  const removeTag = (idx: number) => {
+    onChange({ ...filters, searchTags: filters.searchTags.filter((_, i) => i !== idx) })
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && draft.trim()) {
+      e.preventDefault()
+      addTag(draft)
+    } else if (e.key === 'Backspace' && !draft && filters.searchTags.length > 0) {
+      removeTag(filters.searchTags.length - 1)
+    }
   }
 
   return (
@@ -94,7 +121,7 @@ export function DashboardFiltersBar({
         placeholder="min"
         min={0}
       />
-      <span className="text-muted-foreground text-xs">–</span>
+      <span className="text-muted-foreground text-xs">-</span>
       <input
         type="number"
         value={filters.weightMaxN ?? ''}
@@ -107,20 +134,46 @@ export function DashboardFiltersBar({
 
       <span className="w-px h-5 bg-border mx-1" />
 
-      {/* Search */}
-      <input
-        type="text"
-        value={filters.search}
-        onChange={(e) => set('search', e.target.value)}
-        placeholder="Search device, tester, family…"
-        className={`${inputClass} flex-1 min-w-[160px]`}
-      />
+      {/* Tag search */}
+      <div
+        className={`${inputClass} flex flex-wrap items-center gap-1 flex-1 min-w-[200px] cursor-text`}
+        onClick={() => inputRef.current?.focus()}
+      >
+        {filters.searchTags.map((tag, i) => (
+          <span
+            key={`${tag}-${i}`}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${
+              MAGIC_TAGS.has(tag)
+                ? 'bg-primary/20 text-primary'
+                : 'bg-muted text-foreground'
+            }`}
+          >
+            {tag}
+            <button
+              onClick={(e) => { e.stopPropagation(); removeTag(i) }}
+              className="hover:text-foreground ml-0.5"
+              aria-label={`Remove ${tag}`}
+            >
+              x
+            </button>
+          </span>
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={filters.searchTags.length === 0 ? 'Search... (type + Enter)' : ''}
+          className="bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground flex-1 min-w-[80px] py-0"
+        />
+      </div>
 
       {/* Clear */}
       <button
-        onClick={() => onChange(DEFAULT_FILTERS)}
-        disabled={isDefaultFilters(filters)}
-        className="ml-auto px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        onClick={() => { onChange(DEFAULT_FILTERS); setDraft('') }}
+        disabled={isDefaultFilters(filters) && !draft}
+        className="px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Clear
       </button>

@@ -46,10 +46,13 @@ export class LiveTestRepo {
     if (opts.filter.weightMinN !== null) q = q.gte('body_weight_n', opts.filter.weightMinN)
     if (opts.filter.weightMaxN !== null) q = q.lte('body_weight_n', opts.filter.weightMaxN)
 
-    const searchTerm = opts.filter.search.trim()
-    if (searchTerm) {
-      // Match device_id, tester_name, device_type, model_id, or joined devices.nickname
-      const escaped = searchTerm.replace(/[%_]/g, '\\$&')
+    // Search tags — each tag is AND'd via successive filter calls
+    for (const tag of opts.filter.searchTags) {
+      const t = tag.trim().toLowerCase()
+      if (!t) continue
+      if (t === 'pass') { q = q.eq('overall_pass_rate', 1.0); continue }
+      if (t === 'fail') { q = q.lt('overall_pass_rate', 1.0); continue }
+      const escaped = t.replace(/[%_]/g, '\\$&')
       q = q.or(
         `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
       )
@@ -101,9 +104,12 @@ export class LiveTestRepo {
     if (filter.weightMinN !== null) sessQuery = sessQuery.gte('body_weight_n', filter.weightMinN)
     if (filter.weightMaxN !== null) sessQuery = sessQuery.lte('body_weight_n', filter.weightMaxN)
 
-    const searchTerm = filter.search.trim()
-    if (searchTerm) {
-      const escaped = searchTerm.replace(/[%_]/g, '\\$&')
+    for (const tag of filter.searchTags) {
+      const t = tag.trim().toLowerCase()
+      if (!t) continue
+      if (t === 'pass') { sessQuery = sessQuery.eq('overall_pass_rate', 1.0); continue }
+      if (t === 'fail') { sessQuery = sessQuery.lt('overall_pass_rate', 1.0); continue }
+      const escaped = t.replace(/[%_]/g, '\\$&')
       sessQuery = sessQuery.or(
         `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
       )
