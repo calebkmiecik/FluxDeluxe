@@ -304,17 +304,11 @@ function applyFilter(filter: DashboardFilters): BuiltSession[] {
     if (filter.weightMinN !== null && (weight === null || weight < filter.weightMinN)) return false
     if (filter.weightMaxN !== null && (weight === null || weight > filter.weightMaxN)) return false
 
+    if (filter.passFilter === 'pass' && b.session_passed !== true) return false
+    if (filter.passFilter === 'fail' && b.session_passed !== false) return false
+
     // All tags must match (AND logic)
     for (const tag of tags) {
-      // Magic tags — filter on session_passed (threshold-based), not raw pass rate
-      if (tag === 'pass') {
-        if (b.session_passed !== true) return false
-        continue
-      }
-      if (tag === 'fail') {
-        if (b.session_passed !== false) return false
-        continue
-      }
       // Free-text tag — match against metadata fields
       const family = deviceTypeToFamily(b.listRow.device_type) ?? ''
       const hay = [

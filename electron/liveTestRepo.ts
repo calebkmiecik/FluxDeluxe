@@ -46,12 +46,14 @@ export class LiveTestRepo {
     if (opts.filter.weightMinN !== null) q = q.gte('body_weight_n', opts.filter.weightMinN)
     if (opts.filter.weightMaxN !== null) q = q.lte('body_weight_n', opts.filter.weightMaxN)
 
+    if (opts.filter.passFilter === 'pass') q = q.eq('session_passed', true)
+    if (opts.filter.passFilter === 'fail') q = q.eq('session_passed', false)
+
     // Search tags — each tag is AND'd via successive filter calls
     for (const tag of opts.filter.searchTags) {
       const t = tag.trim().toLowerCase()
       if (!t) continue
-      if (t === 'pass') { q = q.eq('session_passed', true); continue }
-      if (t === 'fail') { q = q.eq('session_passed', false); continue }
+      // pass/fail handled via passFilter, not tags
       const escaped = t.replace(/[%_]/g, '\\$&')
       q = q.or(
         `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
@@ -104,6 +106,9 @@ export class LiveTestRepo {
 
     if (filter.weightMinN !== null) sessQuery = sessQuery.gte('body_weight_n', filter.weightMinN)
     if (filter.weightMaxN !== null) sessQuery = sessQuery.lte('body_weight_n', filter.weightMaxN)
+
+    if (filter.passFilter === 'pass') sessQuery = sessQuery.eq('session_passed', true)
+    if (filter.passFilter === 'fail') sessQuery = sessQuery.eq('session_passed', false)
 
     for (const tag of filter.searchTags) {
       const t = tag.trim().toLowerCase()

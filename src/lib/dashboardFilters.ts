@@ -23,10 +23,11 @@ export interface DashboardFilters {
   /** Body weight in Newtons, inclusive. `null` = unbounded. */
   weightMinN: number | null
   weightMaxN: number | null
+  /** Pass/fail filter. `null` = show all. */
+  passFilter: 'pass' | 'fail' | null
   /**
    * Tag-based search. Each tag is AND'd. Matched against device_id, tester_name,
-   * device_nickname, model_id, family label. Special tags: "pass" (100% pass rate),
-   * "fail" (< 100% pass rate).
+   * device_nickname, model_id, family label.
    */
   searchTags: string[]
 }
@@ -38,6 +39,7 @@ export const DEFAULT_FILTERS: DashboardFilters = {
   deviceFamily: null,
   weightMinN: null,
   weightMaxN: null,
+  passFilter: null,
   searchTags: [],
 }
 
@@ -47,6 +49,7 @@ export function isDefaultFilters(f: DashboardFilters): boolean {
     f.deviceFamily === null &&
     f.weightMinN === null &&
     f.weightMaxN === null &&
+    f.passFilter === null &&
     f.searchTags.length === 0
   )
 }

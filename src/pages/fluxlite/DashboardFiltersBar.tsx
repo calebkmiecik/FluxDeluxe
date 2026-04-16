@@ -12,8 +12,6 @@ const TIME_PRESETS: { value: TimePreset; label: string }[] = [
   { value: 'custom', label: 'Custom...' },
 ]
 
-const MAGIC_TAGS = new Set(['pass', 'fail'])
-
 const inputClass =
   'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground'
 
@@ -109,6 +107,28 @@ export function DashboardFiltersBar({
 
       <span className="w-px h-5 bg-border mx-1" />
 
+      {/* Pass / Fail toggle */}
+      <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+        {(['all', 'pass', 'fail'] as const).map((v) => {
+          const active = (v === 'all' && filters.passFilter === null) || filters.passFilter === v
+          return (
+            <button
+              key={v}
+              onClick={() => set('passFilter', v === 'all' ? null : v)}
+              className={`px-2.5 py-1 transition-colors ${
+                active
+                  ? v === 'pass' ? 'bg-success/20 text-success' : v === 'fail' ? 'bg-danger/20 text-danger' : 'bg-muted text-foreground'
+                  : 'text-muted-foreground hover:bg-white/5'
+              }`}
+            >
+              {v === 'all' ? 'All' : v === 'pass' ? 'Pass' : 'Fail'}
+            </button>
+          )
+        })}
+      </div>
+
+      <span className="w-px h-5 bg-border mx-1" />
+
       {/* Weight range */}
       <label className="flex items-center gap-1 text-xs uppercase tracking-wider text-muted-foreground">
         Weight
@@ -142,11 +162,7 @@ export function DashboardFiltersBar({
         {filters.searchTags.map((tag, i) => (
           <span
             key={`${tag}-${i}`}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs ${
-              MAGIC_TAGS.has(tag)
-                ? 'bg-primary/20 text-primary'
-                : 'bg-muted text-foreground'
-            }`}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-muted text-foreground"
           >
             {tag}
             <button
