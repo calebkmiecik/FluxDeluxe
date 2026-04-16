@@ -133,6 +133,9 @@ export function PlateCanvas({
   const hoverInsideRef = useRef(false)
   const gridOpacityRef = useRef(0)
 
+  // Smoothed COP position (exponential lerp per frame)
+  const smoothCopRef = useRef({ x: 0, z: 0 })
+
   // Camera state button — updated imperatively in RAF to avoid per-frame re-renders
   const cameraStateButtonRef = useRef<HTMLButtonElement>(null)
   const lastCameraStateRef = useRef<string>('')
@@ -461,8 +464,15 @@ export function PlateCanvas({
         )
         const baseRadius = 0.008
         const radius = baseRadius + Math.sqrt(Math.max(0, totalForce)) * 0.001
-        // cop.x → world X (left-right), cop.y → world -Z (forward-back, negated for screen-up = -Z)
-        scene.setCopSphere(liveFrame.cop.x, -liveFrame.cop.y, geom.floorY + 0.05, radius)
+        // Exponential smoothing — frame-rate independent
+        const targetX = liveFrame.cop.x
+        const targetZ = -liveFrame.cop.y
+        const smoothSpeed = 12 // higher = more responsive, lower = smoother
+        const alpha = 1 - Math.exp(-smoothSpeed * (delta / 1000))
+        const sc = smoothCopRef.current
+        sc.x += (targetX - sc.x) * alpha
+        sc.z += (targetZ - sc.z) * alpha
+        scene.setCopSphere(sc.x, sc.z, geom.floorY + 0.05, radius)
       } else {
         scene.setCopSphere(null, null, 0, 0)
       }
