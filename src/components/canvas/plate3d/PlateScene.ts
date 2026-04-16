@@ -238,19 +238,21 @@ export class PlateScene {
       return
     }
     if (!this.copSphere) {
-      const geo = new THREE.SphereGeometry(1, 24, 16)
+      const geo = new THREE.CircleGeometry(1, 32)
       const mat = new THREE.MeshBasicMaterial({
         color: new THREE.Color('#AAD4FF'),
         transparent: true,
-        opacity: 0.95,
+        opacity: 0.85,
         depthTest: false,
+        side: THREE.DoubleSide,
       })
       this.copSphere = new THREE.Mesh(geo, mat)
+      this.copSphere.rotation.x = -Math.PI / 2 // lay flat
       this.copSphere.renderOrder = 10
       this.platePivot.add(this.copSphere)
     }
     this.copSphere.visible = true
-    this.copSphere.position.set(worldX, topY + radius, worldZ)
+    this.copSphere.position.set(worldX, topY + 0.001, worldZ)
     this.copSphere.scale.setScalar(radius)
   }
 
