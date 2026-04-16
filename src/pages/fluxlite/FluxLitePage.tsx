@@ -18,6 +18,12 @@ import { measurementEngine } from '../../lib/measurementEngine'
 import { WARMUP_TRIGGER_N, TARE_THRESHOLD_N } from '../../lib/liveTestTypes'
 import { type Axis as DataModeAxis, type DataMode, getModeConfig } from '../../lib/dataMode'
 
+/** Extract plate type from axfId prefix (e.g. "07.abc12345" -> "07") */
+function deviceTypeFromAxfId(axfId: string): string {
+  const m = /^([A-Fa-f0-9]{2})\./.exec(axfId)
+  return m ? m[1] : ''
+}
+
 const LITE_NAV = [
   { id: 'history' as const, label: 'Dashboard' },
   { id: 'live' as const, label: 'Live Testing' },
@@ -54,7 +60,11 @@ export function FluxLitePage() {
   }, [setEnabledAxes])
 
   const selectedDevice = devices.find((d) => d.axfId === selectedDeviceId)
-  const deviceType = metadata?.deviceType || selectedDevice?.deviceTypeId || '07'
+  const deviceType =
+    metadata?.deviceType ||
+    selectedDevice?.deviceTypeId ||
+    (selectedDevice ? deviceTypeFromAxfId(selectedDevice.axfId) : undefined) ||
+    '07'
   const activeStage = stages[activeStageIndex]
 
   // Build cell colors/texts from measurements for current stage

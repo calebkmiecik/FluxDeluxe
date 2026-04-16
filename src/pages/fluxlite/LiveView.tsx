@@ -7,6 +7,12 @@ import { COPVisualization } from '../../components/canvas/COPVisualization'
 import { PlateCanvas } from '../../components/canvas/plate3d/PlateCanvas'
 import { getSocket } from '../../lib/socket'
 
+/** Extract plate type from axfId prefix (e.g. "07.abc12345" -> "07") */
+function deviceTypeFromAxfId(axfId: string): string {
+  const m = /^([A-Fa-f0-9]{2})\./.exec(axfId)
+  return m ? m[1] : ''
+}
+
 export function LiveView() {
   const phase = useSessionStore((s) => s.sessionPhase)
   const setPhase = useSessionStore((s) => s.setSessionPhase)
@@ -19,7 +25,10 @@ export function LiveView() {
   const [cellTexts, setCellTexts] = useState<Map<string, string>>(new Map())
 
   const selectedDevice = devices.find((d) => d.axfId === selectedDeviceId)
-  const deviceType = selectedDevice?.deviceTypeId || '07'
+  const deviceType =
+    selectedDevice?.deviceTypeId ||
+    (selectedDevice ? deviceTypeFromAxfId(selectedDevice.axfId) : undefined) ||
+    '07'
 
   const handleCellClick = useCallback((row: number, col: number) => {
     setActiveCell({ row, col })
