@@ -114,9 +114,9 @@ export function PlateCanvas({
   // Without these, the loop would tear down every time cellColors / cellTexts /
   // activeCell / rotation change, which is very frequent during live testing.
   const propsRef = useRef({
-    deviceType, rotation, cellColors, cellTexts, activeCell,
+    deviceType, rotation, cellColors, cellTexts, activeCell, liveTesting,
   })
-  propsRef.current = { deviceType, rotation, cellColors, cellTexts, activeCell }
+  propsRef.current = { deviceType, rotation, cellColors, cellTexts, activeCell, liveTesting }
 
   const lastFrameRef = useRef<number | null>(null)
   const rafRef = useRef<number | null>(null)
@@ -391,6 +391,7 @@ export function PlateCanvas({
         cellColors: cellColorsNow,
         cellTexts: cellTextsNow,
         activeCell: activeCellNow,
+        liveTesting: liveTestingNow,
       } = propsRef.current
 
       cam.update(delta)
@@ -493,8 +494,8 @@ export function PlateCanvas({
       drawEdges(eCtx, camObj, splitRef.current.lower, 0.9, W, H, cam.getMeshRotation())
       drawEdges(ctx, camObj, splitRef.current.upper, 0.8, W, H, cam.getMeshRotation())
 
-      // Cell grid lines (projected onto plate top)
-      {
+      // Cell grid lines (projected onto plate top) — only during live test
+      if (liveTestingNow) {
         const b = geom.bounds
         const rotated = rotationNow % 2 === 1
         const dRows = rotated ? grid.cols : grid.rows
