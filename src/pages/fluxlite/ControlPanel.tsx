@@ -669,19 +669,19 @@ function TareBody({
 
   if (phase === 'IDLE' || phase === 'WARMUP') return <p className="text-xs text-muted-foreground">Tare runs after warmup.</p>
 
+  const done = phase !== 'TARE'
+  const displayProgress = done ? 1 : progress
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between text-xs">
         <span className="text-muted-foreground">
-          {isOffPlate ? 'Hold still — taring' : 'Step off the plate'}
+          {done ? '✓ Complete' : 'Step off the plate'}
         </span>
-        <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>
+        {!done && <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>}
       </div>
       <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
-        <div className="h-full bg-warning rounded-full transition-all duration-200" style={{ width: `${progress * 100}%` }} />
-      </div>
-      <div className="text-xs font-mono text-muted-foreground">
-        Fz: <span className={isOffPlate ? 'text-success' : 'text-danger'}>{currentFz.toFixed(1)}N</span>
+        <div className={`h-full rounded-full transition-all duration-200 ${done ? 'bg-success' : 'bg-warning'}`} style={{ width: `${displayProgress * 100}%` }} />
       </div>
       {phase === 'TARE' && (
         <button onClick={onSkipAndTare} className="self-end text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition-colors">
