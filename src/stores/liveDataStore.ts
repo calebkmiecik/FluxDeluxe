@@ -38,15 +38,27 @@ interface LiveDataStoreState {
   clearBuffer: () => void
 }
 
+// Per-device latest frame cache — mutable, not reactive (avoids Map
+// copying on every 100Hz push). Read via getLatestFrameForDevice().
+const _latestByDevice = new Map<string, TimestampedFrame>()
+
+export function getLatestFrameForDevice(deviceId: string): TimestampedFrame | null {
+  return _latestByDevice.get(deviceId) ?? null
+}
+
 export const useLiveDataStore = create<LiveDataStoreState>()(
   subscribeWithSelector((set, get) => ({
     currentFrame: null,
     frameBuffer: new RingBuffer<TimestampedFrame>(MAX_BUFFER_SIZE),
     pushFrame: (frame) => {
       const stamped: TimestampedFrame = { ...frame, _receivedAt: performance.now() }
+      _latestByDevice.set(frame.id, stamped)
       get().frameBuffer.push(stamped)
       set({ currentFrame: stamped })
     },
-    clearBuffer: () => set({ currentFrame: null, frameBuffer: new RingBuffer<TimestampedFrame>(MAX_BUFFER_SIZE) }),
+    clearBuffer: () => {
+      _latestByDevice.clear()
+      set({ currentFrame: null, frameBuffer: new RingBuffer<TimestampedFrame>(MAX_BUFFER_SIZE) })
+    },
   }))
 )

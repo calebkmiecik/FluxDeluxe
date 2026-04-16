@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useRef, useCallback, forwardRef, CSSProperties } from 'react'
-import { useLiveDataStore } from '../../../stores/liveDataStore'
+import { getLatestFrameForDevice } from '../../../stores/liveDataStore'
 import { useDeviceStore } from '../../../stores/deviceStore'
 import * as THREE from 'three'
 import { plate3d } from '../../../lib/theme'
@@ -452,10 +452,10 @@ export function PlateCanvas({
         scene.setActiveRing(null, 0)
       }
 
-      // COP sphere — read directly from store (no prop, avoids 100Hz re-renders)
-      const liveFrame = useLiveDataStore.getState().currentFrame
+      // COP circle — latest frame for the selected device only
       const selectedId = useDeviceStore.getState().selectedDeviceId
-      if (liveFrame && selectedId && liveFrame.id === selectedId) {
+      const liveFrame = selectedId ? getLatestFrameForDevice(selectedId) : null
+      if (liveFrame) {
         const totalForce = Math.sqrt(
           liveFrame.fx ** 2 + liveFrame.fy ** 2 + liveFrame.fz ** 2,
         )
