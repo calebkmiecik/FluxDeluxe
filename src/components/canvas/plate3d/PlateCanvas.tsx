@@ -493,7 +493,47 @@ export function PlateCanvas({
       drawEdges(eCtx, camObj, splitRef.current.lower, 0.9, W, H, cam.getMeshRotation())
       drawEdges(ctx, camObj, splitRef.current.upper, 0.8, W, H, cam.getMeshRotation())
 
-// Cell text labels (projected)
+      // Cell grid lines (projected onto plate top)
+      {
+        const b = geom.bounds
+        const rotated = rotationNow % 2 === 1
+        const dRows = rotated ? grid.cols : grid.rows
+        const dCols = rotated ? grid.rows : grid.cols
+        const cellW = (b.maxX - b.minX) / dCols
+        const cellH = (b.maxZ - b.minZ) / dRows
+        const meshRad = cam.getMeshRotation()
+        const cosR = Math.cos(meshRad), sinR = Math.sin(meshRad)
+        const topYGrid = geom.floorY + 0.051
+        ctx.save()
+        ctx.strokeStyle = plate3d.edgeCyan
+        ctx.globalAlpha = 0.3
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        // Horizontal lines (row boundaries)
+        for (let r = 0; r <= dRows; r++) {
+          const z = b.minZ + r * cellH
+          const x1 = b.minX, x2 = b.maxX
+          v3.set(x1 * cosR + z * sinR, topYGrid, -x1 * sinR + z * cosR)
+          const p1 = projectToScreen(v3, camObj, W, H)
+          v3.set(x2 * cosR + z * sinR, topYGrid, -x2 * sinR + z * cosR)
+          const p2 = projectToScreen(v3, camObj, W, H)
+          if (p1.visible && p2.visible) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y) }
+        }
+        // Vertical lines (column boundaries)
+        for (let c = 0; c <= dCols; c++) {
+          const x = b.minX + c * cellW
+          const z1 = b.minZ, z2 = b.maxZ
+          v3.set(x * cosR + z1 * sinR, topYGrid, -x * sinR + z1 * cosR)
+          const p1 = projectToScreen(v3, camObj, W, H)
+          v3.set(x * cosR + z2 * sinR, topYGrid, -x * sinR + z2 * cosR)
+          const p2 = projectToScreen(v3, camObj, W, H)
+          if (p1.visible && p2.visible) { ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y) }
+        }
+        ctx.stroke()
+        ctx.restore()
+      }
+
+      // Cell text labels (projected)
       for (const [key, text] of cellTextsNow.entries()) {
         const [rStr, cStr] = key.split(',')
         const canonR = Number(rStr), canonC = Number(cStr)
