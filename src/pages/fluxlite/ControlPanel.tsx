@@ -389,12 +389,12 @@ function MetaDataBody({
         <span className="text-sm text-foreground truncate px-2 py-1">{metadata.testerName}</span>
         <span className="telemetry-label">Weight (N)</span>
         <span className="text-sm text-foreground truncate px-2 py-1">{Math.round(metadata.bodyWeightN)}</span>
-        <span className="telemetry-label">DB Tol</span>
+        <span className="telemetry-label">DB Threshold</span>
         <span className="text-sm text-foreground font-mono px-2 py-1">
           {dbN != null ? `${dbN.toFixed(1)}N` : '—'}
           <span className="text-muted-foreground ml-2">{dbN != null ? `${((dbN / 206.3) * 100).toFixed(1)}%` : ''}</span>
         </span>
-        <span className="telemetry-label">BW Tol</span>
+        <span className="telemetry-label">BW Threshold</span>
         <span className="text-sm text-foreground font-mono px-2 py-1">
           {bwPct != null && metadata.bodyWeightN > 0 ? `${(metadata.bodyWeightN * bwPct).toFixed(1)}N` : '—'}
           <span className="text-muted-foreground ml-2">{bwPct != null ? `${(bwPct * 100).toFixed(1)}%` : ''}</span>
@@ -425,7 +425,7 @@ function MetaDataBody({
       <label className="telemetry-label">Weight (N)</label>
       <input type="text" inputMode="decimal" value={bodyWeightNInput} onChange={(e) => setBodyWeightNInput(numFilter(e.target.value))} placeholder="e.g. 800" className={inputClass} />
 
-      <label className="telemetry-label">DB Tol</label>
+      <label className="telemetry-label">DB Threshold</label>
       <div className="flex items-center gap-1.5">
         <input type="text" inputMode="decimal" value={dbNInput} onChange={(e) => onDbNChange(numFilter(e.target.value))} placeholder="N" className={inputClass + ' flex-1'} />
         <span className="text-[10px] text-muted-foreground shrink-0">N</span>
@@ -433,7 +433,7 @@ function MetaDataBody({
         <span className="text-[10px] text-muted-foreground shrink-0">%</span>
       </div>
 
-      <label className="telemetry-label">BW Tol</label>
+      <label className="telemetry-label">BW Threshold</label>
       <div className="flex items-center gap-1.5">
         <input type="text" inputMode="decimal" value={bwNInput} onChange={(e) => onBwNChange(numFilter(e.target.value))} placeholder="N" className={inputClass + ' flex-1'} />
         <span className="text-[10px] text-muted-foreground shrink-0">N</span>
