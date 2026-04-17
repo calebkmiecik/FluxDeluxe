@@ -1,27 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { useUiStore } from '../stores/uiStore'
 
 describe('uiStore', () => {
   beforeEach(() => {
     useUiStore.setState({
-      currentPage: 'launcher',
       activeLitePage: 'live',
       toasts: [],
       backendLogs: [],
       showDevicePicker: false,
       showModelPackager: false,
     })
-  })
-
-  it('starts on launcher page', () => {
-    expect(useUiStore.getState().currentPage).toBe('launcher')
-  })
-
-  it('navigates between pages', () => {
-    useUiStore.getState().navigate('fluxlite')
-    expect(useUiStore.getState().currentPage).toBe('fluxlite')
-    useUiStore.getState().navigate('launcher')
-    expect(useUiStore.getState().currentPage).toBe('launcher')
   })
 
   it('sets active lite page', () => {

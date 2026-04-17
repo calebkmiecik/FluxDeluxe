@@ -47,7 +47,7 @@ export function MomentsStrip() {
       {AXES.map((axis) => (
         <div key={axis.key} className="flex items-center gap-2">
           <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: axis.color }} />
-          <span className="font-mono text-[10px] tracking-wider text-muted-foreground">{axis.label}</span>
+          <span className="text-[11px] text-muted-foreground">{axis.label}</span>
           <span
             data-moment={axis.key}
             className="font-mono text-xs tabular-nums text-foreground"

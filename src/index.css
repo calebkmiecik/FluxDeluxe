@@ -21,6 +21,10 @@
   --color-warning: #FFC107;
   --color-danger: #FF5252;
   --font-mono: 'Geist Mono Variable', monospace;
+  /* "Technical" font — used for labels, tags, UI chrome. Currently sans but
+     called out as a separate token so the aesthetic can be swapped (e.g. to
+     a condensed or sans-serif with wider tracking) without touching every file. */
+  --font-technical: 'Geist Variable', sans-serif;
 }
 
 @theme inline {
@@ -140,10 +144,15 @@
 .telemetry-label {
   font-size: 11px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.02em;
   color: var(--color-text-muted);
-  font-family: var(--font-mono);
+  font-family: var(--font-technical);
+}
+
+/* For short technical tags that aren't labels (e.g. status badges) */
+.text-technical {
+  font-family: var(--font-technical);
+  letter-spacing: 0.06em;
 }
 
 .telemetry-value {

@@ -17,6 +17,18 @@ function unwrapPayload(data: unknown): unknown {
   return data // raw payload
 }
 
+/** Fire the initial volley of "give me current state" emits. Called on socket
+ *  `connect` and also immediately if the socket is already connected when the
+ *  effect mounts (StrictMode remount / HMR). */
+function emitInitialRequests(socket: ReturnType<typeof getSocket>): void {
+  socket.emit('getConnectedDevices')
+  socket.emit('getDynamoConfig')
+  socket.emit('getGroups')
+  socket.emit('getGroupDefinitions')
+  socket.emit('getDeviceSettings')
+  socket.emit('getDeviceTypes')
+}
+
 export function useSocket(): void {
   useEffect(() => {
     const socket = getSocket()
@@ -24,28 +36,41 @@ export function useSocket(): void {
     const sessionStore = useSessionStore.getState()
     const uiStore = useUiStore.getState()
 
+    // Track every handler we attach so cleanup can remove them surgically.
+    // NEVER call socket.removeAllListeners() — that can strip internal socket.io
+    // listeners and leave a silently-broken connection.
+    type Handler = (...args: unknown[]) => void
+    const handlers: [string, Handler][] = []
+    const on = (event: string, handler: Handler) => {
+      socket.on(event, handler)
+      handlers.push([event, handler])
+    }
+
     // Connection lifecycle
-    socket.on('connect', () => {
+    on('connect', () => {
       deviceStore.setConnectionState('DISCOVERING_DEVICES')
-      socket.emit('getConnectedDevices')
-      socket.emit('getDynamoConfig')
-      socket.emit('getGroups')
-      socket.emit('getGroupDefinitions')
-      socket.emit('getDeviceSettings')
-      socket.emit('getDeviceTypes')
+      emitInitialRequests(socket)
     })
 
-    socket.on('disconnect', () => {
+    on('disconnect', () => {
       deviceStore.setConnectionState('DISCONNECTED')
     })
 
-    socket.on('connect_error', () => {
+    on('connect_error', () => {
       deviceStore.setConnectionState('ERROR')
     })
 
+    // If socket is already connected when the effect mounts (StrictMode remount
+    // or HMR re-run), the `connect` event won't fire again — fire the initial
+    // volley manually so we don't silently stall.
+    if (socket.connected) {
+      deviceStore.setConnectionState('DISCOVERING_DEVICES')
+      emitInitialRequests(socket)
+    }
+
     // Device events
     // connectedDeviceList sends raw groups array (NOT wrapped in {status, data})
-    socket.on('connectedDeviceList', (data: unknown) => {
+    on('connectedDeviceList', (data: unknown) => {
       const devices = unwrapPayload(data)
       if (devices) {
         deviceStore.setDevices(devices as any)
@@ -54,22 +79,22 @@ export function useSocket(): void {
     })
 
     // connectionStatusUpdate fires when devices connect/disconnect — re-fetch the list
-    socket.on('connectionStatusUpdate', (_data: unknown) => {
+    on('connectionStatusUpdate', () => {
       socket.emit('getConnectedDevices')
     })
 
-    socket.on('getGroupsStatus', (data: unknown) => {
+    on('getGroupsStatus', (data: unknown) => {
       const payload = unwrapPayload(data)
       if (payload) deviceStore.setGroups(payload as any)
     })
 
-    socket.on('groupDefinitions', (data: unknown) => {
+    on('groupDefinitions', (data: unknown) => {
       const payload = unwrapPayload(data)
       if (payload) deviceStore.setGroupDefinitions(payload as any)
     })
 
     // Config
-    socket.on('getDynamoConfigStatus', (data: unknown) => {
+    on('getDynamoConfigStatus', (data: unknown) => {
       const payload = unwrapPayload(data)
       if (payload && typeof payload === 'object') {
         const config = payload as Record<string, unknown>
@@ -82,20 +107,20 @@ export function useSocket(): void {
     })
 
     // Live data (high frequency)
-    socket.on('jsonData', (data: unknown) => {
+    on('jsonData', (data: unknown) => {
       const frames = extractDeviceFrames(data)
       const pushFrame = useLiveDataStore.getState().pushFrame
       for (const frame of frames) pushFrame(frame)
     })
 
-    socket.on('simpleJsonData', (data: unknown) => {
+    on('simpleJsonData', (data: unknown) => {
       const frames = extractDeviceFrames(data)
       const pushFrame = useLiveDataStore.getState().pushFrame
       for (const frame of frames) pushFrame(frame)
     })
 
     // Capture lifecycle
-    socket.on('startCaptureStatus', (data: unknown) => {
+    on('startCaptureStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         sessionStore.setSessionPhase('CAPTURING')
@@ -104,14 +129,14 @@ export function useSocket(): void {
       }
     })
 
-    socket.on('stopCaptureStatus', (data: unknown) => {
+    on('stopCaptureStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         sessionStore.setSessionPhase('SUMMARY')
       }
     })
 
-    socket.on('cancelCaptureStatus', (data: unknown) => {
+    on('cancelCaptureStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         sessionStore.setSessionPhase('IDLE')
@@ -120,7 +145,7 @@ export function useSocket(): void {
     })
 
     // Tare
-    socket.on('tareStatus', (data: unknown) => {
+    on('tareStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Tare complete', type: 'success' })
@@ -129,7 +154,7 @@ export function useSocket(): void {
       }
     })
 
-    socket.on('tareAllStatus', (data: unknown) => {
+    on('tareAllStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'All devices tared', type: 'success' })
@@ -137,17 +162,22 @@ export function useSocket(): void {
     })
 
     // Device init
-    socket.on('initializationDevices', (data: unknown) => {
+    on('initializationDevices', (data: unknown) => {
       const payload = unwrapPayload(data)
       if (payload) deviceStore.setDevices(payload as any)
     })
 
-    socket.on('initializationStatusUpdate', (_data: unknown) => {})
-    socket.on('deviceSettingsList', (_data: unknown) => {})
-    socket.on('deviceTypesList', (_data: unknown) => {})
+    on('initializationStatusUpdate', () => {})
+    on('deviceSettingsList', () => {})
+    on('deviceTypesList', (data: unknown) => {
+      const payload = unwrapPayload(data)
+      if (Array.isArray(payload)) {
+        deviceStore.setDeviceTypes(payload as { deviceTypeId: string; name: string }[])
+      }
+    })
 
     // Group management
-    socket.on('groupUpdateStatus', (data: unknown) => {
+    on('groupUpdateStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         socket.emit('getGroups')
@@ -157,12 +187,12 @@ export function useSocket(): void {
     })
 
     // Models
-    socket.on('modelMetadata', (data: unknown) => {
+    on('modelMetadata', (data: unknown) => {
       const payload = unwrapPayload(data)
       if (payload) deviceStore.setModels(payload as any)
     })
 
-    socket.on('modelLoadStatus', (data: unknown) => {
+    on('modelLoadStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Model loaded', type: 'success' })
@@ -171,14 +201,14 @@ export function useSocket(): void {
       }
     })
 
-    socket.on('modelActivationStatus', (data: unknown) => {
+    on('modelActivationStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Model activation updated', type: 'success' })
       }
     })
 
-    socket.on('modelPackageStatus', (data: unknown) => {
+    on('modelPackageStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Model packaged successfully', type: 'success' })
@@ -188,12 +218,12 @@ export function useSocket(): void {
     })
 
     // Capture history (handled by page components directly)
-    socket.on('getCaptureMetricsStatus', () => {})
-    socket.on('getCaptureMetadataStatus', () => {})
-    socket.on('getCaptureResultsStatus', () => {})
+    on('getCaptureMetricsStatus', () => {})
+    on('getCaptureMetadataStatus', () => {})
+    on('getCaptureResultsStatus', () => {})
 
     // Backend logs
-    socket.on('logMessage', (data: unknown) => {
+    on('logMessage', (data: unknown) => {
       if (typeof data === 'string') uiStore.pushBackendLog(data)
       else if (typeof data === 'object' && data !== null) {
         uiStore.pushBackendLog(JSON.stringify(data))
@@ -201,7 +231,11 @@ export function useSocket(): void {
     })
 
     return () => {
-      socket.removeAllListeners()
+      // Surgical cleanup: only remove the handlers we registered, not every
+      // listener on the socket.
+      for (const [event, handler] of handlers) {
+        socket.off(event, handler)
+      }
     }
   }, [])
 }

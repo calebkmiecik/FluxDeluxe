@@ -7,13 +7,11 @@ interface Toast {
 }
 
 interface UiStoreState {
-  currentPage: 'launcher' | 'fluxlite'
   activeLitePage: 'live' | 'history' | 'models'
   toasts: Toast[]
   backendLogs: string[]
   showDevicePicker: boolean
   showModelPackager: boolean
-  navigate: (page: UiStoreState['currentPage']) => void
   setActiveLitePage: (page: UiStoreState['activeLitePage']) => void
   addToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: string) => void
@@ -31,13 +29,11 @@ function generateId(): string {
 }
 
 export const useUiStore = create<UiStoreState>()((set) => ({
-  currentPage: 'launcher',
   activeLitePage: 'live',
   toasts: [],
   backendLogs: [],
   showDevicePicker: false,
   showModelPackager: false,
-  navigate: (currentPage) => set({ currentPage }),
   setActiveLitePage: (activeLitePage) => set({ activeLitePage }),
   addToast: (toast) =>
     set((s) => ({ toasts: [...s.toasts, { ...toast, id: generateId() }] })),
