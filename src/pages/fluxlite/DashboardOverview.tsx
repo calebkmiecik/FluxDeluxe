@@ -195,58 +195,64 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const passedCount = data?.sessions_passed ?? 0
 
   return (
-    <div className="flex flex-col gap-3">
-      <h3 className="telemetry-label">Overview</h3>
-      <div className="grid grid-cols-2 gap-2">
-        <Tile
-          label="Pass Rate"
-          value={loading ? '…' : fmtPct(passRate)}
-          delta={passRateDelta}
-          baseline={showBaseline && baselinePassRate !== null ? `${fmtPct(baselinePassRate)} all-time` : null}
-          sub={
-            loading ? undefined : joinSub(
-              `${passedCount} of ${sessionCount} passed`,
-              passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / wk` : null,
-            )
-          }
-        />
-        <Tile
-          label="Accuracy"
-          value={loading ? '…' : `${fmtPct(data?.mae_pct ?? null)} MAE`}
-          delta={accuracyDelta}
-          baseline={
-            showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
-              ? `${fmtPct(baselineData.mae_pct)} MAE all-time`
-              : null
-          }
-          sub={loading ? undefined : `${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
-        />
+    <div className="grid gap-3 items-stretch" style={{ gridTemplateColumns: '320px 1fr' }}>
+      {/* Left: stacked overview tiles */}
+      <div className="flex flex-col gap-3">
+        <h3 className="telemetry-label">Overview</h3>
+        <div className="flex flex-col gap-2 flex-1">
+          <Tile
+            label="Pass Rate"
+            value={loading ? '…' : fmtPct(passRate)}
+            delta={passRateDelta}
+            baseline={showBaseline && baselinePassRate !== null ? `${fmtPct(baselinePassRate)} all-time` : null}
+            sub={
+              loading ? undefined : joinSub(
+                `${passedCount} of ${sessionCount} passed`,
+                passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / wk` : null,
+              )
+            }
+          />
+          <Tile
+            label="Accuracy"
+            value={loading ? '…' : `${fmtPct(data?.mae_pct ?? null)} MAE`}
+            delta={accuracyDelta}
+            baseline={
+              showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
+                ? `${fmtPct(baselineData.mae_pct)} MAE all-time`
+                : null
+            }
+            sub={loading ? undefined : `${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
+          />
+        </div>
       </div>
 
-      <h3 className="telemetry-label mt-1">By stage type</h3>
-      <div className="bg-white/[0.02] border border-border rounded-md p-4">
-        <div className="grid items-center gap-x-4 gap-y-2" style={{ gridTemplateColumns: '90px repeat(4, minmax(0, 1fr))' }}>
-          {/* Header row */}
-          <div />
-          <div className="telemetry-label">MAE</div>
-          <div className="telemetry-label">Pass</div>
-          <div className="telemetry-label">Signed</div>
-          <div className="telemetry-label">Std</div>
+      {/* Right: stage-type comparison table */}
+      <div className="flex flex-col gap-3 min-w-0">
+        <h3 className="telemetry-label">By stage type</h3>
+        <div className="bg-white/[0.02] border border-border rounded-md p-4 flex-1 flex flex-col justify-center">
+          <div className="grid items-center gap-x-4 gap-y-3" style={{ gridTemplateColumns: '90px repeat(4, minmax(0, 1fr))' }}>
+            {/* Header row */}
+            <div />
+            <div className="telemetry-label">MAE</div>
+            <div className="telemetry-label">Pass</div>
+            <div className="telemetry-label">Signed</div>
+            <div className="telemetry-label">Std</div>
 
-          {/* Data rows */}
-          {stageRows.map(({ label, row }) => (
-            <StageRow
-              key={label}
-              label={label}
-              mae={row?.mae_pct ?? null}
-              pass={row?.pass_rate ?? null}
-              signed={row?.signed_mean_error_pct ?? null}
-              std={row?.std_error_pct ?? null}
-              maxMae={maxMaePct}
-              maxSigned={maxSigned}
-              maxStd={maxStdPct}
-            />
-          ))}
+            {/* Data rows */}
+            {stageRows.map(({ label, row }) => (
+              <StageRow
+                key={label}
+                label={label}
+                mae={row?.mae_pct ?? null}
+                pass={row?.pass_rate ?? null}
+                signed={row?.signed_mean_error_pct ?? null}
+                std={row?.std_error_pct ?? null}
+                maxMae={maxMaePct}
+                maxSigned={maxSigned}
+                maxStd={maxStdPct}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
