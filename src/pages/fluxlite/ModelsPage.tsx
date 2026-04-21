@@ -47,6 +47,11 @@ export function ModelsPage() {
     })
   }
 
+  // While true, the active row on that device is collapsing — we hold the
+  // layout for one transition (≈220ms) before emitting deactivate, so the
+  // active row can smoothly shrink before the previous-models list reflows.
+  const [collapsingDevices, setCollapsingDevices] = useState<Set<string>>(new Set())
+
   // Tick to re-evaluate the streaming filter at a reasonable cadence
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -85,13 +90,23 @@ export function ModelsPage() {
   }
 
   const handleDeactivate = (deviceId: string, modelId: string) => {
-    const socket = getSocket()
-    // Backend only uses device_id for the actual deactivation, but its log
-    // line reads model_id unconditionally — pass both to avoid a KeyError.
-    socket.emit('deactivateModel', { deviceId, modelId })
+    // Start the visual collapse first so the active row has time to fade +
+    // shrink before the backend round-trip unmounts it.
+    setCollapsingDevices((prev) => new Set(prev).add(deviceId))
     setTimeout(() => {
-      socket.emit('getModelMetadata', { deviceId })
-    }, 200)
+      const socket = getSocket()
+      // Backend only uses device_id for the actual deactivation, but its log
+      // line reads model_id unconditionally — pass both to avoid a KeyError.
+      socket.emit('deactivateModel', { deviceId, modelId })
+      setTimeout(() => {
+        socket.emit('getModelMetadata', { deviceId })
+        setCollapsingDevices((prev) => {
+          const next = new Set(prev)
+          next.delete(deviceId)
+          return next
+        })
+      }, 200)
+    }, 220)
   }
 
   return (
@@ -175,26 +190,39 @@ export function ModelsPage() {
               </div>
             )}
 
-            {/* Active model row — keyed by modelId so it re-fades on swap */}
-            {models !== null && hasActiveModel && (
-              <div
-                key={activeModel!.modelId}
-                className="flex items-center justify-between gap-2 py-1 animate-in fade-in duration-200"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
-                  <span className="telemetry-label text-muted-foreground flex-shrink-0">
-                    · {formatRelativeDate(activeModel!.packageDate)} · {locationLabel(activeModel!.location)}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
-                  className="flex-shrink-0 px-2.5 py-1 text-xs border border-border text-muted-foreground rounded bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
+            {/* Active model row — wrapped in a grid-rows container so it
+                smoothly collapses on deactivate before the layout reflows. */}
+            {models !== null && hasActiveModel && (() => {
+              const collapsing = collapsingDevices.has(d.axfId)
+              return (
+                <div
+                  key={activeModel!.modelId}
+                  className="grid transition-[grid-template-rows,opacity] duration-200 ease-out animate-in fade-in"
+                  style={{
+                    gridTemplateRows: collapsing ? '0fr' : '1fr',
+                    opacity: collapsing ? 0 : 1,
+                  }}
                 >
-                  Deactivate
-                </button>
-              </div>
-            )}
+                  <div className="overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 py-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
+                        <span className="telemetry-label text-muted-foreground flex-shrink-0">
+                          · {formatRelativeDate(activeModel!.packageDate)} · {locationLabel(activeModel!.location)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
+                        disabled={collapsing}
+                        className="flex-shrink-0 px-2.5 py-1 text-xs border border-border text-muted-foreground rounded bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors disabled:opacity-50"
+                      >
+                        Deactivate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* Previous-models toggle + list */}
             {inactiveModels.length > 0 && (
