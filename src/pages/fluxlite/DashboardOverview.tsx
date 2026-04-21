@@ -27,12 +27,12 @@ function Tile({ label, value, delta, baseline, sub }: {
       <div className="flex items-start justify-between gap-2">
         <div className="telemetry-label">{label}</div>
         <div className="flex flex-col items-end gap-0.5">
-          {delta && <DeltaPill delta={delta} />}
           {baseline && (
             <span className="text-muted-foreground text-[11px] tracking-wider font-medium">
               {baseline}
             </span>
           )}
+          {delta && <DeltaPill delta={delta} />}
         </div>
       </div>
       <div className="text-3xl font-semibold text-foreground leading-none mt-2">{value}</div>
