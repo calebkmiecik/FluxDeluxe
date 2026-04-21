@@ -22,3 +22,6 @@ node_modules/
 dist-electron/
 out/
 *.js.map
+# Local output logs
+test-output.log
+tsc-output.log
