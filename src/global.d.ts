@@ -17,6 +17,7 @@ declare global {
     getDynamoLogs: () => Promise<string[]>
     restartDynamo: () => Promise<void>
     getAppVersion: () => Promise<string>
+    openDirectoryDialog: (title?: string) => Promise<string | null>
     onDynamoLog: (callback: (log: string) => void) => void
     onDynamoStatusChange: (callback: (status: string) => void) => void
     onUpdateAvailable: (callback: (info: unknown) => void) => void

@@ -35,36 +35,27 @@ export function ModelPackager() {
         <h2 className="text-lg font-semibold tracking-tight mb-4">Package Model</h2>
 
         <div className="flex flex-col gap-3 mb-6">
-          <div>
-            <label className="telemetry-label uppercase mb-1 block">Force Model Directory</label>
-            <input
-              type="text"
-              value={forceModelDir}
-              onChange={(e) => setForceModelDir(e.target.value)}
-              placeholder="/path/to/force/model"
-              className="w-full px-3 py-2 bg-background border border-border/60 rounded-md text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-[#7AB8FF] transition-colors"
-            />
-          </div>
-          <div>
-            <label className="telemetry-label uppercase mb-1 block">Moments Model Directory</label>
-            <input
-              type="text"
-              value={momentsModelDir}
-              onChange={(e) => setMomentsModelDir(e.target.value)}
-              placeholder="/path/to/moments/model"
-              className="w-full px-3 py-2 bg-background border border-border/60 rounded-md text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-[#7AB8FF] transition-colors"
-            />
-          </div>
-          <div>
-            <label className="telemetry-label uppercase mb-1 block">Output Directory</label>
-            <input
-              type="text"
-              value={outputDir}
-              onChange={(e) => setOutputDir(e.target.value)}
-              placeholder="/path/to/output"
-              className="w-full px-3 py-2 bg-background border border-border/60 rounded-md text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-[#7AB8FF] transition-colors"
-            />
-          </div>
+          <DirectoryField
+            label="Force Model Directory"
+            value={forceModelDir}
+            setValue={setForceModelDir}
+            placeholder="/path/to/force/model"
+            dialogTitle="Select force model directory"
+          />
+          <DirectoryField
+            label="Moments Model Directory"
+            value={momentsModelDir}
+            setValue={setMomentsModelDir}
+            placeholder="/path/to/moments/model"
+            dialogTitle="Select moments model directory"
+          />
+          <DirectoryField
+            label="Output Directory"
+            value={outputDir}
+            setValue={setOutputDir}
+            placeholder="/path/to/output"
+            dialogTitle="Select output directory"
+          />
         </div>
 
         <p className="telemetry-label uppercase text-muted-foreground mb-4">
@@ -98,6 +89,52 @@ export function ModelPackager() {
             {packaging ? 'Packaging…' : 'Package'}
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function DirectoryField({
+  label,
+  value,
+  setValue,
+  placeholder,
+  dialogTitle,
+}: {
+  label: string
+  value: string
+  setValue: (v: string) => void
+  placeholder: string
+  dialogTitle: string
+}) {
+  const handleBrowse = async () => {
+    const api = window.electronAPI
+    if (!api?.openDirectoryDialog) {
+      console.warn('[ModelPackager] openDirectoryDialog not available — running in non-Electron context?')
+      return
+    }
+    const selected = await api.openDirectoryDialog(dialogTitle)
+    if (selected) setValue(selected)
+  }
+  return (
+    <div>
+      <label className="telemetry-label uppercase mb-1 block">{label}</label>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 min-w-0 px-3 py-2 bg-background border border-border/60 rounded-md text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-[#7AB8FF] transition-colors"
+        />
+        <button
+          type="button"
+          onClick={handleBrowse}
+          className="flex-shrink-0 px-3 py-2 text-xs border border-border/60 rounded-md bg-transparent text-muted-foreground hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
+          title="Browse for folder"
+        >
+          Browse…
+        </button>
       </div>
     </div>
   )

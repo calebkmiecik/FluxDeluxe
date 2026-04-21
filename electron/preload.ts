@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDynamoLogs: () => ipcRenderer.invoke('dynamo:get-logs'),
   restartDynamo: () => ipcRenderer.invoke('dynamo:restart'),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
+  openDirectoryDialog: (title?: string) => ipcRenderer.invoke('dialog:openDirectory', title),
   onDynamoLog: (callback: (log: string) => void) =>
     ipcRenderer.on('dynamo:log', (_event, log) => callback(log)),
   onDynamoStatusChange: (callback: (status: string) => void) =>

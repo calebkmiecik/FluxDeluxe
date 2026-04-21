@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import path from 'path'
 import { DynamoManager } from './dynamo'
 import { initUpdater } from './updater'
@@ -36,6 +36,17 @@ function createWindow(): void {
 
   ipcMain.removeHandler('app:version')
   ipcMain.handle('app:version', () => app.getVersion())
+
+  ipcMain.removeHandler('dialog:openDirectory')
+  ipcMain.handle('dialog:openDirectory', async (_event, title?: string) => {
+    if (!mainWindow) return null
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: title ?? 'Select folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
 
   // Live test persistence
   const liveTestDeps = createLiveTestDeps()
