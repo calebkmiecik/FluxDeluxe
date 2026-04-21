@@ -108,13 +108,11 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
             loading ? (
               '…'
             ) : (
-              <span className="flex items-baseline gap-2">
-                <span>{fmtPct(data?.mae_pct ?? null)}</span>
-                <span className="text-lg text-muted-foreground font-normal">{fmtSignedPct(data?.signed_error_pct ?? null)}</span>
+              <span className="text-2xl">
+                {fmtPct(data?.mae_pct ?? null)} MAE <span className="text-muted-foreground/40">/</span> {fmtSignedPct(data?.signed_error_pct ?? null)} signed
               </span>
             )
           }
-          sub={loading ? undefined : 'MAE · signed'}
         />
       </div>
 
