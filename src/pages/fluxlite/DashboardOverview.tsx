@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
-import { priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
+import { effectiveTimeRange, priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
 
 const MIN_PRIOR_SESSIONS = 2
 
@@ -109,12 +109,22 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return () => { cancelled = true }
   }, [filter, isAllTime])
 
-  // Plates-passed-per-week rate. Denominator is the count of weeks that actually
-  // had testing activity — weeks with zero sessions are excluded, so a burst of
-  // testing after a 2-week break isn't diluted by the dead weeks.
-  const passedPerWeek = (!loading && data && data.active_weeks > 0)
-    ? data.sessions_passed / data.active_weeks
-    : null
+  // Plates-passed-per-week rate.
+  // Denominator = min(filter_window_weeks, active_weeks) so short windows read
+  // intuitively (7d filter = 1 week divisor) while long windows with gaps still
+  // exclude dead weeks. Falls back to active_weeks when the filter is All-time.
+  const passedPerWeek = (() => {
+    if (loading || !data || data.active_weeks === 0) return null
+    const { fromIso, toIso } = effectiveTimeRange(filter)
+    if (!fromIso) {
+      // All-time: use active_weeks (exclude dead weeks)
+      return data.sessions_passed / data.active_weeks
+    }
+    const spanMs = (toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()
+    const spanWeeks = Math.max(spanMs / (7 * 24 * 3600 * 1000), 3 / 7)
+    const weeks = Math.min(spanWeeks, data.active_weeks)
+    return data.sessions_passed / weeks
+  })()
 
   // Count-based pass rate: plates passed / total sessions
   const passRate = !loading && data && data.session_count > 0
