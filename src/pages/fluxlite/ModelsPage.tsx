@@ -123,7 +123,8 @@ export function ModelsPage() {
         const typeName = typeNameById.get(typeId) || `Type ${typeId}`
         const models = modelsByDevice[d.axfId] ?? null
         const activeModel = models?.find((m) => m.modelActive) ?? null
-        const inactiveModels = models?.filter((m) => !m.modelActive) ?? []
+        const inactiveModels =
+          models?.filter((m) => !m.modelActive).sort((a, b) => b.packageDate - a.packageDate) ?? []
         const hasActiveModel = activeModel !== null
 
         // When no active model exists, we force-show the inactive models so
