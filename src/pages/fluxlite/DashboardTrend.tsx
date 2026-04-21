@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
+  ComposedChart, Area, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import type { TimeSeriesPoint } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
@@ -90,19 +90,17 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
         {empty && !loading && <p className="text-muted-foreground text-sm">No data in the selected range.</p>}
         {!empty && !loading && (
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
               <defs>
+                {/* Subtle fill gradient — matches ForcePlot's 0.12 → 0.03 → 0 */}
                 <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"  stopColor={LINE_DARK} stopOpacity={0.35} />
-                  <stop offset="60%" stopColor={LINE_DARK} stopOpacity={0.05} />
+                  <stop offset="0%"  stopColor={LINE_DARK} stopOpacity={0.12} />
+                  <stop offset="60%" stopColor={LINE_DARK} stopOpacity={0.03} />
                   <stop offset="100%" stopColor={LINE_DARK} stopOpacity={0} />
                 </linearGradient>
+                {/* Light glow — applied only to the outer darker stroke, approximates ctx.shadowBlur=4 */}
                 <filter id="trendGlow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="2.2" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
+                  <feGaussianBlur stdDeviation="1.2" />
                 </filter>
               </defs>
               <CartesianGrid stroke={GRID_STROKE} strokeDasharray="0" vertical={false} />
@@ -149,19 +147,33 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   }}
                 />
               )}
+              {/* Fill + outer darker stroke (with subtle glow) */}
               <Area
                 type="monotone"
                 dataKey="value"
-                stroke={LINE_COLOR}
+                stroke={LINE_DARK}
                 strokeWidth={2}
                 fill="url(#trendFill)"
-                filter="url(#trendGlow)"
-                dot={{ r: 2.5, fill: LINE_COLOR, stroke: LINE_COLOR }}
-                activeDot={{ r: 5, fill: LINE_COLOR, stroke: LINE_DARK, strokeWidth: 2 }}
+                dot={false}
+                activeDot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+                style={{ filter: 'url(#trendGlow)' }}
+              />
+              {/* Inner bright crisp core line, no glow */}
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={LINE_COLOR}
+                strokeWidth={1.2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                dot={false}
+                activeDot={{ r: 4, fill: LINE_COLOR, stroke: LINE_DARK, strokeWidth: 2 }}
                 connectNulls={false}
                 isAnimationActive={false}
               />
-            </AreaChart>
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
