@@ -207,13 +207,20 @@ export function useSocket(): void {
     on('modelActivationStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
+        // Same event is emitted for both activate and deactivate — use the
+        // backend's message verbatim and append the reconnect hint.
         uiStore.addToast({
-          message: 'Model activated. Reconnect the plate to load it.',
+          message: `${resp.message} Reconnect the plate to apply.`,
           type: 'info',
         })
         for (const d of useDeviceStore.getState().devices) {
           socket.emit('getModelMetadata', { deviceId: d.axfId })
         }
+      } else {
+        uiStore.addToast({
+          message: `Model update failed: ${resp.message}`,
+          type: 'error',
+        })
       }
     })
 
