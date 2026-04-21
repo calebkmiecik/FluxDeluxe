@@ -282,8 +282,9 @@ function StageRow({
   )
 }
 
-const BAR_FILL = 'bg-primary/70'
-const BAR_TRACK = 'bg-white/5'
+const BAR_FILL = 'bg-primary/40'
+const BAR_TRACK = 'bg-white/[0.04]'
+const BAR_MAX_W = 'max-w-[120px]'
 
 /** Positive-scalar metric: number + horizontal bar that fills left-to-right. */
 function MetricCell({ value, format, barFill }: {
@@ -295,7 +296,7 @@ function MetricCell({ value, format, barFill }: {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{format(value)}</span>
-      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden`}>
+      <div className={`flex-1 ${BAR_MAX_W} h-1 ${BAR_TRACK} rounded-sm overflow-hidden`}>
         <div
           className={`h-full ${BAR_FILL} rounded-sm`}
           style={{ width: `${Math.max(0, Math.min(1, barFill)) * 100}%` }}
@@ -310,7 +311,7 @@ function PassCell({ value }: { value: number | null }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtPct(value)}</span>
-      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden`}>
+      <div className={`flex-1 ${BAR_MAX_W} h-1 ${BAR_TRACK} rounded-sm overflow-hidden`}>
         <div
           className={`h-full rounded-sm ${BAR_FILL}`}
           style={{ width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%` }}
@@ -329,9 +330,9 @@ function SignedCell({ value, maxAbs }: { value: number | null; maxAbs: number })
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtSignedPct(value)}</span>
-      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden relative`}>
+      <div className={`flex-1 ${BAR_MAX_W} h-1 ${BAR_TRACK} rounded-sm overflow-hidden relative`}>
         {/* center line */}
-        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/20" />
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/15" />
         {/* bar extends from center (same color in either direction) */}
         {value !== null && (
           <div
