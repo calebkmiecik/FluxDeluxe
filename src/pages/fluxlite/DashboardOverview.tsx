@@ -117,11 +117,14 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     ? priorData.sessions_passed / priorData.session_count
     : null
 
-  // Deltas — only when prior window has enough sessions to compare
+  // Deltas — only when prior window has enough sessions to compare.
+  // When the Fail toggle is active, pass-related tiles are zero by definition,
+  // so their deltas are meaningless — suppress them.
   const hasUsefulPrior = priorData !== null && priorData.session_count >= MIN_PRIOR_SESSIONS
+  const failOnly = filter.passFilter === 'fail'
 
   const platesPassedDelta: Delta | null = (() => {
-    if (!hasUsefulPrior || !data) return null
+    if (failOnly || !hasUsefulPrior || !data) return null
     const diff = data.sessions_passed - priorData!.sessions_passed
     return {
       text: diff > 0 ? `+${diff}` : `${diff}`,
@@ -132,11 +135,11 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   })()
 
   const passRateDelta: Delta | null = (() => {
-    if (!hasUsefulPrior || passRate === null || priorPassRate === null) return null
+    if (failOnly || !hasUsefulPrior || passRate === null || priorPassRate === null) return null
     const diffPp = (passRate - priorPassRate) * 100
     const rounded = Math.round(diffPp * 10) / 10
     return {
-      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} pp`,
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}%`,
       direction: directionOf(rounded),
       goodWhen: 'up',
       tooltip: `Prior window: ${(priorPassRate * 100).toFixed(1)}%`,
@@ -148,7 +151,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     const diffPp = (data.mae_pct - priorData!.mae_pct) * 100
     const rounded = Math.round(diffPp * 100) / 100  // 2 decimal places for MAE
     return {
-      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)} pp`,
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}%`,
       direction: directionOf(rounded),
       goodWhen: 'down',  // lower MAE is better
       tooltip: `Prior window: ${(priorData!.mae_pct * 100).toFixed(2)}% MAE`,
@@ -186,15 +189,15 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         />
         <Tile
           label="Plates Passed"
-          value={loading ? '…' : String(passedCount)}
+          value={loading ? '…' : failOnly ? '—' : String(passedCount)}
           delta={platesPassedDelta}
-          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
+          sub={loading || failOnly ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
         />
         <Tile
           label="Pass Rate"
-          value={loading ? '…' : fmtPct(passRate)}
+          value={loading ? '…' : failOnly ? '—' : fmtPct(passRate)}
           delta={passRateDelta}
-          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
+          sub={loading || failOnly ? undefined : `${passedCount} of ${sessionCount}`}
         />
         <Tile
           label="Accuracy"
