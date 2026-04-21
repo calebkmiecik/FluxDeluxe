@@ -7,6 +7,8 @@ import { deviceTypeFromAxfId } from '../../lib/deviceIds'
 import { getLastSeenForDevice } from '../../stores/liveDataStore'
 
 const STALE_MS = 3000
+const EXIT_ANIM_MS = 300
+const TICK_MS = 200
 
 export function DeviceList() {
   const devices = useDeviceStore((s) => s.devices)
@@ -20,23 +22,31 @@ export function DeviceList() {
     return map
   }, [deviceTypes])
 
-  // Tick once a second so the stale-filter below re-evaluates. We don't need
-  // 60fps for this — 1Hz is plenty to hide unplugged devices within a second.
+  // Tick for stale-filter re-evaluation. 200ms is frequent enough to trigger
+  // the exit animation promptly when a device goes silent, without burning CPU.
   const [, setTick] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 1000)
+    const id = setInterval(() => setTick((n) => n + 1), TICK_MS)
     return () => clearInterval(id)
   }, [])
 
-  // Hide devices that were streaming but have gone silent (unplugged).
-  // Devices that have never produced a frame are kept visible — they may be
-  // still initializing.
+  // Build a rendering list with per-device fade state. Devices that have
+  // never produced a frame are kept visible (still initializing). Once a
+  // device is silent past STALE_MS, it enters "fading" (opacity → 0 over
+  // EXIT_ANIM_MS), then is fully removed.
   const now = performance.now()
-  const visibleDevices = devices.filter((d) => {
+  const renderedDevices: Array<{ d: typeof devices[number]; fading: boolean }> = []
+  for (const d of devices) {
     const lastSeen = getLastSeenForDevice(d.axfId)
-    if (lastSeen === null) return true
-    return now - lastSeen < STALE_MS
-  })
+    if (lastSeen === null) {
+      renderedDevices.push({ d, fading: false })
+      continue
+    }
+    const age = now - lastSeen
+    if (age < STALE_MS) renderedDevices.push({ d, fading: false })
+    else if (age < STALE_MS + EXIT_ANIM_MS) renderedDevices.push({ d, fading: true })
+    // else: omitted entirely
+  }
 
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -70,13 +80,13 @@ export function DeviceList() {
         </button>
       </div>
 
-      {visibleDevices.length === 0 && (
+      {renderedDevices.length === 0 && (
         <div className="px-2 py-3 text-xs text-muted-foreground/60">
           No devices
         </div>
       )}
 
-      {visibleDevices.map((d) => {
+      {renderedDevices.map(({ d, fading }) => {
         const active = d.axfId === selectedDeviceId
         const typeId = d.deviceTypeId || deviceTypeFromAxfId(d.axfId)
         const typeName = typeNameById.get(typeId) || `Type ${typeId}`
@@ -84,10 +94,12 @@ export function DeviceList() {
           <button
             key={d.axfId}
             onClick={() => selectDevice(d.axfId)}
-            className="relative rounded-md border border-border bg-surface-dark text-left px-3 py-2.5 transition-all duration-150 flex flex-col gap-0.5 hover:bg-white/[0.03]"
+            className={`relative rounded-md border border-border bg-surface-dark text-left px-3 py-2.5 flex flex-col gap-0.5 hover:bg-white/[0.03] animate-in fade-in slide-in-from-left-2 duration-300 transition-opacity ${fading ? 'opacity-0' : 'opacity-100'}`}
             style={{
               borderLeftWidth: 3,
               borderLeftColor: active ? '#00C853' : 'var(--color-border)',
+              transitionDuration: `${EXIT_ANIM_MS}ms`,
+              pointerEvents: fading ? 'none' : 'auto',
             }}
           >
             {/* Status LED — top right */}
