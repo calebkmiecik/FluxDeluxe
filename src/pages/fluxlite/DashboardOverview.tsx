@@ -6,12 +6,10 @@ import { effectiveTimeRange } from '../../lib/dashboardFilters'
 
 function Tile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4 flex flex-col gap-3 min-h-[112px]">
+    <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4">
       <div className="telemetry-label">{label}</div>
-      <div className="mt-auto">
-        <div className="text-3xl font-semibold text-foreground leading-none">{value}</div>
-        {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
-      </div>
+      <div className="text-3xl font-semibold text-foreground leading-none mt-2">{value}</div>
+      {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
     </div>
   )
 }
