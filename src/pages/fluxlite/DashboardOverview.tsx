@@ -44,15 +44,22 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return () => { cancelled = true }
   }, [filter])
 
-  // Plates-passed-per-week rate (for subtitle)
+  // Plates-passed-per-week rate (for subtitle).
+  // Denominator is the active time window when one is selected (7d/30d/90d/YTD/custom),
+  // otherwise falls back to the span from earliest session to now for All-time.
+  // Floored at 3 days so short windows don't inflate the rate.
   const passedPerWeek = (() => {
     if (loading || !data || data.sessions_passed === 0) return null
-    const { fromIso } = effectiveTimeRange(filter)
-    const rangeStart = fromIso
-      ? new Date(Math.max(new Date(fromIso).getTime(), data.earliest_session_at ? new Date(data.earliest_session_at).getTime() : 0))
-      : data.earliest_session_at ? new Date(data.earliest_session_at) : null
-    if (!rangeStart) return null
-    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 3 / 7)
+    const { fromIso, toIso } = effectiveTimeRange(filter)
+    let spanMs: number | null = null
+    if (fromIso) {
+      spanMs = (toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()
+    } else if (data.earliest_session_at) {
+      // All-time: use earliest session → now
+      spanMs = Date.now() - new Date(data.earliest_session_at).getTime()
+    }
+    if (spanMs === null) return null
+    const weeks = Math.max(spanMs / (7 * 24 * 3600 * 1000), 3 / 7)
     return data.sessions_passed / weeks
   })()
 
