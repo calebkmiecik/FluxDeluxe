@@ -87,6 +87,15 @@ export function effectiveDeviceTypes(f: DashboardFilters): string[] | null {
 }
 
 /**
+ * Returns a copy of the filter with the time constraint stripped.
+ * Used to fetch the "all-time baseline" for the current non-time filter set
+ * (device / weight / pass-fail / search still apply).
+ */
+export function withAllTime(f: DashboardFilters): DashboardFilters {
+  return { ...f, timePreset: 'all', timeFrom: null, timeTo: null }
+}
+
+/**
  * Returns a copy of the filter shifted to the equivalent prior time window.
  * 7d selected → prior 7d (i.e. 14-to-7 days ago). Custom → same-length window
  * immediately before `timeFrom`. Returns `null` for All-time or when the

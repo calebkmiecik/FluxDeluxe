@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
-import { effectiveTimeRange, priorEquivalentFilter } from '../../lib/dashboardFilters'
+import { effectiveTimeRange, priorEquivalentFilter, withAllTime } from '../../lib/dashboardFilters'
 
 const MIN_PRIOR_SESSIONS = 2
 
@@ -67,6 +67,13 @@ function fmtSignedPct(n: number | null | undefined): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 }
 
+/** Join non-null strings with a bullet separator. Returns undefined if empty. */
+function joinSub(...parts: Array<string | null | undefined>): string | undefined {
+  const kept = parts.filter((p): p is string => !!p)
+  if (kept.length === 0) return undefined
+  return kept.join(' · ')
+}
+
 /** Compute direction from a signed delta. */
 function directionOf(signedDelta: number, epsilon = 0): DeltaDirection {
   if (signedDelta > epsilon) return 'up'
@@ -77,7 +84,10 @@ function directionOf(signedDelta: number, epsilon = 0): DeltaDirection {
 export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const [data, setData] = useState<OverviewResult | null>(null)
   const [priorData, setPriorData] = useState<OverviewResult | null>(null)
+  const [baselineData, setBaselineData] = useState<OverviewResult | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const isAllTime = filter.timePreset === 'all'
 
   useEffect(() => {
     let cancelled = false
@@ -85,14 +95,19 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     const prior = priorEquivalentFilter(filter)
     const currentP = liveTestClient.getOverview({ filter })
     const priorP = prior ? liveTestClient.getOverview({ filter: prior }) : Promise.resolve(null)
-    Promise.all([currentP, priorP]).then(([cur, pri]) => {
+    // Baseline = same filter without time bounds. Skip when filter is already all-time.
+    const baselineP = isAllTime
+      ? Promise.resolve(null)
+      : liveTestClient.getOverview({ filter: withAllTime(filter) })
+    Promise.all([currentP, priorP, baselineP]).then(([cur, pri, base]) => {
       if (cancelled) return
       setData(cur)
       setPriorData(pri)
+      setBaselineData(base)
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [filter])
+  }, [filter, isAllTime])
 
   // Plates-passed-per-week rate (for subtitle)
   const passedPerWeek = (() => {
@@ -116,6 +131,20 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const priorPassRate = priorData && priorData.session_count > 0
     ? priorData.sessions_passed / priorData.session_count
     : null
+  const baselinePassRate = baselineData && baselineData.session_count > 0
+    ? baselineData.sessions_passed / baselineData.session_count
+    : null
+
+  // All-time plates-passed-per-week rate (baseline) — uses baselineData's earliest session
+  const baselinePassedPerWeek = (() => {
+    if (!baselineData || !baselineData.earliest_session_at || baselineData.sessions_passed === 0) return null
+    const spanMs = Date.now() - new Date(baselineData.earliest_session_at).getTime()
+    const weeks = Math.max(spanMs / (7 * 24 * 3600 * 1000), 3 / 7)
+    return baselineData.sessions_passed / weeks
+  })()
+
+  // Only show baselines when we actually have one to show and we're not in all-time view
+  const showBaseline = !isAllTime && baselineData !== null && baselineData.session_count > 0
 
   // Deltas — only when prior window has enough sessions to compare.
   // When the Fail toggle is active, pass-related tiles are zero by definition,
@@ -191,13 +220,19 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           label="Plates Passed"
           value={loading ? '…' : String(passedCount)}
           delta={platesPassedDelta}
-          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
+          sub={loading ? undefined : joinSub(
+            passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : null,
+            showBaseline && baselinePassedPerWeek !== null ? `avg ${baselinePassedPerWeek.toFixed(1)} / wk` : null,
+          )}
         />
         <Tile
           label="Pass Rate"
           value={loading ? '…' : fmtPct(passRate)}
           delta={passRateDelta}
-          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
+          sub={loading ? undefined : joinSub(
+            `${passedCount} of ${sessionCount}`,
+            showBaseline && baselinePassRate !== null ? `avg ${fmtPct(baselinePassRate)}` : null,
+          )}
         />
         <Tile
           label="Accuracy"
@@ -211,6 +246,14 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
             )
           }
           delta={accuracyDelta}
+          sub={loading ? undefined : joinSub(
+            showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
+              ? `avg ${fmtPct(baselineData.mae_pct)} MAE`
+              : null,
+            showBaseline && baselineData?.signed_error_pct !== null && baselineData?.signed_error_pct !== undefined
+              ? `${fmtSignedPct(baselineData.signed_error_pct)} signed`
+              : null,
+          )}
         />
       </div>
 
