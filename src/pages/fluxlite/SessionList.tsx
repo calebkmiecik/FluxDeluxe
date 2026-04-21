@@ -36,18 +36,18 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm uppercase tracking-wider text-muted-foreground">Recent sessions</h3>
+      <h3 className="telemetry-label uppercase">Recent sessions</h3>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left border-b border-border">
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Date</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Device</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Type</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Tester</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Weight</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Model</th>
-            <th className="pb-2 pr-4 text-muted-foreground text-xs uppercase tracking-wider">Result</th>
-            <th className="pb-2 text-muted-foreground text-xs uppercase tracking-wider">Cells</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Date</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Device</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Type</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Tester</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Weight</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Model</th>
+            <th className="pb-2 pr-4 telemetry-label uppercase">Result</th>
+            <th className="pb-2 telemetry-label uppercase">Cells</th>
           </tr>
         </thead>
         <tbody>
@@ -59,8 +59,8 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
                 onClick={() => onOpen(r.id)}
                 className="border-b border-border/50 hover:bg-white/5 transition-colors cursor-pointer"
               >
-                <td className="py-2 pr-4 text-muted-foreground">{new Date(r.started_at).toLocaleString()}</td>
-                <td className="py-2 pr-4 text-foreground">{r.device_nickname ?? r.device_id}</td>
+                <td className="py-2 pr-4 text-muted-foreground font-mono">{new Date(r.started_at).toLocaleString()}</td>
+                <td className="py-2 pr-4 text-foreground font-mono">{r.device_nickname ?? r.device_id}</td>
                 <td className="py-2 pr-4 text-muted-foreground">{family ? familyLabel(family) : r.device_type}</td>
                 <td className="py-2 pr-4 text-muted-foreground">{r.tester_name || '—'}</td>
                 <td className="py-2 pr-4 text-muted-foreground">
@@ -83,7 +83,7 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
                     </span>
                   )}
                 </td>
-                <td className="py-2 text-muted-foreground">{r.n_cells_captured}/{r.n_cells_expected}</td>
+                <td className="py-2 text-muted-foreground font-mono">{r.n_cells_captured}/{r.n_cells_expected}</td>
               </tr>
             )
           })}

@@ -74,7 +74,7 @@ function SessionDetailBody({ data, onClose }: { data: SessionDetail; onClose: ()
           const label = t === 'dumbbell' ? 'Dumbbell' : t === 'two_leg' ? 'Two-leg' : 'One-leg'
           return (
             <div key={t} className="bg-background border border-border rounded-md p-3">
-              <div className="text-xs text-muted-foreground uppercase">{label}</div>
+              <div className="telemetry-label uppercase">{label}</div>
               <div className="text-foreground">MAE {fmtN(a?.mae)}</div>
               <div className="text-xs text-muted-foreground">bias {fmtN(a?.signed_mean_error)}  ± {fmtN(a?.std_error)}</div>
               <div className="text-xs text-muted-foreground">pass {fmtPct(a?.pass_rate)}</div>
@@ -90,7 +90,7 @@ function SessionDetailBody({ data, onClose }: { data: SessionDetail; onClose: ()
           const stageLoc = cells[0]?.stage_location ?? '—'
           return (
             <div key={stageIndex} className="bg-background border border-border rounded-md p-3">
-              <div className="text-xs text-muted-foreground uppercase mb-2">
+              <div className="telemetry-label uppercase mb-2">
                 Stage {stageIndex} — {stageName} @ {stageLoc}
               </div>
               <CellGrid rows={s.grid_rows} cols={s.grid_cols} cells={cells} />
@@ -119,7 +119,7 @@ function CellGrid({ rows, cols, cells }: { rows: number; cols: number; cells: an
           <div
             key={i}
             title={title}
-            className="aspect-square rounded-sm flex items-center justify-center text-xs text-white/90"
+            className="aspect-square rounded-sm flex items-center justify-center text-xs text-white/90 font-mono"
             style={{ background: color }}
           >
             {cell ? fmtN(cell.error_n, 0) : ''}

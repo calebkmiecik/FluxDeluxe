@@ -47,7 +47,7 @@ function DeltaPill({ delta }: { delta: Delta }) {
     delta.direction === 'down' ? '▼' :
     '·'
   return (
-    <span className={`${color} text-[11px] font-medium tracking-wider`} title={delta.tooltip}>
+    <span className={`${color} telemetry-label`} title={delta.tooltip}>
       {arrow} {delta.text}
     </span>
   )

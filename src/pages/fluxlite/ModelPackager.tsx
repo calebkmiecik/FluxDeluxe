@@ -30,7 +30,7 @@ export function ModelPackager() {
 
         <div className="flex flex-col gap-3 mb-6">
           <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1 block">Force Model Directory</label>
+            <label className="telemetry-label uppercase mb-1 block">Force Model Directory</label>
             <input
               type="text"
               value={forceModelDir}
@@ -40,7 +40,7 @@ export function ModelPackager() {
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1 block">Moments Model Directory</label>
+            <label className="telemetry-label uppercase mb-1 block">Moments Model Directory</label>
             <input
               type="text"
               value={momentsModelDir}
@@ -50,7 +50,7 @@ export function ModelPackager() {
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1 block">Output Directory</label>
+            <label className="telemetry-label uppercase mb-1 block">Output Directory</label>
             <input
               type="text"
               value={outputDir}

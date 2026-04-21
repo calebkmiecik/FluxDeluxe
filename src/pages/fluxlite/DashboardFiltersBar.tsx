@@ -124,7 +124,7 @@ export function DashboardFiltersBar({
             <button
               key={v}
               onClick={() => set('passFilter', v === 'all' ? null : v)}
-              className={`px-2.5 py-1 text-[11px] tracking-[0.06em] uppercase transition-colors ${
+              className={`px-2.5 py-1 telemetry-label uppercase transition-colors ${
                 active
                   ? v === 'pass' ? 'bg-success/15 text-success' : v === 'fail' ? 'bg-danger/15 text-danger' : 'bg-white/[0.06] text-foreground'
                   : 'text-muted-foreground hover:bg-white/[0.04]'
