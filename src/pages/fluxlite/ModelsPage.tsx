@@ -175,9 +175,12 @@ export function ModelsPage() {
               </div>
             )}
 
-            {/* Active model row */}
+            {/* Active model row — keyed by modelId so it re-fades on swap */}
             {models !== null && hasActiveModel && (
-              <div className="flex items-center justify-between gap-2 py-1">
+              <div
+                key={activeModel!.modelId}
+                className="flex items-center justify-between gap-2 py-1 animate-in fade-in duration-200"
+              >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
                   <span className="telemetry-label text-muted-foreground flex-shrink-0">
@@ -222,7 +225,7 @@ export function ModelsPage() {
                       {inactiveModels.map((m) => (
                       <div
                         key={m.modelId}
-                        className="flex items-center justify-between gap-2 py-1.5"
+                        className="flex items-center justify-between gap-2 py-1.5 animate-in fade-in duration-200"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <span className="font-mono text-xs text-muted-foreground truncate">{m.modelId}</span>
