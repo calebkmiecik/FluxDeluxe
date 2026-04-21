@@ -145,10 +145,7 @@ export function ModelsPage() {
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{
-                    backgroundColor: hasActiveModel ? plate3d.edgeCyan : '#333',
-                    animation: hasActiveModel ? 'status-breathe 2.4s ease-in-out infinite' : undefined,
-                  }}
+                  style={{ backgroundColor: hasActiveModel ? plate3d.edgeCyan : '#333' }}
                 />
                 <span
                   className="telemetry-label uppercase"
