@@ -36,6 +36,17 @@ export function ModelsPage() {
   const modelsByDevice = useDeviceStore((s) => s.modelsByDevice)
   const setShowModelPackager = useUiStore((s) => s.setShowModelPackager)
 
+  // Track which devices have their "previous models" section expanded.
+  const [expandedDevices, setExpandedDevices] = useState<Set<string>>(new Set())
+  const toggleExpanded = (deviceId: string) => {
+    setExpandedDevices((prev) => {
+      const next = new Set(prev)
+      if (next.has(deviceId)) next.delete(deviceId)
+      else next.add(deviceId)
+      return next
+    })
+  }
+
   // Tick to re-evaluate the streaming filter at a reasonable cadence
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -85,7 +96,7 @@ export function ModelsPage() {
 
   return (
     <div className="flex-1 flex flex-col p-4 overflow-auto">
-     <div className="w-full max-w-3xl mx-auto flex flex-col gap-2">
+     <div className="w-full max-w-3xl mx-auto flex flex-col gap-3">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight">Models</h2>
@@ -116,10 +127,14 @@ export function ModelsPage() {
         const hasActiveModel = activeModel !== null
         const stripeColor = hasActiveModel ? '#00C853' : 'var(--color-border)'
 
+        // When no active model exists, we force-show the inactive models so
+        // the user has a visible path forward. Otherwise default to collapsed.
+        const showInactive = !hasActiveModel || expandedDevices.has(d.axfId)
+
         return (
           <div
             key={d.axfId}
-            className="rounded-md border border-border bg-surface-dark px-3 py-2.5 flex flex-col gap-1.5"
+            className="rounded-md border border-border bg-surface-dark px-4 py-3 flex flex-col gap-2"
             style={{ borderLeftWidth: 3, borderLeftColor: stripeColor }}
           >
             {/* Card header row — axfId · type  [LED] STATUS */}
@@ -149,11 +164,11 @@ export function ModelsPage() {
 
             {/* Models loaded but empty */}
             {models !== null && models.length === 0 && (
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-2 py-1">
                 <p className="text-xs text-muted-foreground">No models for this device.</p>
                 <button
                   onClick={() => setShowModelPackager(true)}
-                  className="flex-shrink-0 px-2 py-0.5 text-xs border rounded bg-transparent transition-colors"
+                  className="flex-shrink-0 px-2.5 py-1 text-xs border rounded bg-transparent transition-colors"
                   style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
                 >
                   Package
@@ -161,46 +176,63 @@ export function ModelsPage() {
               </div>
             )}
 
-            {/* Active model row + inactive rows */}
-            {models !== null && models.length > 0 && (
-              <div className="flex flex-col">
+            {/* Active model row */}
+            {models !== null && hasActiveModel && (
+              <div className="flex items-center justify-between gap-2 py-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
+                  <span className="telemetry-label text-muted-foreground flex-shrink-0">
+                    · {formatRelativeDate(activeModel!.packageDate)} · {locationLabel(activeModel!.location)}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
+                  className="flex-shrink-0 px-2.5 py-1 text-xs border border-border text-muted-foreground rounded bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
+                >
+                  Deactivate
+                </button>
+              </div>
+            )}
+
+            {/* Previous-models toggle + list */}
+            {inactiveModels.length > 0 && (
+              <>
                 {hasActiveModel && (
-                  <div className="flex items-center justify-between gap-2 py-1 border-b border-border/30">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
-                      <span className="telemetry-label text-muted-foreground flex-shrink-0">
-                        · {formatRelativeDate(activeModel!.packageDate)} · {locationLabel(activeModel!.location)}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
-                      className="flex-shrink-0 px-2 py-0.5 text-xs border border-border text-muted-foreground rounded bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
-                    >
-                      Deactivate
-                    </button>
+                  <button
+                    onClick={() => toggleExpanded(d.axfId)}
+                    className="self-start flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-0.5"
+                  >
+                    <span>{showInactive ? '▾' : '▸'}</span>
+                    <span>
+                      {inactiveModels.length} previous model{inactiveModels.length === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                )}
+                {showInactive && (
+                  <div className="flex flex-col border-t border-border/30 pt-1">
+                    {inactiveModels.map((m) => (
+                      <div
+                        key={m.modelId}
+                        className="flex items-center justify-between gap-2 py-1.5"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-mono text-xs text-muted-foreground truncate">{m.modelId}</span>
+                          <span className="telemetry-label text-muted-foreground/70 flex-shrink-0">
+                            · {formatRelativeDate(m.packageDate)}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleActivate(d.axfId, m.modelId)}
+                          className="flex-shrink-0 px-2.5 py-1 text-xs border rounded bg-transparent transition-colors"
+                          style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
+                        >
+                          Activate
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
-                {inactiveModels.map((m) => (
-                  <div
-                    key={m.modelId}
-                    className="flex items-center justify-between gap-2 py-1"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-mono text-xs text-muted-foreground truncate">{m.modelId}</span>
-                      <span className="telemetry-label text-muted-foreground/70 flex-shrink-0">
-                        · {formatRelativeDate(m.packageDate)}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => handleActivate(d.axfId, m.modelId)}
-                      className="flex-shrink-0 px-2 py-0.5 text-xs border rounded bg-transparent transition-colors"
-                      style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
-                    >
-                      Activate
-                    </button>
-                  </div>
-                ))}
-              </div>
+              </>
             )}
           </div>
         )
