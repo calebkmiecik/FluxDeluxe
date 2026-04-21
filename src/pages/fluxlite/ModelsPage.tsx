@@ -134,7 +134,7 @@ export function ModelsPage() {
         return (
           <div
             key={d.axfId}
-            className="rounded-md border border-border bg-surface-dark px-4 py-3 flex flex-col gap-2"
+            className="rounded-md border border-border bg-surface-dark px-4 py-3 flex flex-col gap-2 animate-in fade-in duration-200"
           >
             {/* Card header row — axfId · type  [LED] STATUS */}
             <div className="flex items-center justify-between gap-2">
@@ -145,7 +145,10 @@ export function ModelsPage() {
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: hasActiveModel ? plate3d.edgeCyan : '#333' }}
+                  style={{
+                    backgroundColor: hasActiveModel ? plate3d.edgeCyan : '#333',
+                    animation: hasActiveModel ? 'status-breathe 2.4s ease-in-out infinite' : undefined,
+                  }}
                 />
                 <span
                   className="telemetry-label uppercase"
@@ -199,17 +202,27 @@ export function ModelsPage() {
                 {hasActiveModel && (
                   <button
                     onClick={() => toggleExpanded(d.axfId)}
-                    className="self-start flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors py-0.5"
+                    className="self-start flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-0.5"
                   >
-                    <span>{showInactive ? '▾' : '▸'}</span>
+                    <span
+                      className="inline-block transition-transform duration-200"
+                      style={{ transform: showInactive ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    >
+                      ▸
+                    </span>
                     <span>
                       {inactiveModels.length} previous model{inactiveModels.length === 1 ? '' : 's'}
                     </span>
                   </button>
                 )}
-                {showInactive && (
-                  <div className="flex flex-col border-t border-border/30 pt-1">
-                    {inactiveModels.map((m) => (
+                {/* Smooth height animation via grid-rows 0fr↔1fr trick */}
+                <div
+                  className="grid transition-[grid-template-rows] duration-250 ease-out"
+                  style={{ gridTemplateRows: showInactive ? '1fr' : '0fr' }}
+                >
+                  <div className="overflow-hidden">
+                    <div className={`flex flex-col ${hasActiveModel ? 'border-t border-border/30 pt-1' : ''}`}>
+                      {inactiveModels.map((m) => (
                       <div
                         key={m.modelId}
                         className="flex items-center justify-between gap-2 py-1.5"
@@ -228,9 +241,10 @@ export function ModelsPage() {
                           Activate
                         </button>
                       </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                )}
+                </div>
               </>
             )}
           </div>
