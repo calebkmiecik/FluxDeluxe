@@ -20,12 +20,13 @@ const inputClass =
 const selectClass =
   'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors'
 
-// Date inputs need color-scheme: dark so the calendar popup renders dark. The
-// [&::-webkit-calendar-picker-indicator] bits invert the little calendar icon
-// so it's visible on the dark background.
+// Date inputs need color-scheme: dark so the calendar popup renders dark.
+// accent-color tints the popup's selected date / today indicator in brand primary.
+// The ::-webkit-calendar-picker-indicator bits make the icon visible on dark bg.
 const dateClass =
   'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors ' +
-  '[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+  '[color-scheme:dark] [accent-color:var(--color-primary)] ' +
+  '[&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
 
 export function DashboardFiltersBar({
   filters,
