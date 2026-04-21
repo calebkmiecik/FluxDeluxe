@@ -343,7 +343,7 @@ function SignedCell({ value, maxAbs }: { value: number | null; maxAbs: number })
         {/* bar extends from center (same color in either direction) */}
         {value !== null && (
           <div
-            className={`absolute top-0 bottom-0 ${BAR_FILL}`}
+            className={`absolute top-0 bottom-0 rounded-sm ${BAR_FILL}`}
             style={{
               left: isNegative ? `calc(50% - ${widthPct}%)` : '50%',
               width: `${widthPct}%`,
