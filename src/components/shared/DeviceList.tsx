@@ -84,23 +84,22 @@ export function DeviceList() {
           <button
             key={d.axfId}
             onClick={() => selectDevice(d.axfId)}
-            className={`relative rounded-md border text-left px-3 py-2 transition-all duration-150 flex flex-col gap-0.5 ${
-              active
-                ? 'border-border bg-surface-dark'
-                : 'border-transparent bg-white/[0.02] hover:bg-white/[0.04]'
-            }`}
-            style={active ? { borderLeftWidth: 3, borderLeftColor: '#00C853' } : { borderLeftWidth: 3 }}
+            className="relative rounded-md border border-border bg-surface-dark text-left px-3 py-2.5 transition-all duration-150 flex flex-col gap-0.5 hover:bg-white/[0.03]"
+            style={{
+              borderLeftWidth: 3,
+              borderLeftColor: active ? '#00C853' : 'var(--color-border)',
+            }}
           >
-            {/* LED indicator — top right */}
+            {/* Status LED — top right */}
             <div
               data-led={active ? 'active' : 'idle'}
-              className="absolute top-2 right-2 w-2 h-2 rounded-full"
+              className="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: active ? '#00C853' : '#333' }}
             />
-            <div className="text-xs text-foreground truncate pr-4 tracking-tight">
+            <div className="font-mono text-xs text-foreground truncate pr-5 tracking-tight">
               {d.axfId}
             </div>
-            <div className="text-[11px] text-muted-foreground truncate pr-4">
+            <div className="telemetry-label truncate pr-5">
               {typeName}
             </div>
           </button>
