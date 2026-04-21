@@ -187,7 +187,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           <span className="text-xs text-muted-foreground">pass {fmtPct(r?.pass_rate ?? null)}</span>
         </div>
         <div className="text-xs text-muted-foreground mt-1">
-          bias {fmtSignedPct(r?.signed_mean_error_pct ?? null)} / std {fmtPct(r?.std_error_pct ?? null)}
+          signed {fmtSignedPct(r?.signed_mean_error_pct ?? null)} / std {fmtPct(r?.std_error_pct ?? null)}
         </div>
       </div>
     )
