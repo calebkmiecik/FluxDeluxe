@@ -10,6 +10,7 @@ import { TempGauge } from '../../components/canvas/TempGauge'
 import { DeviceList } from '../../components/shared/DeviceList'
 import { DataModeToggle } from '../../components/shared/DataModeToggle'
 import { ControlPanel } from './ControlPanel'
+import { plate3d } from '../../lib/theme'
 import { DashboardPage } from './DashboardPage'
 import { ModelsPage } from './ModelsPage'
 import { ModelPackager } from './ModelPackager'
@@ -169,7 +170,7 @@ export function FluxLitePage() {
                   className={`absolute left-4 right-4 bottom-0 h-px transition-opacity duration-150 ${
                     active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'
                   }`}
-                  style={{ background: '#7AB8FF' }}
+                  style={{ background: plate3d.edgeCyan }}
                 />
               </button>
             )
