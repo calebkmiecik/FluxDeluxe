@@ -15,17 +15,25 @@ interface Delta {
   tooltip: string
 }
 
-function Tile({ label, value, delta, sub }: {
+function Tile({ label, value, delta, baseline, sub }: {
   label: string
   value: ReactNode
   delta?: Delta | null
+  baseline?: string | null
   sub?: string
 }) {
   return (
     <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4">
       <div className="flex items-center justify-between gap-2">
         <div className="telemetry-label">{label}</div>
-        {delta && <DeltaPill delta={delta} />}
+        <div className="flex items-center gap-2">
+          {delta && <DeltaPill delta={delta} />}
+          {baseline && (
+            <span className="text-muted-foreground text-[11px] tracking-wider font-medium">
+              {baseline}
+            </span>
+          )}
+        </div>
       </div>
       <div className="text-3xl font-semibold text-foreground leading-none mt-2">{value}</div>
       {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
@@ -47,7 +55,7 @@ function DeltaPill({ delta }: { delta: Delta }) {
     delta.direction === 'down' ? '▼' :
     '·'
   return (
-    <span className={`${color} telemetry-label`} title={delta.tooltip}>
+    <span className={`${color} text-[11px] font-medium tracking-wider`} title={delta.tooltip}>
       {arrow} {delta.text}
     </span>
   )
@@ -220,19 +228,15 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           label="Plates Passed"
           value={loading ? '…' : String(passedCount)}
           delta={platesPassedDelta}
-          sub={loading ? undefined : joinSub(
-            passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : null,
-            showBaseline && baselinePassedPerWeek !== null ? `avg ${baselinePassedPerWeek.toFixed(1)} / wk` : null,
-          )}
+          baseline={showBaseline && baselinePassedPerWeek !== null ? `avg ${baselinePassedPerWeek.toFixed(1)} / wk` : null}
+          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
         />
         <Tile
           label="Pass Rate"
           value={loading ? '…' : fmtPct(passRate)}
           delta={passRateDelta}
-          sub={loading ? undefined : joinSub(
-            `${passedCount} of ${sessionCount}`,
-            showBaseline && baselinePassRate !== null ? `avg ${fmtPct(baselinePassRate)}` : null,
-          )}
+          baseline={showBaseline && baselinePassRate !== null ? `avg ${fmtPct(baselinePassRate)}` : null}
+          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
         />
         <Tile
           label="Accuracy"
@@ -246,14 +250,11 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
             )
           }
           delta={accuracyDelta}
-          sub={loading ? undefined : joinSub(
+          baseline={
             showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
               ? `avg ${fmtPct(baselineData.mae_pct)} MAE`
-              : null,
-            showBaseline && baselineData?.signed_error_pct !== null && baselineData?.signed_error_pct !== undefined
-              ? `${fmtSignedPct(baselineData.signed_error_pct)} signed`
-              : null,
-          )}
+              : null
+          }
         />
       </div>
 
