@@ -46,6 +46,11 @@ export function getLatestFrameForDevice(deviceId: string): TimestampedFrame | nu
   return _latestByDevice.get(deviceId) ?? null
 }
 
+/** Monotonic timestamp (ms) of the last frame seen for this device, or null if never. */
+export function getLastSeenForDevice(deviceId: string): number | null {
+  return _latestByDevice.get(deviceId)?._receivedAt ?? null
+}
+
 export const useLiveDataStore = create<LiveDataStoreState>()(
   subscribeWithSelector((set, get) => ({
     currentFrame: null,

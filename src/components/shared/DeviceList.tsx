@@ -1,9 +1,12 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useState, useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { useAnimationFrame } from '../../hooks/useAnimationFrame'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { getSocket } from '../../lib/socket'
 import { deviceTypeFromAxfId } from '../../lib/deviceIds'
+import { getLastSeenForDevice } from '../../stores/liveDataStore'
+
+const STALE_MS = 3000
 
 export function DeviceList() {
   const devices = useDeviceStore((s) => s.devices)
@@ -16,6 +19,24 @@ export function DeviceList() {
     for (const t of deviceTypes) map.set(t.deviceTypeId, t.name)
     return map
   }, [deviceTypes])
+
+  // Tick once a second so the stale-filter below re-evaluates. We don't need
+  // 60fps for this — 1Hz is plenty to hide unplugged devices within a second.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Hide devices that were streaming but have gone silent (unplugged).
+  // Devices that have never produced a frame are kept visible — they may be
+  // still initializing.
+  const now = performance.now()
+  const visibleDevices = devices.filter((d) => {
+    const lastSeen = getLastSeenForDevice(d.axfId)
+    if (lastSeen === null) return true
+    return now - lastSeen < STALE_MS
+  })
 
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -49,13 +70,13 @@ export function DeviceList() {
         </button>
       </div>
 
-      {devices.length === 0 && (
+      {visibleDevices.length === 0 && (
         <div className="px-2 py-3 text-xs text-muted-foreground/60">
           No devices
         </div>
       )}
 
-      {devices.map((d) => {
+      {visibleDevices.map((d) => {
         const active = d.axfId === selectedDeviceId
         const typeId = d.deviceTypeId || deviceTypeFromAxfId(d.axfId)
         const typeName = typeNameById.get(typeId) || `Type ${typeId}`
