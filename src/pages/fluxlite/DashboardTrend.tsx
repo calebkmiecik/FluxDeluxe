@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import type { TimeSeriesPoint } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
@@ -9,15 +9,22 @@ import { pickGranularity, withAllTime } from '../../lib/dashboardFilters'
 
 type Metric = 'pass_rate' | 'mae_pct' | 'signed_error_pct' | 'passed_count' | 'session_count'
 
-const METRIC_OPTIONS: { value: Metric; label: string; format: (n: number | null) => string; isPct: boolean; signed?: boolean }[] = [
-  { value: 'pass_rate',          label: 'Pass Rate',     format: (n) => n === null ? '—' : `${(n * 100).toFixed(1)}%`, isPct: true },
-  { value: 'mae_pct',            label: 'MAE',           format: (n) => n === null ? '—' : `${(n * 100).toFixed(2)}%`, isPct: true },
-  { value: 'signed_error_pct',   label: 'Signed Error',  format: (n) => n === null ? '—' : `${n >= 0 ? '+' : ''}${(n * 100).toFixed(2)}%`, isPct: true, signed: true },
-  { value: 'passed_count',       label: 'Plates Passed', format: (n) => n === null ? '—' : String(n), isPct: false },
-  { value: 'session_count',      label: 'Sessions',      format: (n) => n === null ? '—' : String(n), isPct: false },
+const METRIC_OPTIONS: { value: Metric; label: string; format: (n: number | null) => string }[] = [
+  { value: 'pass_rate',          label: 'Pass Rate',     format: (n) => n === null ? '—' : `${(n * 100).toFixed(1)}%` },
+  { value: 'mae_pct',            label: 'MAE',           format: (n) => n === null ? '—' : `${(n * 100).toFixed(2)}%` },
+  { value: 'signed_error_pct',   label: 'Signed Error',  format: (n) => n === null ? '—' : `${n >= 0 ? '+' : ''}${(n * 100).toFixed(2)}%` },
+  { value: 'passed_count',       label: 'Plates Passed', format: (n) => n === null ? '—' : String(n) },
+  { value: 'session_count',      label: 'Sessions',      format: (n) => n === null ? '—' : String(n) },
 ]
 
 const CHART_KEY = 'fluxdeluxe.dashboardTrendMetric'
+
+// Palette matching ForcePlot's Fz line (see src/lib/dataMode.ts)
+const LINE_COLOR = '#3B8EFF'   // core bright blue
+const LINE_DARK  = '#0051BA'   // primary dark blue
+const AXIS_TEXT   = 'rgba(206, 206, 206, 0.8)'
+const AXIS_STROKE = 'rgba(206, 206, 206, 0.25)'
+const GRID_STROKE = 'rgba(206, 206, 206, 0.08)'
 
 export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
   const [metric, setMetric] = useState<Metric>(() => (localStorage.getItem(CHART_KEY) as Metric) || 'pass_rate')
@@ -34,7 +41,6 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
     setLoading(true)
     const granularity = pickGranularity(filter)
     const currentP = liveTestClient.getTimeSeries({ filter, granularity })
-    // Baseline series = same filter minus time bounds, for computing all-time average
     const baselineP = filter.timePreset === 'all'
       ? Promise.resolve([])
       : liveTestClient.getTimeSeries({ filter: withAllTime(filter), granularity: 'week' })
@@ -49,14 +55,12 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
 
   const option = METRIC_OPTIONS.find((o) => o.value === metric)!
 
-  // Compute baseline value = average of the metric across all baseline buckets (non-null).
   const baselineValue = useMemo(() => {
     const vals = baseline.map((p) => p[metric]).filter((v): v is number => v !== null)
     if (vals.length === 0) return null
     return vals.reduce((a, b) => a + b, 0) / vals.length
   }, [baseline, metric])
 
-  // Chart data — skip points with null for the chosen metric (gaps look better than zero dips).
   const chartData = series
     .map((p) => ({ ts: new Date(p.bucket_start).getTime(), value: p[metric] }))
     .filter((d) => d.value !== null) as Array<{ ts: number; value: number }>
@@ -64,7 +68,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
   const empty = !loading && chartData.length === 0
 
   return (
-    <div className="bg-white/[0.02] border border-border rounded-md p-4">
+    <div className="bg-[#1A1A1A] border border-border rounded-md p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="telemetry-label">Trend</h3>
         <div className="flex items-center gap-2">
@@ -86,8 +90,22 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
         {empty && !loading && <p className="text-muted-foreground text-sm">No data in the selected range.</p>}
         {!empty && !loading && (
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#2a2a2a" strokeDasharray="3 3" vertical={false} />
+            <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"  stopColor={LINE_DARK} stopOpacity={0.35} />
+                  <stop offset="60%" stopColor={LINE_DARK} stopOpacity={0.05} />
+                  <stop offset="100%" stopColor={LINE_DARK} stopOpacity={0} />
+                </linearGradient>
+                <filter id="trendGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2.2" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <CartesianGrid stroke={GRID_STROKE} strokeDasharray="0" vertical={false} />
               <XAxis
                 dataKey="ts"
                 type="number"
@@ -97,13 +115,17 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   const d = new Date(v)
                   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
                 }}
-                stroke="#555"
-                tick={{ fontSize: 11, fill: '#8E9FBC' }}
+                stroke={AXIS_STROKE}
+                tick={{ fontSize: 11, fill: AXIS_TEXT, fontWeight: 500 }}
+                tickLine={{ stroke: 'rgba(206, 206, 206, 0.45)' }}
+                axisLine={{ stroke: AXIS_STROKE }}
               />
               <YAxis
                 tickFormatter={(v: number) => option.format(v).replace(/\s/g, '')}
-                stroke="#555"
-                tick={{ fontSize: 11, fill: '#8E9FBC' }}
+                stroke={AXIS_STROKE}
+                tick={{ fontSize: 11, fill: AXIS_TEXT, fontWeight: 500 }}
+                tickLine={{ stroke: 'rgba(206, 206, 206, 0.45)' }}
+                axisLine={{ stroke: AXIS_STROKE }}
                 width={50}
               />
               <Tooltip
@@ -112,26 +134,34 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                 itemStyle={{ color: '#CECECE' }}
                 labelFormatter={(v: number) => new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                 formatter={(v: number) => [option.format(v), option.label]}
+                cursor={{ stroke: 'rgba(206, 206, 206, 0.2)', strokeWidth: 1 }}
               />
               {baselineValue !== null && (
                 <ReferenceLine
                   y={baselineValue}
-                  stroke="#8E9FBC"
+                  stroke="rgba(206, 206, 206, 0.4)"
                   strokeDasharray="4 4"
-                  strokeOpacity={0.7}
-                  label={{ value: `all-time ${option.format(baselineValue).trim()}`, position: 'right', fill: '#8E9FBC', fontSize: 10 }}
+                  label={{
+                    value: `all-time ${option.format(baselineValue).trim()}`,
+                    position: 'right',
+                    fill: 'rgba(206, 206, 206, 0.7)',
+                    fontSize: 10,
+                  }}
                 />
               )}
-              <Line
+              <Area
                 type="monotone"
                 dataKey="value"
-                stroke="#0051BA"
+                stroke={LINE_COLOR}
                 strokeWidth={2}
-                dot={{ r: 3, fill: '#0051BA', stroke: '#0051BA' }}
-                activeDot={{ r: 5 }}
+                fill="url(#trendFill)"
+                filter="url(#trendGlow)"
+                dot={{ r: 2.5, fill: LINE_COLOR, stroke: LINE_COLOR }}
+                activeDot={{ r: 5, fill: LINE_COLOR, stroke: LINE_DARK, strokeWidth: 2 }}
                 connectNulls={false}
+                isAnimationActive={false}
               />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         )}
       </div>
