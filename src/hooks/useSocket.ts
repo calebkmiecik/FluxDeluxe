@@ -189,9 +189,18 @@ export function useSocket(): void {
     // Models
     on('modelMetadata', (data: unknown) => {
       const payload = unwrapPayload(data)
-      if (!Array.isArray(payload) || payload.length === 0) return
+      console.log('[modelMetadata] received', { raw: data, unwrapped: payload })
+      if (!Array.isArray(payload) || payload.length === 0) {
+        console.warn('[modelMetadata] payload not a non-empty array, ignoring', payload)
+        return
+      }
       const models = payload as ModelMetadata[]
       const deviceId = models[0].device_id
+      console.log('[modelMetadata] storing', {
+        deviceId,
+        count: models.length,
+        active: models.filter((m) => m.model_active).length,
+      })
       if (deviceId) deviceStore.setModelsForDevice(deviceId, models)
     })
 
