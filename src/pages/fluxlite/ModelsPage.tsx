@@ -91,7 +91,9 @@ export function ModelsPage() {
 
   const handleDeactivate = (deviceId: string, modelId: string) => {
     // Start the visual collapse first so the active row has time to fade +
-    // shrink before the backend round-trip unmounts it.
+    // shrink before the backend round-trip unmounts it. We do NOT clear
+    // collapsingDevices on a timer — see the effect below that clears it
+    // once the active model actually disappears from the store.
     setCollapsingDevices((prev) => new Set(prev).add(deviceId))
     setTimeout(() => {
       const socket = getSocket()
@@ -100,14 +102,29 @@ export function ModelsPage() {
       socket.emit('deactivateModel', { deviceId, modelId })
       setTimeout(() => {
         socket.emit('getModelMetadata', { deviceId })
-        setCollapsingDevices((prev) => {
-          const next = new Set(prev)
-          next.delete(deviceId)
-          return next
-        })
       }, 200)
     }, 220)
   }
+
+  // Clear collapsing state once the active model has actually been removed
+  // from the store. Without this, the row would briefly reappear in the gap
+  // between a setTimeout-based clear and the backend's response.
+  useEffect(() => {
+    setCollapsingDevices((prev) => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Set(prev)
+      for (const deviceId of prev) {
+        const models = modelsByDevice[deviceId]
+        const stillActive = models?.some((m) => m.modelActive)
+        if (!stillActive) {
+          next.delete(deviceId)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [modelsByDevice])
 
   return (
     <div className="flex-1 h-full flex flex-col p-4 overflow-auto">
