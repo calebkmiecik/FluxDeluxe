@@ -96,7 +96,7 @@ export function DeviceList() {
               className="absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full"
               style={{ backgroundColor: active ? '#00C853' : '#333' }}
             />
-            <div className="font-mono text-xs text-foreground truncate pr-5 tracking-tight">
+            <div className="text-xs text-foreground truncate pr-5 tracking-tight">
               {d.axfId}
             </div>
             <div className="telemetry-label truncate pr-5">
