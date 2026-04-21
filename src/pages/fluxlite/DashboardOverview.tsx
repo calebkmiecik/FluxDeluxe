@@ -177,21 +177,25 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     }
   })()
 
-  const stageTile = (type: 'dumbbell' | 'two_leg' | 'one_leg', label: string) => {
-    const r = data?.per_stage_type.find((p) => p.stage_type === type)
-    return (
-      <div className="bg-white/[0.02] border border-border rounded-md p-3">
-        <div className="telemetry-label">{label}</div>
-        <div className="flex items-baseline gap-2 mt-0.5">
-          <span className="text-lg font-semibold text-foreground">MAE {fmtPct(r?.mae_pct ?? null)}</span>
-          <span className="text-xs text-muted-foreground">pass {fmtPct(r?.pass_rate ?? null)}</span>
-        </div>
-        <div className="text-xs text-muted-foreground mt-1">
-          signed {fmtSignedPct(r?.signed_mean_error_pct ?? null)} / std {fmtPct(r?.std_error_pct ?? null)}
-        </div>
-      </div>
-    )
-  }
+  const stageTypes = [
+    { type: 'dumbbell' as const, label: 'Dumbbell' },
+    { type: 'two_leg'  as const, label: 'Two-leg' },
+    { type: 'one_leg'  as const, label: 'One-leg' },
+  ]
+  const stageRows = stageTypes.map(({ type, label }) => ({
+    label,
+    row: data?.per_stage_type.find((p) => p.stage_type === type),
+  }))
+
+  // Column maxima for proportional bar widths
+  const maxPos = (key: 'mae_pct' | 'std_error_pct') =>
+    Math.max(...stageRows.map((r) => r.row?.[key] ?? 0), 0.0001)
+  const maxSigned = Math.max(
+    ...stageRows.map((r) => Math.abs(r.row?.signed_mean_error_pct ?? 0)),
+    0.0001,
+  )
+  const maxMaePct = maxPos('mae_pct')
+  const maxStdPct = maxPos('std_error_pct')
 
   const deviceCount = data?.device_count ?? 0
   const sessionCount = data?.session_count ?? 0
@@ -234,10 +238,120 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
       </div>
 
       <h3 className="telemetry-label mt-1">By stage type</h3>
-      <div className="grid grid-cols-3 gap-2">
-        {stageTile('dumbbell', 'Dumbbell')}
-        {stageTile('two_leg',  'Two-leg')}
-        {stageTile('one_leg',  'One-leg')}
+      <div className="bg-white/[0.02] border border-border rounded-md p-4">
+        <div className="grid items-center gap-x-4 gap-y-2" style={{ gridTemplateColumns: '90px repeat(4, minmax(0, 1fr))' }}>
+          {/* Header row */}
+          <div />
+          <div className="telemetry-label">MAE</div>
+          <div className="telemetry-label">Pass</div>
+          <div className="telemetry-label">Signed</div>
+          <div className="telemetry-label">Std</div>
+
+          {/* Data rows */}
+          {stageRows.map(({ label, row }) => (
+            <StageRow
+              key={label}
+              label={label}
+              mae={row?.mae_pct ?? null}
+              pass={row?.pass_rate ?? null}
+              signed={row?.signed_mean_error_pct ?? null}
+              std={row?.std_error_pct ?? null}
+              maxMae={maxMaePct}
+              maxSigned={maxSigned}
+              maxStd={maxStdPct}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StageRow({
+  label, mae, pass, signed, std, maxMae, maxSigned, maxStd,
+}: {
+  label: string
+  mae: number | null
+  pass: number | null
+  signed: number | null
+  std: number | null
+  maxMae: number
+  maxSigned: number
+  maxStd: number
+}) {
+  return (
+    <>
+      <div className="text-sm text-foreground font-medium">{label}</div>
+      <MetricCell value={mae}    format={fmtPct}       barFill={mae !== null ? mae / maxMae : 0} />
+      <PassCell   value={pass} />
+      <SignedCell value={signed} maxAbs={maxSigned} />
+      <MetricCell value={std}    format={fmtPct}       barFill={std !== null ? std / maxStd : 0} />
+    </>
+  )
+}
+
+/** Positive-scalar metric: number + horizontal bar that fills left-to-right. */
+function MetricCell({ value, format, barFill }: {
+  value: number | null
+  format: (n: number | null) => string
+  /** 0..1 proportional fill. */
+  barFill: number
+}) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{format(value)}</span>
+      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden">
+        <div
+          className="h-full bg-white/30 rounded-sm"
+          style={{ width: `${Math.max(0, Math.min(1, barFill)) * 100}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Pass rate: 0..100% natural scale, color-graded. */
+function PassCell({ value }: { value: number | null }) {
+  const color =
+    value === null ? 'bg-white/20' :
+    value >= 0.9 ? 'bg-success/70' :
+    value >= 0.75 ? 'bg-warning/70' :
+    'bg-danger/70'
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtPct(value)}</span>
+      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden">
+        <div
+          className={`h-full rounded-sm ${color}`}
+          style={{ width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Signed bipolar metric: bar extends left (negative) or right (positive) from center. */
+function SignedCell({ value, maxAbs }: { value: number | null; maxAbs: number }) {
+  const fill = value === null ? 0 : value / maxAbs  // -1 .. 1
+  const clamped = Math.max(-1, Math.min(1, fill))
+  const widthPct = Math.abs(clamped) * 50  // each half is 50% of bar width
+  const isNegative = clamped < 0
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtSignedPct(value)}</span>
+      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden relative">
+        {/* center line */}
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/20" />
+        {/* bar extends from center */}
+        {value !== null && (
+          <div
+            className={`absolute top-0 bottom-0 ${isNegative ? 'bg-danger/60' : 'bg-success/60'}`}
+            style={{
+              left: isNegative ? `calc(50% - ${widthPct}%)` : '50%',
+              width: `${widthPct}%`,
+            }}
+          />
+        )}
       </div>
     </div>
   )
