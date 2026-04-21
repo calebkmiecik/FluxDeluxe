@@ -96,7 +96,7 @@ export function ModelsPage() {
 
   return (
     <div className="flex-1 flex flex-col p-4 overflow-auto">
-     <div className="w-full max-w-3xl mx-auto flex flex-col gap-3">
+     <div className="w-full max-w-3xl mx-auto my-auto flex flex-col gap-3">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold tracking-tight">Models</h2>
