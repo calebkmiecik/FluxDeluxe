@@ -24,18 +24,20 @@ function Tile({ label, value, delta, baseline, sub }: {
 }) {
   return (
     <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="telemetry-label">{label}</div>
-        <div className="flex flex-col items-end gap-0.5">
-          {baseline && (
-            <span className="text-muted-foreground text-[11px] tracking-wider font-medium">
-              {baseline}
-            </span>
-          )}
-          {delta && <DeltaPill delta={delta} />}
-        </div>
+      <div className="telemetry-label">{label}</div>
+      <div className="flex items-center justify-between gap-2 mt-2">
+        <div className="text-3xl font-semibold text-foreground leading-none">{value}</div>
+        {(baseline || delta) && (
+          <div className="flex flex-col items-end gap-0.5 shrink-0">
+            {baseline && (
+              <span className="text-muted-foreground text-[11px] tracking-wider font-medium">
+                {baseline}
+              </span>
+            )}
+            {delta && <DeltaPill delta={delta} />}
+          </div>
+        )}
       </div>
-      <div className="text-3xl font-semibold text-foreground leading-none mt-2">{value}</div>
       {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
     </div>
   )
