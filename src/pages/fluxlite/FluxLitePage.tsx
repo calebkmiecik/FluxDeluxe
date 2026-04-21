@@ -147,27 +147,33 @@ export function FluxLitePage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Top bar: brand + sub-nav tabs */}
-      <div className="flex items-center px-4 pt-2 pb-0 border-b border-border">
-        <div className="flex items-center pr-4 pb-2">
-          <span className="text-lg font-semibold tracking-tight text-foreground">
-            FluxLite
-          </span>
-        </div>
-        <div className="flex gap-0 flex-1">
-          {LITE_NAV.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveLitePage(item.id)}
-              className={`px-4 py-2 text-sm transition-all duration-150 border-b-2 ${
-                activeLitePage === item.id
-                  ? 'text-foreground border-primary'
-                  : 'text-muted-foreground border-transparent hover:text-foreground hover:border-border'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+      {/* Top bar — command-bar style */}
+      <div className="flex items-center px-4 border-b border-border/70" style={{ height: 36 }}>
+        <span className="text-sm font-semibold tracking-tight text-foreground mr-6">
+          FluxLite
+        </span>
+        <div className="flex h-full">
+          {LITE_NAV.map((item) => {
+            const active = activeLitePage === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveLitePage(item.id)}
+                className={`group relative px-4 h-full text-[11px] uppercase tracking-[0.08em] transition-colors duration-150 ${
+                  active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {item.label}
+                <span
+                  aria-hidden
+                  className={`absolute left-4 right-4 bottom-0 h-px transition-opacity duration-150 ${
+                    active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'
+                  }`}
+                  style={{ background: '#7AB8FF' }}
+                />
+              </button>
+            )
+          })}
         </div>
       </div>
 
