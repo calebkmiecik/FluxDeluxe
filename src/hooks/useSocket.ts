@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { getSocket } from '../lib/socket'
 import { extractDeviceFrames } from '../lib/frameParser'
-import { useDeviceStore } from '../stores/deviceStore'
+import { useDeviceStore, type ModelMetadata } from '../stores/deviceStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useLiveDataStore } from '../stores/liveDataStore'
 import { useUiStore } from '../stores/uiStore'
@@ -189,7 +189,10 @@ export function useSocket(): void {
     // Models
     on('modelMetadata', (data: unknown) => {
       const payload = unwrapPayload(data)
-      if (payload) deviceStore.setModels(payload as any)
+      if (!Array.isArray(payload) || payload.length === 0) return
+      const models = payload as ModelMetadata[]
+      const deviceId = models[0].device_id
+      if (deviceId) deviceStore.setModelsForDevice(deviceId, models)
     })
 
     on('modelLoadStatus', (data: unknown) => {
@@ -205,6 +208,9 @@ export function useSocket(): void {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Model activation updated', type: 'success' })
+        for (const d of useDeviceStore.getState().devices) {
+          socket.emit('getModelMetadata', { deviceId: d.axfId })
+        }
       }
     })
 
@@ -212,6 +218,9 @@ export function useSocket(): void {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
         uiStore.addToast({ message: 'Model packaged successfully', type: 'success' })
+        for (const d of useDeviceStore.getState().devices) {
+          socket.emit('getModelMetadata', { deviceId: d.axfId })
+        }
       } else {
         uiStore.addToast({ message: `Packaging failed: ${resp.message}`, type: 'error' })
       }

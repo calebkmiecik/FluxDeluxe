@@ -6,19 +6,29 @@ export interface DeviceType {
   name: string
 }
 
+export interface ModelMetadata {
+  model_id: string
+  device_id: string
+  package_date: number
+  model_active: boolean
+  location: 'local' | 'remote' | 'both'
+  // Plus other fields we don't use directly
+  [key: string]: unknown
+}
+
 interface DeviceStoreState {
   connectionState: ConnectionState
   devices: Device[]
   groups: DeviceGroup[]
   groupDefinitions: unknown[]
-  models: unknown[]
+  modelsByDevice: Record<string, ModelMetadata[]>
   deviceTypes: DeviceType[]
   selectedDeviceId: string | null
   setConnectionState: (state: ConnectionState) => void
   setDevices: (devices: Device[]) => void
   setGroups: (groups: DeviceGroup[]) => void
   setGroupDefinitions: (defs: unknown[]) => void
-  setModels: (models: unknown[]) => void
+  setModelsForDevice: (deviceId: string, models: ModelMetadata[]) => void
   setDeviceTypes: (types: DeviceType[]) => void
   selectDevice: (id: string | null) => void
 }
@@ -28,7 +38,7 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   devices: [],
   groups: [],
   groupDefinitions: [],
-  models: [],
+  modelsByDevice: {},
   deviceTypes: [],
   selectedDeviceId: null,
   setConnectionState: (connectionState) => set({ connectionState }),
@@ -47,7 +57,9 @@ export const useDeviceStore = create<DeviceStoreState>()((set) => ({
   }),
   setGroups: (groups) => set({ groups }),
   setGroupDefinitions: (groupDefinitions) => set({ groupDefinitions }),
-  setModels: (models) => set({ models }),
+  setModelsForDevice: (deviceId, models) => set((state) => ({
+    modelsByDevice: { ...state.modelsByDevice, [deviceId]: models },
+  })),
   setDeviceTypes: (deviceTypes) => set({ deviceTypes }),
   selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
 }))
