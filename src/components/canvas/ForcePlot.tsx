@@ -22,7 +22,6 @@ export function ForcePlot({ mode, enabledAxes }: ForcePlotProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
   const samplesRef = useRef<Sample[]>([])
-  const lastBufferSizeRef = useRef(0)
   const lagEstimateRef = useRef(500)
   const enabledRef = useRef<Set<Axis>>(enabledAxes)
   const modeRef = useRef<DataMode>(mode)
@@ -40,7 +39,6 @@ export function ForcePlot({ mode, enabledAxes }: ForcePlotProps) {
   const selectedDeviceId = useDeviceStore((s) => s.selectedDeviceId)
   useEffect(() => {
     samplesRef.current = []
-    lastBufferSizeRef.current = 0
   }, [selectedDeviceId])
 
   useEffect(() => {
@@ -70,40 +68,40 @@ export function ForcePlot({ mode, enabledAxes }: ForcePlotProps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
     const store = useLiveDataStore.getState()
-    const bufferSize = store.frameBuffer.size
     const selectedId = useDeviceStore.getState().selectedDeviceId
     const samples = samplesRef.current
     const enabled = enabledRef.current
 
     // --- Ingest new frames (store all 6 axis values regardless of mode) ---
-    if (bufferSize !== lastBufferSizeRef.current) {
-      lastBufferSizeRef.current = bufferSize
-      const allFrames = store.frameBuffer.toArray()
-      const lastTime = samples.length > 0 ? samples[samples.length - 1].time : 0
+    // Note: we must iterate every RAF, not gate on buffer size. Once the ring
+    // buffer fills (~5s at 1kHz), size stays constant and size-change checks
+    // would silently stop ingesting while data keeps streaming.
+    const allFrames = store.frameBuffer.toArray()
+    const lastTime = samples.length > 0 ? samples[samples.length - 1].time : 0
+    let newSamples = 0
+    for (const f of allFrames) {
+      // Only show data for the currently selected device. No selection = no data.
+      if (!selectedId || f.id !== selectedId) continue
+      const t = f.time
+      if (!t || t <= lastTime) continue
+      samples.push({
+        time: t,
+        values: {
+          fx: f.fx, fy: f.fy, fz: f.fz,
+          mx: f.moments.x, my: f.moments.y, mz: f.moments.z,
+        },
+      })
+      newSamples++
+    }
 
-      for (const f of allFrames) {
-        // Only show data for the currently selected device. No selection = no data.
-        if (!selectedId || f.id !== selectedId) continue
-        const t = f.time
-        if (!t || t <= lastTime) continue
-        samples.push({
-          time: t,
-          values: {
-            fx: f.fx, fy: f.fy, fz: f.fz,
-            mx: f.moments.x, my: f.moments.y, mz: f.moments.z,
-          },
-        })
-      }
+    if (samples.length > MAX_SAMPLES) {
+      samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
+    }
 
-      if (samples.length > MAX_SAMPLES) {
-        samplesRef.current = samples.slice(samples.length - MAX_SAMPLES)
-      }
-
-      if (samples.length > 0) {
-        const newestSampleTime = samples[samples.length - 1].time
-        const measuredLag = Date.now() - newestSampleTime
-        lagEstimateRef.current = lagEstimateRef.current * 0.9 + (measuredLag + 50) * 0.1
-      }
+    if (newSamples > 0 && samples.length > 0) {
+      const newestSampleTime = samples[samples.length - 1].time
+      const measuredLag = Date.now() - newestSampleTime
+      lagEstimateRef.current = lagEstimateRef.current * 0.9 + (measuredLag + 50) * 0.1
     }
 
     // --- Draw ---
