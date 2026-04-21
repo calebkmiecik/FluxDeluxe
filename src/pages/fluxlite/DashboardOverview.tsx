@@ -50,13 +50,9 @@ function DeltaPill({ delta }: { delta: Delta }) {
     delta.direction === 'flat'
       ? 'text-muted-foreground'
       : isGood ? 'text-success' : 'text-danger'
-  const arrow =
-    delta.direction === 'up' ? '▲' :
-    delta.direction === 'down' ? '▼' :
-    '·'
   return (
     <span className={`${color} text-[11px] font-medium tracking-wider`} title={delta.tooltip}>
-      {arrow} {delta.text}
+      {delta.text}
     </span>
   )
 }
