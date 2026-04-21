@@ -1,8 +1,10 @@
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, exec, ChildProcess } from 'child_process'
+import net from 'net'
 import path from 'path'
 import { app, ipcMain, BrowserWindow } from 'electron'
 
 const MAX_LOG_LINES = 500
+const BACKEND_PORT = 3001
 
 export class DynamoManager {
   private process: ChildProcess | null = null
@@ -43,10 +45,14 @@ export class DynamoManager {
     return path.join(__dirname, '..', '..', 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
   }
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.process) return
     this.status = 'starting'
     this.notifyStatus()
+
+    // Heal from orphaned prior session: if something still owns the port,
+    // ask it to shut down and wait for the port to free before spawning ours.
+    await this.ensurePortFree(BACKEND_PORT)
 
     const pythonPath = this.getPythonPath()
     const scriptPath = this.getScriptPath()
@@ -121,11 +127,11 @@ export class DynamoManager {
     this.notifyStatus()
     // Graceful shutdown: POST /api/shutdown, then wait up to 5s before force-kill
     try {
-      await fetch('http://localhost:3001/api/shutdown', { method: 'POST', signal: AbortSignal.timeout(3000) })
+      await fetch(`http://localhost:${BACKEND_PORT}/api/shutdown`, { method: 'POST', signal: AbortSignal.timeout(3000) })
     } catch { /* Backend may already be down */ }
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
-        this.process?.kill()
+        this.forceKill()
         resolve()
       }, 5000)
       this.process?.on('exit', () => { clearTimeout(timeout); resolve() })
@@ -135,7 +141,49 @@ export class DynamoManager {
 
   async restart(): Promise<void> {
     await this.stop()
-    this.start()
+    await this.start()
+  }
+
+  // Windows spawn() leaves orphan children when parent dies or SIGKILL is used.
+  // taskkill /T walks the child tree; /F is the SIGKILL equivalent.
+  private forceKill(): void {
+    const pid = this.process?.pid
+    if (!pid) return
+    if (process.platform === 'win32') {
+      exec(`taskkill /PID ${pid} /T /F`, (err) => {
+        if (err) console.warn(`[dynamo] taskkill failed: ${err.message}`)
+      })
+    } else {
+      this.process?.kill('SIGKILL')
+    }
+  }
+
+  private isPortInUse(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const socket = new net.Socket()
+      const done = (inUse: boolean) => { socket.destroy(); resolve(inUse) }
+      socket.setTimeout(500)
+      socket.once('connect', () => done(true))
+      socket.once('timeout', () => done(false))
+      socket.once('error', () => done(false))
+      socket.connect(port, '127.0.0.1')
+    })
+  }
+
+  private async ensurePortFree(port: number): Promise<void> {
+    if (!(await this.isPortInUse(port))) return
+    console.log(`[dynamo] port ${port} already in use — asking prior instance to shut down`)
+    this.pushLog(`[dynamo] port ${port} busy; requesting shutdown of prior instance`)
+    try {
+      await fetch(`http://localhost:${port}/api/shutdown`, { method: 'POST', signal: AbortSignal.timeout(2000) })
+    } catch { /* may not be our backend, or may not respond cleanly */ }
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250))
+      if (!(await this.isPortInUse(port))) return
+    }
+    console.warn(`[dynamo] port ${port} still in use after 5s — spawn may fail`)
+    this.pushLog(`[dynamo] warning: port ${port} still busy after 5s`)
   }
 
   private pushLog(line: string): void {

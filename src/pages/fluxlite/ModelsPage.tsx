@@ -110,8 +110,8 @@ export function ModelsPage() {
         const typeId = d.deviceTypeId || deviceTypeFromAxfId(d.axfId)
         const typeName = typeNameById.get(typeId) || `Type ${typeId}`
         const models = modelsByDevice[d.axfId] ?? null
-        const activeModel = models?.find((m) => m.model_active) ?? null
-        const inactiveModels = models?.filter((m) => !m.model_active) ?? []
+        const activeModel = models?.find((m) => m.modelActive) ?? null
+        const inactiveModels = models?.filter((m) => !m.modelActive) ?? []
         const hasActiveModel = activeModel !== null
         const stripeColor = hasActiveModel ? '#00C853' : 'var(--color-border)'
 
@@ -167,10 +167,10 @@ export function ModelsPage() {
               <div className="flex flex-col gap-3">
                 {hasActiveModel ? (
                   <div className="flex flex-col gap-1.5">
-                    <span className="font-mono text-sm text-foreground">{activeModel!.model_id}</span>
+                    <span className="font-mono text-sm text-foreground">{activeModel!.modelId}</span>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-xs text-muted-foreground">
-                        Packaged {formatRelativeDate(activeModel!.package_date)}
+                        Packaged {formatRelativeDate(activeModel!.packageDate)}
                       </span>
                       <span className="text-xs text-muted-foreground">·</span>
                       <span className="telemetry-label uppercase text-muted-foreground">
@@ -178,7 +178,7 @@ export function ModelsPage() {
                       </span>
                     </div>
                     <button
-                      onClick={() => handleDeactivate(d.axfId, activeModel!.model_id)}
+                      onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
                       className="self-start mt-1 px-3 py-1 text-sm border border-border text-muted-foreground rounded-md bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
                     >
                       Deactivate
@@ -200,17 +200,17 @@ export function ModelsPage() {
                     )}
                     {inactiveModels.map((m) => (
                       <div
-                        key={m.model_id}
+                        key={m.modelId}
                         className="flex items-center justify-between gap-2 py-0.5"
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-xs text-foreground truncate">{m.model_id}</span>
+                          <span className="font-mono text-xs text-foreground truncate">{m.modelId}</span>
                           <span className="telemetry-label text-muted-foreground flex-shrink-0">
-                            · {formatRelativeDate(m.package_date)}
+                            · {formatRelativeDate(m.packageDate)}
                           </span>
                         </div>
                         <button
-                          onClick={() => handleActivate(d.axfId, m.model_id)}
+                          onClick={() => handleActivate(d.axfId, m.modelId)}
                           className="flex-shrink-0 px-3 py-1 text-sm border rounded-md bg-transparent transition-colors"
                           style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
                         >

@@ -6,6 +6,7 @@ import { createLiveTestDeps, registerLiveTestIpc, runRetryOnStart } from './ipc/
 
 let mainWindow: BrowserWindow | null = null
 let dynamo: DynamoManager | null = null
+let isQuitting = false
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -29,7 +30,7 @@ function createWindow(): void {
   }
 
   dynamo = new DynamoManager(mainWindow)
-  dynamo.start()
+  dynamo.start().catch((err) => console.warn('[main] dynamo.start failed:', err))
 
   initUpdater(mainWindow)
 
@@ -45,7 +46,24 @@ function createWindow(): void {
 
 app.whenReady().then(createWindow)
 
-app.on('window-all-closed', async () => {
-  await dynamo?.stop()
+app.on('window-all-closed', () => {
   app.quit()
+})
+
+// Central shutdown: intercept every quit path (menu quit, window close, programmatic),
+// stop the Python backend, then let the quit proceed. Without this, on Windows the
+// child process survives Electron and holds port 3001 — next boot the new backend
+// fails to bind and the renderer loads blank.
+app.on('before-quit', (event) => {
+  if (isQuitting || !dynamo) return
+  event.preventDefault()
+  isQuitting = true
+  void (async () => {
+    try {
+      await dynamo?.stop()
+    } catch (err) {
+      console.warn('[main] dynamo.stop failed during quit:', err)
+    }
+    app.quit()
+  })()
 })

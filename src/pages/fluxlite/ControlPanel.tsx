@@ -54,7 +54,7 @@ export function ControlPanel() {
 
   const connectionState = useDeviceStore((s) => s.connectionState)
   const devices = useDeviceStore((s) => s.devices)
-  const models = useDeviceStore((s) => s.models)
+  const modelsByDevice = useDeviceStore((s) => s.modelsByDevice)
   const selectedDeviceId = useDeviceStore((s) => s.selectedDeviceId)
   const selectedDevice = devices.find((d) => d.axfId === selectedDeviceId)
 
@@ -67,10 +67,9 @@ export function ControlPanel() {
     }
   }, [selectedDeviceId])
 
-  const plateModels = (models as { deviceId?: string; modelId?: string; name?: string; active?: boolean }[])
-    .filter((m) => m.deviceId === selectedDeviceId)
-  const attachedModel = plateModels.find((m) => m.active) ?? plateModels[0] ?? null
-  const attachedModelLabel = attachedModel?.name ?? attachedModel?.modelId ?? null
+  const plateModels = selectedDeviceId ? (modelsByDevice[selectedDeviceId] ?? []) : []
+  const attachedModel = plateModels.find((m) => m.modelActive) ?? plateModels[0] ?? null
+  const attachedModelLabel = attachedModel?.modelId ?? null
 
   // Local metadata form state — only used when Meta Data row is editable (phase === IDLE)
   const [testerName, setTesterName] = useState('')

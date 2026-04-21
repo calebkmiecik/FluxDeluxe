@@ -6,11 +6,16 @@ export interface DeviceType {
   name: string
 }
 
+/**
+ * Model metadata as delivered by the backend. Field names are camelCase
+ * because the backend runs `convert_to_camel(data)` before emitting
+ * (see fluxdeluxe/DynamoPy/app/flux_bridge/flux_bridge.py :: emit).
+ */
 export interface ModelMetadata {
-  model_id: string
-  device_id: string
-  package_date: number
-  model_active: boolean
+  modelId: string
+  deviceId: string
+  packageDate: number
+  modelActive: boolean
   location: 'local' | 'remote' | 'both'
   // Plus other fields we don't use directly
   [key: string]: unknown
