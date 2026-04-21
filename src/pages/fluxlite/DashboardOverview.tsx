@@ -4,7 +4,7 @@ import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
 import { effectiveTimeRange } from '../../lib/dashboardFilters'
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
     <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4 flex flex-col gap-3 min-h-[112px]">
       <div className="telemetry-label">{label}</div>
@@ -104,8 +104,17 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         />
         <Tile
           label="Accuracy"
-          value={loading ? '…' : fmtPct(data?.mae_pct ?? null)}
-          sub={loading ? undefined : `MAE · ${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
+          value={
+            loading ? (
+              '…'
+            ) : (
+              <span className="flex items-baseline gap-2">
+                <span>{fmtPct(data?.mae_pct ?? null)}</span>
+                <span className="text-lg text-muted-foreground font-normal">{fmtSignedPct(data?.signed_error_pct ?? null)}</span>
+              </span>
+            )
+          }
+          sub={loading ? undefined : 'MAE · signed'}
         />
       </div>
 
