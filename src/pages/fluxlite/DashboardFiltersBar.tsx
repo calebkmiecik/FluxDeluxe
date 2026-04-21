@@ -20,6 +20,13 @@ const inputClass =
 const selectClass =
   'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors'
 
+// Date inputs need color-scheme: dark so the calendar popup renders dark. The
+// [&::-webkit-calendar-picker-indicator] bits invert the little calendar icon
+// so it's visible on the dark background.
+const dateClass =
+  'bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none transition-colors ' +
+  '[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:opacity-70 [&::-webkit-calendar-picker-indicator]:hover:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer'
+
 export function DashboardFiltersBar({
   filters,
   onChange,
@@ -76,7 +83,7 @@ export function DashboardFiltersBar({
               type="date"
               value={filters.timeFrom ?? ''}
               onChange={(e) => set('timeFrom', e.target.value || null)}
-              className={inputClass}
+              className={dateClass}
               aria-label="From"
             />
             <span className="text-muted-foreground/50 text-xs">to</span>
@@ -84,7 +91,7 @@ export function DashboardFiltersBar({
               type="date"
               value={filters.timeTo ?? ''}
               onChange={(e) => set('timeTo', e.target.value || null)}
-              className={inputClass}
+              className={dateClass}
               aria-label="To"
             />
           </>
