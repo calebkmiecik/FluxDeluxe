@@ -7,8 +7,8 @@ import { deviceTypeFromAxfId } from '../../lib/deviceIds'
 import { getLastSeenForDevice } from '../../stores/liveDataStore'
 
 const STALE_MS = 3000
-const EXIT_ANIM_MS = 300
-const TICK_MS = 200
+const EXIT_ANIM_MS = 200
+const TICK_MS = 150
 
 export function DeviceList() {
   const devices = useDeviceStore((s) => s.devices)
@@ -94,7 +94,7 @@ export function DeviceList() {
           <button
             key={d.axfId}
             onClick={() => selectDevice(d.axfId)}
-            className={`relative rounded-md border border-border bg-surface-dark text-left px-3 py-2.5 flex flex-col gap-0.5 hover:bg-white/[0.03] animate-in fade-in slide-in-from-left-2 duration-300 transition-opacity ${fading ? 'opacity-0' : 'opacity-100'}`}
+            className={`relative rounded-md border border-border bg-surface-dark text-left px-3 py-2.5 flex flex-col gap-0.5 hover:bg-white/[0.03] animate-in fade-in duration-200 transition-opacity ${fading ? 'opacity-0' : 'opacity-100'}`}
             style={{
               borderLeftWidth: 3,
               borderLeftColor: active ? '#00C853' : 'var(--color-border)',
