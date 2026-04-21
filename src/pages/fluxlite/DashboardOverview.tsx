@@ -189,15 +189,15 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         />
         <Tile
           label="Plates Passed"
-          value={loading ? '…' : failOnly ? '—' : String(passedCount)}
+          value={loading ? '…' : String(passedCount)}
           delta={platesPassedDelta}
-          sub={loading || failOnly ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
+          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
         />
         <Tile
           label="Pass Rate"
-          value={loading ? '…' : failOnly ? '—' : fmtPct(passRate)}
+          value={loading ? '…' : fmtPct(passRate)}
           delta={passRateDelta}
-          sub={loading || failOnly ? undefined : `${passedCount} of ${sessionCount}`}
+          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
         />
         <Tile
           label="Accuracy"
