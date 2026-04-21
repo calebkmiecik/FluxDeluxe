@@ -125,7 +125,6 @@ export function ModelsPage() {
         const activeModel = models?.find((m) => m.modelActive) ?? null
         const inactiveModels = models?.filter((m) => !m.modelActive) ?? []
         const hasActiveModel = activeModel !== null
-        const stripeColor = hasActiveModel ? '#00C853' : 'var(--color-border)'
 
         // When no active model exists, we force-show the inactive models so
         // the user has a visible path forward. Otherwise default to collapsed.
@@ -135,7 +134,6 @@ export function ModelsPage() {
           <div
             key={d.axfId}
             className="rounded-md border border-border bg-surface-dark px-4 py-3 flex flex-col gap-2"
-            style={{ borderLeftWidth: 3, borderLeftColor: stripeColor }}
           >
             {/* Card header row — axfId · type  [LED] STATUS */}
             <div className="flex items-center justify-between gap-2">
@@ -146,11 +144,11 @@ export function ModelsPage() {
               <div className="flex items-center gap-1.5 flex-shrink-0">
                 <div
                   className="w-2 h-2 rounded-full"
-                  style={{ backgroundColor: hasActiveModel ? '#FFC107' : '#333' }}
+                  style={{ backgroundColor: hasActiveModel ? plate3d.edgeCyan : '#333' }}
                 />
                 <span
                   className="telemetry-label uppercase"
-                  style={{ color: hasActiveModel ? plate3d.activeAmber : undefined }}
+                  style={{ color: hasActiveModel ? plate3d.edgeCyan : undefined }}
                 >
                   {hasActiveModel ? 'ACTIVE' : 'NO MODEL'}
                 </span>
