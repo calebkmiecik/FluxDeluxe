@@ -118,108 +118,87 @@ export function ModelsPage() {
         return (
           <div
             key={d.axfId}
-            className="rounded-md border border-border bg-surface-dark p-4 flex flex-col gap-3"
+            className="rounded-md border border-border bg-surface-dark px-3 py-2.5 flex flex-col gap-1.5"
             style={{ borderLeftWidth: 3, borderLeftColor: stripeColor }}
           >
-            {/* Card header row */}
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm text-foreground tracking-tight">{d.axfId}</span>
-                <span className="telemetry-label">{typeName}</span>
+            {/* Card header row — axfId · type  [LED] STATUS */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm text-foreground tracking-tight truncate">{d.axfId}</span>
+                <span className="telemetry-label truncate">· {typeName}</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 <div
-                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  className="w-2 h-2 rounded-full"
                   style={{ backgroundColor: hasActiveModel ? '#FFC107' : '#333' }}
                 />
                 <span
                   className="telemetry-label uppercase"
                   style={{ color: hasActiveModel ? plate3d.activeAmber : undefined }}
                 >
-                  {hasActiveModel ? 'ACTIVE MODEL' : 'NO ACTIVE MODEL'}
+                  {hasActiveModel ? 'ACTIVE' : 'NO MODEL'}
                 </span>
               </div>
             </div>
 
             {/* No models loaded yet */}
             {models === null && (
-              <p className="text-xs text-muted-foreground">Loading models…</p>
+              <p className="text-xs text-muted-foreground/60">Loading…</p>
             )}
 
             {/* Models loaded but empty */}
             {models !== null && models.length === 0 && (
-              <div className="flex flex-col gap-2">
-                <p className="text-xs text-muted-foreground">
-                  No models found for this device. Package one to get started.
-                </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">No models for this device.</p>
                 <button
                   onClick={() => setShowModelPackager(true)}
-                  className="self-start px-3 py-1 text-sm border rounded-md bg-transparent transition-colors"
+                  className="flex-shrink-0 px-2 py-0.5 text-xs border rounded bg-transparent transition-colors"
                   style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
                 >
-                  Package Model
+                  Package
                 </button>
               </div>
             )}
 
-            {/* Active model block */}
+            {/* Active model row + inactive rows */}
             {models !== null && models.length > 0 && (
-              <div className="flex flex-col gap-3">
-                {hasActiveModel ? (
-                  <div className="flex flex-col gap-1.5">
-                    <span className="font-mono text-sm text-foreground">{activeModel!.modelId}</span>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-xs text-muted-foreground">
-                        Packaged {formatRelativeDate(activeModel!.packageDate)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">·</span>
-                      <span className="telemetry-label uppercase text-muted-foreground">
-                        {locationLabel(activeModel!.location)}
+              <div className="flex flex-col">
+                {hasActiveModel && (
+                  <div className="flex items-center justify-between gap-2 py-1 border-b border-border/30">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs text-foreground truncate">{activeModel!.modelId}</span>
+                      <span className="telemetry-label text-muted-foreground flex-shrink-0">
+                        · {formatRelativeDate(activeModel!.packageDate)} · {locationLabel(activeModel!.location)}
                       </span>
                     </div>
                     <button
                       onClick={() => handleDeactivate(d.axfId, activeModel!.modelId)}
-                      className="self-start mt-1 px-3 py-1 text-sm border border-border text-muted-foreground rounded-md bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
+                      className="flex-shrink-0 px-2 py-0.5 text-xs border border-border text-muted-foreground rounded bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
                     >
                       Deactivate
                     </button>
                   </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    No model assigned. Pick one below:
-                  </p>
                 )}
-
-                {/* Inactive models list */}
-                {inactiveModels.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {hasActiveModel && (
-                      <div className="border-t border-border/40 pt-2">
-                        <span className="telemetry-label text-muted-foreground/60">Other models</span>
-                      </div>
-                    )}
-                    {inactiveModels.map((m) => (
-                      <div
-                        key={m.modelId}
-                        className="flex items-center justify-between gap-2 py-0.5"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-xs text-foreground truncate">{m.modelId}</span>
-                          <span className="telemetry-label text-muted-foreground flex-shrink-0">
-                            · {formatRelativeDate(m.packageDate)}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => handleActivate(d.axfId, m.modelId)}
-                          className="flex-shrink-0 px-3 py-1 text-sm border rounded-md bg-transparent transition-colors"
-                          style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
-                        >
-                          Activate
-                        </button>
-                      </div>
-                    ))}
+                {inactiveModels.map((m) => (
+                  <div
+                    key={m.modelId}
+                    className="flex items-center justify-between gap-2 py-1"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono text-xs text-muted-foreground truncate">{m.modelId}</span>
+                      <span className="telemetry-label text-muted-foreground/70 flex-shrink-0">
+                        · {formatRelativeDate(m.packageDate)}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleActivate(d.axfId, m.modelId)}
+                      className="flex-shrink-0 px-2 py-0.5 text-xs border rounded bg-transparent transition-colors"
+                      style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
+                    >
+                      Activate
+                    </button>
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>
