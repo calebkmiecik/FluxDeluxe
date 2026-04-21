@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
-import { effectiveTimeRange, priorEquivalentFilter, withAllTime } from '../../lib/dashboardFilters'
+import { effectiveTimeRange, priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
 
 const MIN_PRIOR_SESSIONS = 2
 
@@ -159,12 +159,13 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   // so their deltas are meaningless — suppress them.
   const hasUsefulPrior = priorData !== null && priorData.session_count >= MIN_PRIOR_SESSIONS
   const failOnly = filter.passFilter === 'fail'
+  const priorLabel = priorWindowLabel(filter)
 
   const platesPassedDelta: Delta | null = (() => {
     if (failOnly || !hasUsefulPrior || !data) return null
     const diff = data.sessions_passed - priorData!.sessions_passed
     return {
-      text: diff > 0 ? `+${diff}` : `${diff}`,
+      text: `${diff > 0 ? `+${diff}` : diff} ${priorLabel}`,
       direction: directionOf(diff),
       goodWhen: 'up',
       tooltip: `Prior window: ${priorData!.sessions_passed} passed`,
@@ -176,7 +177,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     const diffPp = (passRate - priorPassRate) * 100
     const rounded = Math.round(diffPp * 10) / 10
     return {
-      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}%`,
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)}% ${priorLabel}`,
       direction: directionOf(rounded),
       goodWhen: 'up',
       tooltip: `Prior window: ${(priorPassRate * 100).toFixed(1)}%`,
@@ -188,7 +189,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     const diffPp = (data.mae_pct - priorData!.mae_pct) * 100
     const rounded = Math.round(diffPp * 100) / 100  // 2 decimal places for MAE
     return {
-      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}%`,
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)}% ${priorLabel}`,
       direction: directionOf(rounded),
       goodWhen: 'down',  // lower MAE is better
       tooltip: `Prior window: ${(priorData!.mae_pct * 100).toFixed(2)}% MAE`,
@@ -228,14 +229,14 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           label="Plates Passed"
           value={loading ? '…' : String(passedCount)}
           delta={platesPassedDelta}
-          baseline={showBaseline && baselinePassedPerWeek !== null ? `avg ${baselinePassedPerWeek.toFixed(1)} / wk` : null}
+          baseline={showBaseline && baselinePassedPerWeek !== null ? `${baselinePassedPerWeek.toFixed(1)} / wk all-time` : null}
           sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
         />
         <Tile
           label="Pass Rate"
           value={loading ? '…' : fmtPct(passRate)}
           delta={passRateDelta}
-          baseline={showBaseline && baselinePassRate !== null ? `avg ${fmtPct(baselinePassRate)}` : null}
+          baseline={showBaseline && baselinePassRate !== null ? `${fmtPct(baselinePassRate)} all-time` : null}
           sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
         />
         <Tile
@@ -252,7 +253,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           delta={accuracyDelta}
           baseline={
             showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
-              ? `avg ${fmtPct(baselineData.mae_pct)} MAE`
+              ? `${fmtPct(baselineData.mae_pct)} MAE all-time`
               : null
           }
         />

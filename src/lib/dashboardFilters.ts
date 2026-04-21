@@ -86,6 +86,18 @@ export function effectiveDeviceTypes(f: DashboardFilters): string[] | null {
   return f.deviceFamily ? familyToDeviceTypes(f.deviceFamily) : null
 }
 
+/** Short human-readable label for "compared to the prior equivalent window". */
+export function priorWindowLabel(f: DashboardFilters): string {
+  switch (f.timePreset) {
+    case '7d':    return 'vs prior 7d'
+    case '30d':   return 'vs prior 30d'
+    case '90d':   return 'vs prior 90d'
+    case 'ytd':   return 'vs prior YTD'
+    case 'custom': return 'vs prior period'
+    default:      return 'vs prior'
+  }
+}
+
 /**
  * Returns a copy of the filter with the time constraint stripped.
  * Used to fetch the "all-time baseline" for the current non-time filter set
