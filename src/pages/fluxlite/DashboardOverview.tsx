@@ -24,9 +24,9 @@ function Tile({ label, value, delta, baseline, sub }: {
 }) {
   return (
     <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-start justify-between gap-2">
         <div className="telemetry-label">{label}</div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col items-end gap-0.5">
           {delta && <DeltaPill delta={delta} />}
           {baseline && (
             <span className="text-muted-foreground text-[11px] tracking-wider font-medium">
