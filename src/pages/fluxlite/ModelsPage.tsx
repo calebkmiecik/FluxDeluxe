@@ -73,9 +73,11 @@ export function ModelsPage() {
     }, 200)
   }
 
-  const handleDeactivate = (deviceId: string) => {
+  const handleDeactivate = (deviceId: string, modelId: string) => {
     const socket = getSocket()
-    socket.emit('deactivateModel', { device_id: deviceId })
+    // Backend only uses device_id for the actual deactivation, but its log
+    // line reads model_id unconditionally — pass both to avoid a KeyError.
+    socket.emit('deactivateModel', { deviceId, modelId })
     setTimeout(() => {
       socket.emit('getModelMetadata', { deviceId })
     }, 200)
@@ -176,7 +178,7 @@ export function ModelsPage() {
                       </span>
                     </div>
                     <button
-                      onClick={() => handleDeactivate(d.axfId)}
+                      onClick={() => handleDeactivate(d.axfId, activeModel!.model_id)}
                       className="self-start mt-1 px-3 py-1 text-sm border border-border text-muted-foreground rounded-md bg-transparent hover:border-[#7AB8FF] hover:text-[#7AB8FF] transition-colors"
                     >
                       Deactivate
