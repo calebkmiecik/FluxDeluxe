@@ -137,7 +137,7 @@ export function DashboardFiltersBar({
           type="number"
           value={filters.weightMinN ?? ''}
           onChange={(e) => set('weightMinN', e.target.value === '' ? null : Number(e.target.value))}
-          className={`${inputClass} w-16 text-center`}
+          className={`${inputClass} w-16 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
           placeholder="min"
           min={0}
         />
@@ -146,7 +146,7 @@ export function DashboardFiltersBar({
           type="number"
           value={filters.weightMaxN ?? ''}
           onChange={(e) => set('weightMaxN', e.target.value === '' ? null : Number(e.target.value))}
-          className={`${inputClass} w-16 text-center`}
+          className={`${inputClass} w-16 text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
           placeholder="max"
           min={0}
         />
