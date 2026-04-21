@@ -1,16 +1,55 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
-import { effectiveTimeRange } from '../../lib/dashboardFilters'
+import { effectiveTimeRange, priorEquivalentFilter } from '../../lib/dashboardFilters'
 
-function Tile({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
+const MIN_PRIOR_SESSIONS = 2
+
+type DeltaDirection = 'up' | 'down' | 'flat'
+interface Delta {
+  text: string
+  direction: DeltaDirection
+  /** true = this direction is a good outcome (renders green). false = bad (red). */
+  goodWhen: DeltaDirection
+  tooltip: string
+}
+
+function Tile({ label, value, delta, sub }: {
+  label: string
+  value: ReactNode
+  delta?: Delta | null
+  sub?: string
+}) {
   return (
     <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4">
-      <div className="telemetry-label">{label}</div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="telemetry-label">{label}</div>
+        {delta && <DeltaPill delta={delta} />}
+      </div>
       <div className="text-3xl font-semibold text-foreground leading-none mt-2">{value}</div>
       {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
     </div>
+  )
+}
+
+function DeltaPill({ delta }: { delta: Delta }) {
+  const isGood =
+    delta.direction === 'flat'
+      ? true
+      : delta.direction === delta.goodWhen
+  const color =
+    delta.direction === 'flat'
+      ? 'text-muted-foreground'
+      : isGood ? 'text-success' : 'text-danger'
+  const arrow =
+    delta.direction === 'up' ? '▲' :
+    delta.direction === 'down' ? '▼' :
+    '·'
+  return (
+    <span className={`${color} text-[11px] font-medium tracking-wider`} title={delta.tooltip}>
+      {arrow} {delta.text}
+    </span>
   )
 }
 
@@ -28,26 +67,34 @@ function fmtSignedPct(n: number | null | undefined): string {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 }
 
+/** Compute direction from a signed delta. */
+function directionOf(signedDelta: number, epsilon = 0): DeltaDirection {
+  if (signedDelta > epsilon) return 'up'
+  if (signedDelta < -epsilon) return 'down'
+  return 'flat'
+}
+
 export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const [data, setData] = useState<OverviewResult | null>(null)
+  const [priorData, setPriorData] = useState<OverviewResult | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    liveTestClient.getOverview({ filter }).then((res) => {
-      if (!cancelled) {
-        setData(res)
-        setLoading(false)
-      }
+    const prior = priorEquivalentFilter(filter)
+    const currentP = liveTestClient.getOverview({ filter })
+    const priorP = prior ? liveTestClient.getOverview({ filter: prior }) : Promise.resolve(null)
+    Promise.all([currentP, priorP]).then(([cur, pri]) => {
+      if (cancelled) return
+      setData(cur)
+      setPriorData(pri)
+      setLoading(false)
     })
     return () => { cancelled = true }
   }, [filter])
 
-  // Plates-passed-per-week rate (for subtitle).
-  // Denominator is the active time window when one is selected (7d/30d/90d/YTD/custom),
-  // otherwise falls back to the span from earliest session to now for All-time.
-  // Floored at 3 days so short windows don't inflate the rate.
+  // Plates-passed-per-week rate (for subtitle)
   const passedPerWeek = (() => {
     if (loading || !data || data.sessions_passed === 0) return null
     const { fromIso, toIso } = effectiveTimeRange(filter)
@@ -55,7 +102,6 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     if (fromIso) {
       spanMs = (toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()
     } else if (data.earliest_session_at) {
-      // All-time: use earliest session → now
       spanMs = Date.now() - new Date(data.earliest_session_at).getTime()
     }
     if (spanMs === null) return null
@@ -63,10 +109,51 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return data.sessions_passed / weeks
   })()
 
-  // Pass rate = sessions passed / total sessions (count-based, not cell-averaged)
+  // Count-based pass rate: plates passed / total sessions
   const passRate = !loading && data && data.session_count > 0
     ? data.sessions_passed / data.session_count
     : null
+  const priorPassRate = priorData && priorData.session_count > 0
+    ? priorData.sessions_passed / priorData.session_count
+    : null
+
+  // Deltas — only when prior window has enough sessions to compare
+  const hasUsefulPrior = priorData !== null && priorData.session_count >= MIN_PRIOR_SESSIONS
+
+  const platesPassedDelta: Delta | null = (() => {
+    if (!hasUsefulPrior || !data) return null
+    const diff = data.sessions_passed - priorData!.sessions_passed
+    return {
+      text: diff > 0 ? `+${diff}` : `${diff}`,
+      direction: directionOf(diff),
+      goodWhen: 'up',
+      tooltip: `Prior window: ${priorData!.sessions_passed} passed`,
+    }
+  })()
+
+  const passRateDelta: Delta | null = (() => {
+    if (!hasUsefulPrior || passRate === null || priorPassRate === null) return null
+    const diffPp = (passRate - priorPassRate) * 100
+    const rounded = Math.round(diffPp * 10) / 10
+    return {
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} pp`,
+      direction: directionOf(rounded),
+      goodWhen: 'up',
+      tooltip: `Prior window: ${(priorPassRate * 100).toFixed(1)}%`,
+    }
+  })()
+
+  const accuracyDelta: Delta | null = (() => {
+    if (!hasUsefulPrior || !data || data.mae_pct === null || !priorData!.mae_pct) return null
+    const diffPp = (data.mae_pct - priorData!.mae_pct) * 100
+    const rounded = Math.round(diffPp * 100) / 100  // 2 decimal places for MAE
+    return {
+      text: `${rounded > 0 ? '+' : ''}${rounded.toFixed(2)} pp`,
+      direction: directionOf(rounded),
+      goodWhen: 'down',  // lower MAE is better
+      tooltip: `Prior window: ${(priorData!.mae_pct * 100).toFixed(2)}% MAE`,
+    }
+  })()
 
   const stageTile = (type: 'dumbbell' | 'two_leg' | 'one_leg', label: string) => {
     const r = data?.per_stage_type.find((p) => p.stage_type === type)
@@ -100,11 +187,13 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         <Tile
           label="Plates Passed"
           value={loading ? '…' : String(passedCount)}
+          delta={platesPassedDelta}
           sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
         />
         <Tile
           label="Pass Rate"
           value={loading ? '…' : fmtPct(passRate)}
+          delta={passRateDelta}
           sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
         />
         <Tile
@@ -118,6 +207,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
               </span>
             )
           }
+          delta={accuracyDelta}
         />
       </div>
 

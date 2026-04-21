@@ -85,3 +85,27 @@ export function effectiveTimeRange(f: DashboardFilters): { fromIso: string | nul
 export function effectiveDeviceTypes(f: DashboardFilters): string[] | null {
   return f.deviceFamily ? familyToDeviceTypes(f.deviceFamily) : null
 }
+
+/**
+ * Returns a copy of the filter shifted to the equivalent prior time window.
+ * 7d selected → prior 7d (i.e. 14-to-7 days ago). Custom → same-length window
+ * immediately before `timeFrom`. Returns `null` for All-time or when the
+ * current time range can't be resolved (no comparison basis).
+ */
+export function priorEquivalentFilter(f: DashboardFilters): DashboardFilters | null {
+  if (f.timePreset === 'all') return null
+  const { fromIso, toIso } = effectiveTimeRange(f)
+  if (!fromIso) return null
+  const from = new Date(fromIso).getTime()
+  const to = toIso ? new Date(toIso).getTime() : Date.now()
+  const span = to - from
+  if (span <= 0) return null
+  const priorTo = new Date(from)
+  const priorFrom = new Date(from - span)
+  return {
+    ...f,
+    timePreset: 'custom',
+    timeFrom: priorFrom.toISOString().slice(0, 10),
+    timeTo: priorTo.toISOString().slice(0, 10),
+  }
+}
