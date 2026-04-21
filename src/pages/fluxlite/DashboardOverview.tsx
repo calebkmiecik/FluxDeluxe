@@ -69,7 +69,8 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
       ? new Date(Math.max(new Date(fromIso).getTime(), data.earliest_session_at ? new Date(data.earliest_session_at).getTime() : 0))
       : data.earliest_session_at ? new Date(data.earliest_session_at) : null
     if (!rangeStart) return null
-    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 1)
+    // Minimum denominator = 3 days (in weeks) so short spans don't blow up the rate
+    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 3 / 7)
     return data.sessions_passed / weeks
   })()
 
