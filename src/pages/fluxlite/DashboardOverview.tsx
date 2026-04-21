@@ -6,10 +6,12 @@ import { effectiveTimeRange } from '../../lib/dashboardFilters'
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="bg-white/[0.02] border border-border rounded-md p-3">
+    <div className="bg-white/[0.02] border border-border rounded-md px-4 py-4 flex flex-col justify-between min-h-[96px]">
       <div className="telemetry-label">{label}</div>
-      <div className="text-xl font-semibold text-foreground mt-0.5">{value}</div>
-      {sub && <div className="text-muted-foreground text-xs mt-1">{sub}</div>}
+      <div>
+        <div className="text-3xl font-semibold text-foreground leading-none">{value}</div>
+        {sub && <div className="text-muted-foreground text-xs mt-1.5">{sub}</div>}
+      </div>
     </div>
   )
 }
@@ -44,6 +46,23 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return () => { cancelled = true }
   }, [filter])
 
+  // Plates-passed-per-week rate (for subtitle)
+  const passedPerWeek = (() => {
+    if (loading || !data || data.sessions_passed === 0) return null
+    const { fromIso } = effectiveTimeRange(filter)
+    const rangeStart = fromIso
+      ? new Date(Math.max(new Date(fromIso).getTime(), data.earliest_session_at ? new Date(data.earliest_session_at).getTime() : 0))
+      : data.earliest_session_at ? new Date(data.earliest_session_at) : null
+    if (!rangeStart) return null
+    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 3 / 7)
+    return data.sessions_passed / weeks
+  })()
+
+  // Pass rate = sessions passed / total sessions (count-based, not cell-averaged)
+  const passRate = !loading && data && data.session_count > 0
+    ? data.sessions_passed / data.session_count
+    : null
+
   const stageTile = (type: 'dumbbell' | 'two_leg' | 'one_leg', label: string) => {
     const r = data?.per_stage_type.find((p) => p.stage_type === type)
     return (
@@ -60,31 +79,33 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     )
   }
 
-  // Compute passed-per-week from earliest session to now (or the time range bounds)
-  const passedPerWeek = (() => {
-    if (loading || !data || data.sessions_passed === 0) return null
-    const { fromIso } = effectiveTimeRange(filter)
-    // Use whichever is later: the filter's from-date or the earliest session
-    const rangeStart = fromIso
-      ? new Date(Math.max(new Date(fromIso).getTime(), data.earliest_session_at ? new Date(data.earliest_session_at).getTime() : 0))
-      : data.earliest_session_at ? new Date(data.earliest_session_at) : null
-    if (!rangeStart) return null
-    // Minimum denominator = 3 days (in weeks) so short spans don't blow up the rate
-    const weeks = Math.max((Date.now() - rangeStart.getTime()) / (7 * 24 * 3600 * 1000), 3 / 7)
-    return data.sessions_passed / weeks
-  })()
+  const deviceCount = data?.device_count ?? 0
+  const sessionCount = data?.session_count ?? 0
+  const passedCount = data?.sessions_passed ?? 0
 
   return (
     <div className="flex flex-col gap-3">
       <h3 className="telemetry-label">Overview</h3>
-      <div className="grid grid-cols-5 gap-2">
-        <Tile label="Devices"  value={loading ? '…' : String(data?.device_count ?? 0)} />
-        <Tile label="Sessions" value={loading ? '…' : String(data?.session_count ?? 0)} />
-        <Tile label="Passed / week" value={loading ? '…' : passedPerWeek !== null ? passedPerWeek.toFixed(1) : '—'} />
-        <Tile label="Pass rate" value={loading ? '…' : fmtPct(data?.overall_pass_rate ?? null)} />
+      <div className="grid grid-cols-4 gap-2">
+        <Tile
+          label="Devices"
+          value={loading ? '…' : String(deviceCount)}
+          sub={loading ? undefined : `${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
+        />
+        <Tile
+          label="Plates Passed"
+          value={loading ? '…' : String(passedCount)}
+          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
+        />
+        <Tile
+          label="Pass Rate"
+          value={loading ? '…' : fmtPct(passRate)}
+          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
+        />
         <Tile
           label="Accuracy"
-          value={loading ? '…' : `${fmtPct(data?.mae_pct ?? null)} MAE  /  ${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
+          value={loading ? '…' : fmtPct(data?.mae_pct ?? null)}
+          sub={loading ? undefined : `MAE · ${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
         />
       </div>
 
