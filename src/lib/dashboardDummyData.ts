@@ -358,7 +358,12 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
     ? subset.reduce((min, b) => b.listRow.started_at < min ? b.listRow.started_at : min, subset[0].listRow.started_at)
     : null
 
-  return { session_count, sessions_passed, cells_captured, device_count, overall_pass_rate, earliest_session_at, mae_pct, signed_error_pct, per_stage_type }
+  const WEEK_MS = 7 * 24 * 3600 * 1000
+  const active_weeks = new Set(
+    subset.map((b) => Math.floor(new Date(b.listRow.started_at).getTime() / WEEK_MS)),
+  ).size
+
+  return { session_count, sessions_passed, cells_captured, device_count, overall_pass_rate, earliest_session_at, active_weeks, mae_pct, signed_error_pct, per_stage_type }
 }
 
 // ── Enable / disable ──────────────────────────────────────────

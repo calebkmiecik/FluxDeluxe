@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
-import { effectiveTimeRange, priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
+import { priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
 
 const MIN_PRIOR_SESSIONS = 2
 
@@ -113,20 +113,12 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     return () => { cancelled = true }
   }, [filter, isAllTime])
 
-  // Plates-passed-per-week rate (for subtitle)
-  const passedPerWeek = (() => {
-    if (loading || !data || data.sessions_passed === 0) return null
-    const { fromIso, toIso } = effectiveTimeRange(filter)
-    let spanMs: number | null = null
-    if (fromIso) {
-      spanMs = (toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()
-    } else if (data.earliest_session_at) {
-      spanMs = Date.now() - new Date(data.earliest_session_at).getTime()
-    }
-    if (spanMs === null) return null
-    const weeks = Math.max(spanMs / (7 * 24 * 3600 * 1000), 3 / 7)
-    return data.sessions_passed / weeks
-  })()
+  // Plates-passed-per-week rate. Denominator is the count of weeks that actually
+  // had testing activity — weeks with zero sessions are excluded, so a burst of
+  // testing after a 2-week break isn't diluted by the dead weeks.
+  const passedPerWeek = (!loading && data && data.active_weeks > 0)
+    ? data.sessions_passed / data.active_weeks
+    : null
 
   // Count-based pass rate: plates passed / total sessions
   const passRate = !loading && data && data.session_count > 0
@@ -139,13 +131,10 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     ? baselineData.sessions_passed / baselineData.session_count
     : null
 
-  // All-time plates-passed-per-week rate (baseline) — uses baselineData's earliest session
-  const baselinePassedPerWeek = (() => {
-    if (!baselineData || !baselineData.earliest_session_at || baselineData.sessions_passed === 0) return null
-    const spanMs = Date.now() - new Date(baselineData.earliest_session_at).getTime()
-    const weeks = Math.max(spanMs / (7 * 24 * 3600 * 1000), 3 / 7)
-    return baselineData.sessions_passed / weeks
-  })()
+  // All-time plates-passed-per-week rate (baseline) — also excludes dead weeks.
+  const baselinePassedPerWeek = (baselineData && baselineData.active_weeks > 0)
+    ? baselineData.sessions_passed / baselineData.active_weeks
+    : null
 
   // Only show baselines when we actually have one to show and we're not in all-time view
   const showBaseline = !isAllTime && baselineData !== null && baselineData.session_count > 0

@@ -155,6 +155,10 @@ export class LiveTestRepo {
     const sessions_passed = (sessions ?? []).filter((r: any) => r.session_passed === true).length
     const dates = (sessions ?? []).map((r: any) => r.started_at as string).filter(Boolean)
     const earliest_session_at = dates.length > 0 ? dates.reduce((a, b) => a < b ? a : b) : null
+    const WEEK_MS = 7 * 24 * 3600 * 1000
+    const active_weeks = new Set(
+      dates.map((d) => Math.floor(new Date(d).getTime() / WEEK_MS)),
+    ).size
 
     return {
       session_count: sessions?.length ?? 0,
@@ -163,6 +167,7 @@ export class LiveTestRepo {
       device_count,
       overall_pass_rate,
       earliest_session_at,
+      active_weeks,
       mae_pct: null,           // TODO: compute from session_cells once schema adds % fields
       signed_error_pct: null,  // TODO: compute from session_cells once schema adds % fields
       per_stage_type,
