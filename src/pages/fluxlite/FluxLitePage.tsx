@@ -148,7 +148,7 @@ export function FluxLitePage() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Top bar — command-bar style */}
-      <div className="flex items-center px-4 border-b border-border/70" style={{ height: 36 }}>
+      <div className="flex items-center px-4 border-b border-border/70" style={{ height: 44 }}>
         <span className="text-sm font-semibold tracking-tight text-foreground mr-6">
           FluxLite
         </span>
@@ -159,7 +159,7 @@ export function FluxLitePage() {
               <button
                 key={item.id}
                 onClick={() => setActiveLitePage(item.id)}
-                className={`group relative px-4 h-full text-[11px] uppercase tracking-[0.08em] transition-colors duration-150 ${
+                className={`group relative px-4 h-full text-xs uppercase tracking-[0.08em] transition-colors duration-150 ${
                   active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
