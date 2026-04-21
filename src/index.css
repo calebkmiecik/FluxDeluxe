@@ -108,6 +108,7 @@
 .dark {
   --background: #141414;
   --foreground: #CECECE;
+  --color-edge-cyan: #7AB8FF;
   --card: #242424;
   --card-foreground: #CECECE;
   --popover: #242424;
@@ -205,18 +206,24 @@
 /* .led-active glow is driven by JS (sin wave via requestAnimationFrame).
    Set --led-color inline. JS applies the box-shadow directly. */
 
-/* ── Scrollbar (thin, dark) ──────────────────────────────────── */
+/* ── Scrollbar (thin, dark, cyan accent on hover) ─────────────── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+  background: #2A2F38;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: var(--color-edge-cyan);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
