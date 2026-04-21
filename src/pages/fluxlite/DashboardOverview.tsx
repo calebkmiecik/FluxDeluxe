@@ -237,21 +237,14 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         />
         <Tile
           label="Accuracy"
-          value={
-            loading ? (
-              '…'
-            ) : (
-              <span className="text-2xl">
-                {fmtPct(data?.mae_pct ?? null)} MAE <span className="text-muted-foreground/40">/</span> {fmtSignedPct(data?.signed_error_pct ?? null)} signed
-              </span>
-            )
-          }
+          value={loading ? '…' : `${fmtPct(data?.mae_pct ?? null)} MAE`}
           delta={accuracyDelta}
           baseline={
             showBaseline && baselineData?.mae_pct !== null && baselineData?.mae_pct !== undefined
               ? `${fmtPct(baselineData.mae_pct)} MAE all-time`
               : null
           }
+          sub={loading ? undefined : `${fmtSignedPct(data?.signed_error_pct ?? null)} signed`}
         />
       </div>
 
