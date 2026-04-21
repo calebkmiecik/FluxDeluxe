@@ -29,6 +29,7 @@ export function registerLiveTestIpc(deps: LiveTestIpcDeps): void {
   ipcMain.removeHandler('liveTest:listSessions')
   ipcMain.removeHandler('liveTest:getSession')
   ipcMain.removeHandler('liveTest:getOverview')
+  ipcMain.removeHandler('liveTest:getTimeSeries')
   ipcMain.removeHandler('liveTest:retryQueued')
   ipcMain.removeHandler('liveTest:queueStatus')
 
@@ -60,6 +61,11 @@ export function registerLiveTestIpc(deps: LiveTestIpcDeps): void {
   ipcMain.handle('liveTest:getOverview', async (_e, opts: { filter: import('../../src/lib/dashboardFilters').DashboardFilters }) => {
     if (!deps.repo) return null
     return deps.repo.getOverview(opts.filter)
+  })
+
+  ipcMain.handle('liveTest:getTimeSeries', async (_e, opts: { filter: import('../../src/lib/dashboardFilters').DashboardFilters; granularity: 'day' | 'week' }) => {
+    if (!deps.repo) return []
+    return deps.repo.getTimeSeries(opts)
   })
 
   ipcMain.handle('liveTest:queueStatus', async () => deps.queue.status())

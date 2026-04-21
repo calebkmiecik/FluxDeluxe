@@ -1,5 +1,18 @@
 import type { StageType } from './liveTestTypes'
 
+/** One time bucket in the trend series. Buckets with no sessions are omitted. */
+export interface TimeSeriesPoint {
+  /** ISO timestamp for the start of the bucket. */
+  bucket_start: string
+  session_count: number
+  passed_count: number
+  pass_rate: number | null
+  mae_pct: number | null
+  signed_error_pct: number | null
+}
+
+export type TimeSeriesGranularity = 'day' | 'week'
+
 export interface SessionListRow {
   id: string
   started_at: string

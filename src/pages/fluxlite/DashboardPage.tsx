@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { DashboardOverview } from './DashboardOverview'
+import { DashboardTrend } from './DashboardTrend'
 import { SessionList } from './SessionList'
 import { SessionDetailModal } from './SessionDetailModal'
 import { DashboardFiltersBar } from './DashboardFiltersBar'
@@ -99,6 +100,7 @@ export function DashboardPage() {
 
       <div className="flex flex-col gap-6">
         <DashboardOverview key={`overview-${dummy}`} filter={filters} />
+        <DashboardTrend key={`trend-${dummy}`} filter={filters} />
         <SessionList key={`list-${dummy}`} filter={filters} onOpen={setOpenId} />
       </div>
       {openId && <SessionDetailModal id={openId} onClose={() => setOpenId(null)} />}

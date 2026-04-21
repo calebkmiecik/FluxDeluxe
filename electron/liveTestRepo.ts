@@ -1,10 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { SaveSessionPayload } from '../src/lib/liveTestPayload'
-import type { SessionListRow, SessionDetail, OverviewResult } from '../src/lib/liveTestRepoTypes'
+import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity } from '../src/lib/liveTestRepoTypes'
 import type { DashboardFilters } from '../src/lib/dashboardFilters'
 import { effectiveTimeRange, effectiveDeviceTypes } from '../src/lib/dashboardFilters'
 
-export type { SessionListRow, SessionDetail, OverviewResult }  // re-export for main-process callers
+export type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity }  // re-export for main-process callers
 
 export class LiveTestRepo {
   constructor(private readonly client: SupabaseClient) {}
@@ -176,6 +176,56 @@ export class LiveTestRepo {
       signed_error_pct: null,  // TODO: compute from session_cells once schema adds % fields
       per_stage_type,
     }
+  }
+
+  async getTimeSeries(opts: { filter: DashboardFilters; granularity: TimeSeriesGranularity }): Promise<TimeSeriesPoint[]> {
+    // Fetch the same session set that getOverview would, but only fields we need for bucketing.
+    let q = this.client.from('sessions').select('started_at, session_passed')
+    const { fromIso, toIso } = effectiveTimeRange(opts.filter)
+    if (fromIso) q = q.gte('started_at', fromIso)
+    if (toIso) q = q.lte('started_at', toIso)
+    const types = effectiveDeviceTypes(opts.filter)
+    if (types && types.length > 0) q = q.in('device_type', types)
+    if (opts.filter.weightMinN !== null) q = q.gte('body_weight_n', opts.filter.weightMinN)
+    if (opts.filter.weightMaxN !== null) q = q.lte('body_weight_n', opts.filter.weightMaxN)
+    if (opts.filter.passFilter === 'pass') q = q.eq('session_passed', true)
+    if (opts.filter.passFilter === 'fail') q = q.eq('session_passed', false)
+    for (const tag of opts.filter.searchTags) {
+      const t = tag.trim().toLowerCase()
+      if (!t) continue
+      const escaped = t.replace(/[%_]/g, '\\$&')
+      q = q.or(
+        `device_id.ilike.%${escaped}%,tester_name.ilike.%${escaped}%,device_type.ilike.%${escaped}%,model_id.ilike.%${escaped}%`,
+      )
+    }
+    const { data, error } = await q
+    if (error) throw new Error(`getTimeSeries failed: ${error.message}`)
+    const sessions = (data ?? []) as Array<{ started_at: string; session_passed: boolean | null }>
+
+    const BUCKET_MS = opts.granularity === 'day' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000
+    const buckets = new Map<number, { n: number; passed: number }>()
+    for (const s of sessions) {
+      const t = new Date(s.started_at).getTime()
+      const key = Math.floor(t / BUCKET_MS) * BUCKET_MS
+      const b = buckets.get(key) ?? { n: 0, passed: 0 }
+      b.n++
+      if (s.session_passed === true) b.passed++
+      buckets.set(key, b)
+    }
+
+    return Array.from(buckets.keys()).sort((a, b) => a - b).map((k) => {
+      const b = buckets.get(k)!
+      return {
+        bucket_start: new Date(k).toISOString(),
+        session_count: b.n,
+        passed_count: b.passed,
+        pass_rate: b.n > 0 ? b.passed / b.n : null,
+        // TODO: mae_pct / signed_error_pct need per-cell error/target data — compute
+        // once session_stage_aggregates stores % fields or via a separate cell-level query.
+        mae_pct: null,
+        signed_error_pct: null,
+      }
+    })
   }
 
   /** Delete all rows with `app_version LIKE 'test-%'`. Used by integration test cleanup. */

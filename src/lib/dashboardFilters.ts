@@ -86,6 +86,18 @@ export function effectiveDeviceTypes(f: DashboardFilters): string[] | null {
   return f.deviceFamily ? familyToDeviceTypes(f.deviceFamily) : null
 }
 
+/**
+ * Picks a sensible time-series bucket size for the filter's time range.
+ * Daily buckets up to 90 days, otherwise weekly.
+ */
+export function pickGranularity(f: DashboardFilters): 'day' | 'week' {
+  const { fromIso, toIso } = effectiveTimeRange(f)
+  if (!fromIso) return 'week' // All time
+  const spanMs = (toIso ? new Date(toIso).getTime() : Date.now()) - new Date(fromIso).getTime()
+  const days = spanMs / (24 * 3600 * 1000)
+  return days <= 90 ? 'day' : 'week'
+}
+
 /** Short human-readable label for "compared to the prior equivalent window". */
 export function priorWindowLabel(f: DashboardFilters): string {
   switch (f.timePreset) {

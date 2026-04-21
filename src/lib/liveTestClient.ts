@@ -13,7 +13,7 @@
  */
 
 import type { SaveSessionPayload } from './liveTestPayload'
-import type { SessionListRow, SessionDetail, OverviewResult } from './liveTestRepoTypes'
+import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity } from './liveTestRepoTypes'
 import type { DashboardFilters } from './dashboardFilters'
 
 type Api = NonNullable<Window['electronAPI']>['liveTest']
@@ -43,6 +43,11 @@ export const liveTestClient = {
   getOverview(opts: { filter: DashboardFilters }): Promise<OverviewResult | null> {
     if (dummyImpl?.getOverview) return dummyImpl.getOverview(opts)
     return real()?.getOverview(opts) ?? Promise.resolve(null)
+  },
+
+  getTimeSeries(opts: { filter: DashboardFilters; granularity: TimeSeriesGranularity }): Promise<TimeSeriesPoint[]> {
+    if (dummyImpl?.getTimeSeries) return dummyImpl.getTimeSeries(opts)
+    return real()?.getTimeSeries(opts) ?? Promise.resolve([])
   },
 
   listSessions(opts: { limit: number; offset: number; filter: DashboardFilters }): Promise<SessionListRow[]> {

@@ -1,5 +1,5 @@
 import type { SaveSessionPayload } from './lib/liveTestPayload'
-import type { SessionListRow, SessionDetail, OverviewResult } from './lib/liveTestRepoTypes'
+import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity } from './lib/liveTestRepoTypes'
 import type { DashboardFilters } from './lib/dashboardFilters'
 
 export interface ElectronLiveTestApi {
@@ -7,6 +7,7 @@ export interface ElectronLiveTestApi {
   listSessions(opts: { limit: number; offset: number; filter: DashboardFilters }): Promise<SessionListRow[]>
   getSession(id: string): Promise<SessionDetail | null>
   getOverview(opts: { filter: DashboardFilters }): Promise<OverviewResult | null>
+  getTimeSeries(opts: { filter: DashboardFilters; granularity: TimeSeriesGranularity }): Promise<TimeSeriesPoint[]>
   retryQueued(): Promise<{ uploaded: number; stillQueued: number; errors: Array<{ id: string; error: string }> }>
   queueStatus(): Promise<{ queued: number; poison: number }>
 }

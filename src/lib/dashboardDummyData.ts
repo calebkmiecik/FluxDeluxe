@@ -10,6 +10,8 @@ import type {
   SessionListRow,
   SessionDetail,
   OverviewResult,
+  TimeSeriesPoint,
+  TimeSeriesGranularity,
 } from './liveTestRepoTypes'
 import { setDummyImpl } from './liveTestClient'
 import type { DashboardFilters } from './dashboardFilters'
@@ -391,6 +393,43 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
   return { session_count, sessions_passed, cells_captured, device_count, overall_pass_rate, earliest_session_at, active_weeks, mae_pct, signed_error_pct, per_stage_type }
 }
 
+function buildTimeSeries(filter: DashboardFilters, granularity: TimeSeriesGranularity): TimeSeriesPoint[] {
+  const subset = applyFilter(filter)
+  if (subset.length === 0) return []
+
+  const BUCKET_MS = granularity === 'day' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000
+  const buckets = new Map<number, BuiltSession[]>()
+  for (const s of subset) {
+    const t = new Date(s.listRow.started_at).getTime()
+    const key = Math.floor(t / BUCKET_MS) * BUCKET_MS
+    const arr = buckets.get(key) ?? []
+    arr.push(s)
+    buckets.set(key, arr)
+  }
+
+  const sortedKeys = Array.from(buckets.keys()).sort((a, b) => a - b)
+  return sortedKeys.map((k) => {
+    const bucketSessions = buckets.get(k)!
+    const session_count = bucketSessions.length
+    const passed_count = bucketSessions.filter((s) => s.session_passed === true).length
+    const pass_rate = session_count > 0 ? passed_count / session_count : null
+
+    const allErrorPcts = bucketSessions.flatMap((s) => s.cellErrorPcts)
+    const allSignedPcts = bucketSessions.flatMap((s) => s.cellSignedPcts)
+    const mae_pct = allErrorPcts.length === 0 ? null : allErrorPcts.reduce((a, b) => a + b, 0) / allErrorPcts.length
+    const signed_error_pct = allSignedPcts.length === 0 ? null : allSignedPcts.reduce((a, b) => a + b, 0) / allSignedPcts.length
+
+    return {
+      bucket_start: new Date(k).toISOString(),
+      session_count,
+      passed_count,
+      pass_rate,
+      mae_pct,
+      signed_error_pct,
+    }
+  })
+}
+
 // ── Enable / disable ──────────────────────────────────────────
 
 export function enableDummy(): void {
@@ -399,6 +438,8 @@ export function enableDummy(): void {
     listSessions: async ({ limit, offset, filter }: { limit: number; offset: number; filter: DashboardFilters }) =>
       applyFilter(filter).slice(offset, offset + limit).map((b) => b.listRow),
     getSession: async (id: string) => DETAIL_BY_ID.get(id) ?? null,
+    getTimeSeries: async ({ filter, granularity }: { filter: DashboardFilters; granularity: TimeSeriesGranularity }) =>
+      buildTimeSeries(filter, granularity),
     queueStatus: async () => ({ queued: 0, poison: 0 }),
     retryQueued: async () => ({ uploaded: 0, stillQueued: 0, errors: [] }),
   })
