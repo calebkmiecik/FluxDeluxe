@@ -290,6 +290,9 @@ function StageRow({
   )
 }
 
+const BAR_FILL = 'bg-primary/70'
+const BAR_TRACK = 'bg-white/5'
+
 /** Positive-scalar metric: number + horizontal bar that fills left-to-right. */
 function MetricCell({ value, format, barFill }: {
   value: number | null
@@ -300,9 +303,9 @@ function MetricCell({ value, format, barFill }: {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{format(value)}</span>
-      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden">
+      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden`}>
         <div
-          className="h-full bg-white/30 rounded-sm"
+          className={`h-full ${BAR_FILL} rounded-sm`}
           style={{ width: `${Math.max(0, Math.min(1, barFill)) * 100}%` }}
         />
       </div>
@@ -310,19 +313,14 @@ function MetricCell({ value, format, barFill }: {
   )
 }
 
-/** Pass rate: 0..100% natural scale, color-graded. */
+/** Pass rate: 0..100% natural scale. */
 function PassCell({ value }: { value: number | null }) {
-  const color =
-    value === null ? 'bg-white/20' :
-    value >= 0.9 ? 'bg-success/70' :
-    value >= 0.75 ? 'bg-warning/70' :
-    'bg-danger/70'
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtPct(value)}</span>
-      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden">
+      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden`}>
         <div
-          className={`h-full rounded-sm ${color}`}
+          className={`h-full rounded-sm ${BAR_FILL}`}
           style={{ width: `${Math.max(0, Math.min(1, value ?? 0)) * 100}%` }}
         />
       </div>
@@ -339,13 +337,13 @@ function SignedCell({ value, maxAbs }: { value: number | null; maxAbs: number })
   return (
     <div className="flex items-center gap-2 min-w-0">
       <span className="text-sm text-foreground tabular-nums w-14 shrink-0">{fmtSignedPct(value)}</span>
-      <div className="flex-1 h-1.5 bg-white/5 rounded-sm overflow-hidden relative">
+      <div className={`flex-1 h-1.5 ${BAR_TRACK} rounded-sm overflow-hidden relative`}>
         {/* center line */}
         <div className="absolute left-1/2 top-0 bottom-0 w-px bg-white/20" />
-        {/* bar extends from center */}
+        {/* bar extends from center (same color in either direction) */}
         {value !== null && (
           <div
-            className={`absolute top-0 bottom-0 ${isNegative ? 'bg-danger/60' : 'bg-success/60'}`}
+            className={`absolute top-0 bottom-0 ${BAR_FILL}`}
             style={{
               left: isNegative ? `calc(50% - ${widthPct}%)` : '50%',
               width: `${widthPct}%`,
