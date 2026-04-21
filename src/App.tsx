@@ -1,6 +1,7 @@
 import { useSocket } from './hooks/useSocket'
 import { FluxLitePage } from './pages/fluxlite/FluxLitePage'
 import { ToastContainer } from './components/shared/Toast'
+import { BackendRestartBanner } from './components/shared/BackendRestartBanner'
 
 export default function App() {
   useSocket()
@@ -11,6 +12,7 @@ export default function App() {
         <FluxLitePage />
       </main>
       <ToastContainer />
+      <BackendRestartBanner />
     </div>
   )
 }

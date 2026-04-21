@@ -12,12 +12,14 @@ interface UiStoreState {
   backendLogs: string[]
   showDevicePicker: boolean
   showModelPackager: boolean
+  backendRestartPending: boolean
   setActiveLitePage: (page: UiStoreState['activeLitePage']) => void
   addToast: (toast: Omit<Toast, 'id'>) => void
   dismissToast: (id: string) => void
   pushBackendLog: (line: string) => void
   setShowDevicePicker: (show: boolean) => void
   setShowModelPackager: (show: boolean) => void
+  setBackendRestartPending: (pending: boolean) => void
 }
 
 function generateId(): string {
@@ -34,7 +36,9 @@ export const useUiStore = create<UiStoreState>()((set) => ({
   backendLogs: [],
   showDevicePicker: false,
   showModelPackager: false,
+  backendRestartPending: false,
   setActiveLitePage: (activeLitePage) => set({ activeLitePage }),
+  setBackendRestartPending: (backendRestartPending) => set({ backendRestartPending }),
   addToast: (toast) =>
     set((s) => ({ toasts: [...s.toasts, { ...toast, id: generateId() }] })),
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

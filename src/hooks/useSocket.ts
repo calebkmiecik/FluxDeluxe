@@ -207,7 +207,10 @@ export function useSocket(): void {
     on('modelActivationStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
-        uiStore.addToast({ message: 'Model activation updated', type: 'success' })
+        uiStore.addToast({
+          message: 'Model activated. Reconnect the plate to load it.',
+          type: 'info',
+        })
         for (const d of useDeviceStore.getState().devices) {
           socket.emit('getModelMetadata', { deviceId: d.axfId })
         }
@@ -217,10 +220,12 @@ export function useSocket(): void {
     on('modelPackageStatus', (data: unknown) => {
       const resp = data as SocketResponse
       if (resp.status === 'success') {
-        uiStore.addToast({ message: 'Model packaged successfully', type: 'success' })
         for (const d of useDeviceStore.getState().devices) {
           socket.emit('getModelMetadata', { deviceId: d.axfId })
         }
+        // Kick off the visible restart countdown. BackendRestartBanner
+        // handles the tick-down + final restartDynamo() IPC call.
+        uiStore.setBackendRestartPending(true)
       } else {
         uiStore.addToast({ message: `Packaging failed: ${resp.message}`, type: 'error' })
       }
