@@ -127,11 +127,6 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
     ? baselineData.sessions_passed / baselineData.session_count
     : null
 
-  // All-time plates-passed-per-week rate (baseline) — also excludes dead weeks.
-  const baselinePassedPerWeek = (baselineData && baselineData.active_weeks > 0)
-    ? baselineData.sessions_passed / baselineData.active_weeks
-    : null
-
   // Only show baselines when we actually have one to show and we're not in all-time view
   const showBaseline = !isAllTime && baselineData !== null && baselineData.session_count > 0
 
@@ -141,17 +136,6 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const hasUsefulPrior = priorData !== null && priorData.session_count >= MIN_PRIOR_SESSIONS
   const failOnly = filter.passFilter === 'fail'
   const priorLabel = priorWindowLabel(filter)
-
-  const platesPassedDelta: Delta | null = (() => {
-    if (failOnly || !hasUsefulPrior || !data) return null
-    const diff = data.sessions_passed - priorData!.sessions_passed
-    return {
-      text: `${diff > 0 ? `+${diff}` : diff} ${priorLabel}`,
-      direction: directionOf(diff),
-      goodWhen: 'up',
-      tooltip: `Prior window: ${priorData!.sessions_passed} passed`,
-    }
-  })()
 
   const passRateDelta: Delta | null = (() => {
     if (failOnly || !hasUsefulPrior || passRate === null || priorPassRate === null) return null
@@ -197,32 +181,24 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const maxMaePct = maxPos('mae_pct')
   const maxStdPct = maxPos('std_error_pct')
 
-  const deviceCount = data?.device_count ?? 0
   const sessionCount = data?.session_count ?? 0
   const passedCount = data?.sessions_passed ?? 0
 
   return (
     <div className="flex flex-col gap-3">
       <h3 className="telemetry-label">Overview</h3>
-      <div className="grid grid-cols-4 gap-2">
-        <Tile
-          label="Devices"
-          value={loading ? '…' : String(deviceCount)}
-          sub={loading ? undefined : `${sessionCount} session${sessionCount === 1 ? '' : 's'}`}
-        />
-        <Tile
-          label="Plates Passed"
-          value={loading ? '…' : String(passedCount)}
-          delta={platesPassedDelta}
-          baseline={showBaseline && baselinePassedPerWeek !== null ? `${baselinePassedPerWeek.toFixed(1)} / wk all-time` : null}
-          sub={loading ? undefined : passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / week` : undefined}
-        />
+      <div className="grid grid-cols-2 gap-2">
         <Tile
           label="Pass Rate"
           value={loading ? '…' : fmtPct(passRate)}
           delta={passRateDelta}
           baseline={showBaseline && baselinePassRate !== null ? `${fmtPct(baselinePassRate)} all-time` : null}
-          sub={loading ? undefined : `${passedCount} of ${sessionCount}`}
+          sub={
+            loading ? undefined : joinSub(
+              `${passedCount} of ${sessionCount} passed`,
+              passedPerWeek !== null ? `${passedPerWeek.toFixed(1)} / wk` : null,
+            )
+          }
         />
         <Tile
           label="Accuracy"
