@@ -144,6 +144,10 @@ export class LiveTestRepo {
         signed_mean_error: avg('signed_mean_error'),
         std_error: avg('std_error'),
         pass_rate: avg('pass_rate'),
+        // TODO: compute % versions from session_cells once schema adds them to session_stage_aggregates
+        mae_pct: null,
+        signed_mean_error_pct: null,
+        std_error_pct: null,
       }
     })
 

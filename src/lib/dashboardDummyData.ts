@@ -125,7 +125,17 @@ interface BuiltSession {
   listRow: SessionListRow
   detail: SessionDetail
   /** Precomputed per-stage-type aggregate rows, for use in the overview rollup */
-  aggRows: Array<{ stage_type: 'dumbbell' | 'two_leg' | 'one_leg'; n_cells: number; mae: number | null; signed_mean_error: number | null; std_error: number | null; pass_rate: number | null }>
+  aggRows: Array<{
+    stage_type: 'dumbbell' | 'two_leg' | 'one_leg'
+    n_cells: number
+    mae: number | null
+    signed_mean_error: number | null
+    std_error: number | null
+    pass_rate: number | null
+    mae_pct: number | null
+    signed_mean_error_pct: number | null
+    std_error_pct: number | null
+  }>
   /** Total cells captured (for overview cells tile) */
   n_cells_captured: number
   /** Overall pass rate (for overview pass-rate tile) */
@@ -149,7 +159,7 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
 
   // Generate cells per stage
   const cells: Array<Record<string, unknown>> = []
-  const capturedByStageType: Record<'dumbbell'|'two_leg'|'one_leg', Array<{ errorN: number; signedErrorN: number; pass: boolean }>> = {
+  const capturedByStageType: Record<'dumbbell'|'two_leg'|'one_leg', Array<{ errorN: number; signedErrorN: number; errorPct: number; signedPct: number; pass: boolean }>> = {
     dumbbell: [], two_leg: [], one_leg: [],
   }
   const cellErrorPcts: number[] = []
@@ -198,10 +208,12 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
           pass,
           captured_at,
         })
-        capturedByStageType[stage.type].push({ errorN, signedErrorN, pass })
+        const errorPct = stage.targetN > 0 ? errorN / stage.targetN : 0
+        const signedPct = stage.targetN > 0 ? signedErrorN / stage.targetN : 0
+        capturedByStageType[stage.type].push({ errorN, signedErrorN, errorPct, signedPct, pass })
         if (stage.targetN > 0) {
-          cellErrorPcts.push(errorN / stage.targetN)
-          cellSignedPcts.push(signedErrorN / stage.targetN)
+          cellErrorPcts.push(errorPct)
+          cellSignedPcts.push(signedPct)
         }
         totalCaptured++
         if (pass) totalPassed++
@@ -213,10 +225,17 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
   const aggRows = (['dumbbell', 'two_leg', 'one_leg'] as const).map((stage_type) => {
     const bucket = capturedByStageType[stage_type]
     const n_cells = bucket.length
-    if (n_cells === 0) return { stage_type, n_cells: 0, mae: null, signed_mean_error: null, std_error: null, pass_rate: null }
+    if (n_cells === 0) return {
+      stage_type, n_cells: 0,
+      mae: null, signed_mean_error: null, std_error: null, pass_rate: null,
+      mae_pct: null, signed_mean_error_pct: null, std_error_pct: null,
+    }
     const mae = bucket.reduce((s, c) => s + c.errorN, 0) / n_cells
     const signedMean = bucket.reduce((s, c) => s + c.signedErrorN, 0) / n_cells
     const variance = bucket.reduce((s, c) => s + (c.signedErrorN - signedMean) ** 2, 0) / n_cells
+    const maePct = bucket.reduce((s, c) => s + c.errorPct, 0) / n_cells
+    const signedMeanPct = bucket.reduce((s, c) => s + c.signedPct, 0) / n_cells
+    const variancePct = bucket.reduce((s, c) => s + (c.signedPct - signedMeanPct) ** 2, 0) / n_cells
     return {
       stage_type,
       n_cells,
@@ -224,6 +243,9 @@ function buildSession(spec: FakeSessionSpec): BuiltSession {
       signed_mean_error: signedMean,
       std_error: Math.sqrt(variance),
       pass_rate: bucket.filter((c) => c.pass).length / n_cells,
+      mae_pct: maePct,
+      signed_mean_error_pct: signedMeanPct,
+      std_error_pct: Math.sqrt(variancePct),
     }
   })
 
@@ -336,7 +358,7 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
 
   const per_stage_type = (['dumbbell', 'two_leg', 'one_leg'] as const).map((stage_type) => {
     const rows = subset.flatMap((b) => b.aggRows).filter((r) => r.stage_type === stage_type && r.n_cells > 0)
-    const avg = (key: 'mae' | 'signed_mean_error' | 'std_error' | 'pass_rate') =>
+    const avg = (key: 'mae' | 'signed_mean_error' | 'std_error' | 'pass_rate' | 'mae_pct' | 'signed_mean_error_pct' | 'std_error_pct') =>
       rows.length === 0 ? null : rows.reduce((s, r) => s + (r[key] as number), 0) / rows.length
     return {
       stage_type,
@@ -344,6 +366,9 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
       signed_mean_error: avg('signed_mean_error'),
       std_error: avg('std_error'),
       pass_rate: avg('pass_rate'),
+      mae_pct: avg('mae_pct'),
+      signed_mean_error_pct: avg('signed_mean_error_pct'),
+      std_error_pct: avg('std_error_pct'),
     }
   })
 

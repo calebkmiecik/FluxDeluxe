@@ -57,10 +57,6 @@ function DeltaPill({ delta }: { delta: Delta }) {
   )
 }
 
-function fmtN(n: number | null | undefined, digits = 1): string {
-  if (n === null || n === undefined) return '—'
-  return `${n.toFixed(digits)}N`
-}
 function fmtPct(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   return `${(n * 100).toFixed(1)}%`
@@ -187,11 +183,11 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
       <div className="bg-white/[0.02] border border-border rounded-md p-3">
         <div className="telemetry-label">{label}</div>
         <div className="flex items-baseline gap-2 mt-0.5">
-          <span className="text-lg font-semibold text-foreground">MAE {fmtN(r?.mae ?? null)}</span>
+          <span className="text-lg font-semibold text-foreground">MAE {fmtPct(r?.mae_pct ?? null)}</span>
           <span className="text-xs text-muted-foreground">pass {fmtPct(r?.pass_rate ?? null)}</span>
         </div>
         <div className="text-xs text-muted-foreground mt-1">
-          bias {fmtN(r?.signed_mean_error ?? null)} / std {fmtN(r?.std_error ?? null)}
+          bias {fmtSignedPct(r?.signed_mean_error_pct ?? null)} / std {fmtPct(r?.std_error_pct ?? null)}
         </div>
       </div>
     )

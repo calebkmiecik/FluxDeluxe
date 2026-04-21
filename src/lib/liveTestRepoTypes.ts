@@ -41,5 +41,9 @@ export interface OverviewResult {
     signed_mean_error: number | null
     std_error: number | null
     pass_rate: number | null
+    /** Percentage versions (as fractions: 0.02 = 2%). Computed from per-cell error/target. */
+    mae_pct: number | null
+    signed_mean_error_pct: number | null
+    std_error_pct: number | null
   }>
 }
