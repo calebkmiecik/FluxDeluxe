@@ -43,7 +43,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
     const currentP = liveTestClient.getTimeSeries({ filter, granularity })
     const baselineP = filter.timePreset === 'all'
       ? Promise.resolve([])
-      : liveTestClient.getTimeSeries({ filter: withAllTime(filter), granularity: 'week' })
+      : liveTestClient.getTimeSeries({ filter: withAllTime(filter), granularity: 'month' })
     Promise.all([currentP, baselineP]).then(([cur, base]) => {
       if (cancelled) return
       setSeries(cur)
@@ -68,24 +68,20 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
   const empty = !loading && chartData.length === 0
 
   return (
-    <div className="bg-[#1A1A1A] border border-border rounded-md p-4">
-      <div className="flex items-center justify-between mb-3">
+    <>
+      <div className="flex items-center justify-between">
         <h3 className="telemetry-label">Trend</h3>
-        <div className="flex items-center gap-2">
-          <span className="telemetry-label">Metric</span>
-          <select
-            value={metric}
-            onChange={(e) => setMetric(e.target.value as Metric)}
-            className="bg-background border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none"
-          >
-            {METRIC_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={metric}
+          onChange={(e) => setMetric(e.target.value as Metric)}
+          className="bg-background border border-border rounded-md text-xs px-2 py-1 text-foreground focus:border-primary focus:outline-none"
+        >
+          {METRIC_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
-
-      <div className="h-48">
+      <div className="bg-[#1A1A1A] border border-border rounded-md p-3 flex-1 min-h-[160px] flex flex-col">
         {loading && <p className="text-muted-foreground text-sm">Loading…</p>}
         {empty && !loading && <p className="text-muted-foreground text-sm">No data in the selected range.</p>}
         {!empty && !loading && (
@@ -149,20 +145,20 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
               )}
               {/* Fill + outer darker stroke (with subtle glow) */}
               <Area
-                type="monotone"
+                type="natural"
                 dataKey="value"
                 stroke={LINE_DARK}
                 strokeWidth={2}
                 fill="url(#trendFill)"
                 dot={false}
                 activeDot={false}
-                connectNulls={false}
+                connectNulls={true}
                 isAnimationActive={false}
                 style={{ filter: 'url(#trendGlow)' }}
               />
               {/* Inner bright crisp core line, no glow */}
               <Line
-                type="monotone"
+                type="natural"
                 dataKey="value"
                 stroke={LINE_COLOR}
                 strokeWidth={1.2}
@@ -170,13 +166,13 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                 strokeLinejoin="round"
                 dot={false}
                 activeDot={{ r: 4, fill: LINE_COLOR, stroke: LINE_DARK, strokeWidth: 2 }}
-                connectNulls={false}
+                connectNulls={true}
                 isAnimationActive={false}
               />
             </ComposedChart>
           </ResponsiveContainer>
         )}
       </div>
-    </div>
+    </>
   )
 }

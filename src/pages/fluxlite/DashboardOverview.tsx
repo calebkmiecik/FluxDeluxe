@@ -3,6 +3,7 @@ import type { OverviewResult } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 import type { DashboardFilters } from '../../lib/dashboardFilters'
 import { effectiveTimeRange, priorEquivalentFilter, withAllTime, priorWindowLabel } from '../../lib/dashboardFilters'
+import { DashboardTrend } from './DashboardTrend'
 
 const MIN_PRIOR_SESSIONS = 2
 
@@ -195,8 +196,8 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
   const passedCount = data?.sessions_passed ?? 0
 
   return (
-    <div className="grid gap-3 items-stretch" style={{ gridTemplateColumns: '320px 1fr' }}>
-      {/* Left: stacked overview tiles */}
+    <div className="grid gap-3 items-stretch" style={{ gridTemplateColumns: '320px minmax(360px, 1fr) minmax(360px, 1fr)' }}>
+      {/* Overview tiles */}
       <div className="flex flex-col gap-3">
         <h3 className="telemetry-label">Overview</h3>
         <div className="flex flex-col gap-2 flex-1">
@@ -226,7 +227,7 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
         </div>
       </div>
 
-      {/* Right: stage-type comparison table */}
+      {/* Stage-type comparison table */}
       <div className="flex flex-col gap-3 min-w-0">
         <h3 className="telemetry-label">By stage type</h3>
         <div className="bg-white/[0.02] border border-border rounded-md p-4 flex-1 flex flex-col justify-center">
@@ -254,6 +255,11 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Trend chart */}
+      <div className="flex flex-col gap-3 min-w-0">
+        <DashboardTrend filter={filter} />
       </div>
     </div>
   )

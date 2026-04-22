@@ -11,7 +11,7 @@ export interface TimeSeriesPoint {
   signed_error_pct: number | null
 }
 
-export type TimeSeriesGranularity = 'day' | 'week'
+export type TimeSeriesGranularity = 'day' | 'week' | 'month'
 
 export interface SessionListRow {
   id: string

@@ -63,7 +63,7 @@ export function registerLiveTestIpc(deps: LiveTestIpcDeps): void {
     return deps.repo.getOverview(opts.filter)
   })
 
-  ipcMain.handle('liveTest:getTimeSeries', async (_e, opts: { filter: import('../../src/lib/dashboardFilters').DashboardFilters; granularity: 'day' | 'week' }) => {
+  ipcMain.handle('liveTest:getTimeSeries', async (_e, opts: { filter: import('../../src/lib/dashboardFilters').DashboardFilters; granularity: 'day' | 'week' | 'month' }) => {
     if (!deps.repo) return []
     return deps.repo.getTimeSeries(opts)
   })

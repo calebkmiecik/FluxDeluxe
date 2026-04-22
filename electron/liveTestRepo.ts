@@ -202,11 +202,15 @@ export class LiveTestRepo {
     if (error) throw new Error(`getTimeSeries failed: ${error.message}`)
     const sessions = (data ?? []) as Array<{ started_at: string; session_passed: boolean | null }>
 
-    const BUCKET_MS = opts.granularity === 'day' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000
+    const bucketKey = (tMs: number): number => {
+      if (opts.granularity === 'day') return Math.floor(tMs / (24 * 3600 * 1000)) * (24 * 3600 * 1000)
+      if (opts.granularity === 'week') return Math.floor(tMs / (7 * 24 * 3600 * 1000)) * (7 * 24 * 3600 * 1000)
+      const d = new Date(tMs)
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+    }
     const buckets = new Map<number, { n: number; passed: number }>()
     for (const s of sessions) {
-      const t = new Date(s.started_at).getTime()
-      const key = Math.floor(t / BUCKET_MS) * BUCKET_MS
+      const key = bucketKey(new Date(s.started_at).getTime())
       const b = buckets.get(key) ?? { n: 0, passed: 0 }
       b.n++
       if (s.session_passed === true) b.passed++

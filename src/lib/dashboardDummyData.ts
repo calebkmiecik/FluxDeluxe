@@ -393,15 +393,22 @@ function buildOverview(filter: DashboardFilters): OverviewResult {
   return { session_count, sessions_passed, cells_captured, device_count, overall_pass_rate, earliest_session_at, active_weeks, mae_pct, signed_error_pct, per_stage_type }
 }
 
+function bucketKey(tMs: number, granularity: TimeSeriesGranularity): number {
+  if (granularity === 'day') return Math.floor(tMs / (24 * 3600 * 1000)) * (24 * 3600 * 1000)
+  if (granularity === 'week') return Math.floor(tMs / (7 * 24 * 3600 * 1000)) * (7 * 24 * 3600 * 1000)
+  // month — calendar-month boundaries (UTC)
+  const d = new Date(tMs)
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
+}
+
 function buildTimeSeries(filter: DashboardFilters, granularity: TimeSeriesGranularity): TimeSeriesPoint[] {
   const subset = applyFilter(filter)
   if (subset.length === 0) return []
 
-  const BUCKET_MS = granularity === 'day' ? 24 * 3600 * 1000 : 7 * 24 * 3600 * 1000
   const buckets = new Map<number, BuiltSession[]>()
   for (const s of subset) {
     const t = new Date(s.listRow.started_at).getTime()
-    const key = Math.floor(t / BUCKET_MS) * BUCKET_MS
+    const key = bucketKey(t, granularity)
     const arr = buckets.get(key) ?? []
     arr.push(s)
     buckets.set(key, arr)
