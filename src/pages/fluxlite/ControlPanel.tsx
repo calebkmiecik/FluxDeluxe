@@ -501,7 +501,7 @@ function MetaDataBody({
   onBwNChange: (v: string) => void; onBwPctChange: (v: string) => void
   onOpenModels: () => void
 }) {
-  const inputClass = "w-full bg-white/[0.04] border border-border/60 rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-[#7AB8FF] focus:outline-none transition-colors"
+  const inputClass = "w-full bg-transparent border-b border-border/60 rounded-none px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-[#7AB8FF] focus:outline-none transition-colors"
   const numFilter = (v: string) => v.replace(/[^0-9.]/g, '')
 
   // Read-only view once a session has started
