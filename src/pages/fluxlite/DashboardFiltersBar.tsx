@@ -92,10 +92,8 @@ export function DashboardFiltersBar({
       setDraft(draft + ghostSuffix)
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (draft.trim()) {
-        // If a completion is waiting, Enter accepts the completed tag.
-        addTag(ghostSuffix ? draft + ghostSuffix : draft)
-      }
+      // Enter only submits the literal draft — Tab is the only way to accept the ghost suggestion.
+      if (draft.trim()) addTag(draft)
     } else if (e.key === 'Backspace' && !draft && filters.searchTags.length > 0) {
       removeTag(filters.searchTags.length - 1)
     }
