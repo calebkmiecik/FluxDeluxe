@@ -234,8 +234,8 @@ export function DashboardOverview({ filter }: { filter: DashboardFilters }) {
           <div className="grid items-center gap-x-4 gap-y-3" style={{ gridTemplateColumns: '90px repeat(4, minmax(0, 1fr))' }}>
             {/* Header row */}
             <div />
-            <div className="telemetry-label">MAE</div>
             <div className="telemetry-label">Pass</div>
+            <div className="telemetry-label">MAE</div>
             <div className="telemetry-label">Signed</div>
             <div className="telemetry-label">Std</div>
 
@@ -280,8 +280,8 @@ function StageRow({
   return (
     <>
       <div className="text-sm text-foreground font-medium">{label}</div>
-      <MetricCell value={mae}    format={fmtPct}       barFill={mae !== null ? mae / maxMae : 0} />
       <PassCell   value={pass} />
+      <MetricCell value={mae}    format={fmtPct}       barFill={mae !== null ? mae / maxMae : 0} />
       <SignedCell value={signed} maxAbs={maxSigned} />
       <MetricCell value={std}    format={fmtPct}       barFill={std !== null ? std / maxStd : 0} />
     </>

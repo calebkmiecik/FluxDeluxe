@@ -163,8 +163,8 @@ function SessionDetailBody({ data, onClose }: { data: SessionDetail; onClose: ()
         <h3 className="telemetry-label mb-3">By stage type</h3>
         <div className="grid items-center gap-x-4 gap-y-3" style={{ gridTemplateColumns: '90px repeat(4, minmax(0, 1fr))' }}>
           <div />
-          <div className="telemetry-label">MAE</div>
           <div className="telemetry-label">Pass</div>
+          <div className="telemetry-label">MAE</div>
           <div className="telemetry-label">Signed</div>
           <div className="telemetry-label">Std</div>
           {stages.map(({ type, label }) => {
@@ -258,8 +258,8 @@ function StageBarRow({ label, mae, pass, signed, std }: {
   return (
     <>
       <div className="text-sm text-foreground font-medium">{label}</div>
-      <ScalarCell value={mae}    format={fmtPct}       fill={mae !== null ? mae / maeMax : 0} />
       <PassCellInline value={pass} />
+      <ScalarCell value={mae}    format={fmtPct}       fill={mae !== null ? mae / maeMax : 0} />
       <SignedCellInline value={signed} maxAbs={signedMax} />
       <ScalarCell value={std}    format={fmtPct}       fill={std !== null ? std / stdMax : 0} />
     </>
