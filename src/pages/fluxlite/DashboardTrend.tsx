@@ -127,7 +127,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   }}
                 />
               )}
-              <Bar dataKey="value" fill={BAR_FILL} radius={0} maxBarSize={5} isAnimationActive={false} />
+              <Bar dataKey="value" fill={BAR_FILL} radius={0} maxBarSize={10} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         )}
