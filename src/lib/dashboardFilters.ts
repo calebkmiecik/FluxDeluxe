@@ -10,7 +10,7 @@
 import type { DeviceFamily } from './deviceFamily'
 import { familyToDeviceTypes } from './deviceFamily'
 
-export type TimePreset = 'all' | '7d' | '30d' | '90d' | 'ytd' | 'custom'
+export type TimePreset = 'all' | '7d' | '14d' | '3w' | '1mo' | '3mo' | 'custom'
 
 export interface DashboardFilters {
   timePreset: TimePreset
@@ -33,7 +33,7 @@ export interface DashboardFilters {
 }
 
 export const DEFAULT_FILTERS: DashboardFilters = {
-  timePreset: 'all',
+  timePreset: '7d',
   timeFrom: null,
   timeTo: null,
   deviceFamily: null,
@@ -45,7 +45,7 @@ export const DEFAULT_FILTERS: DashboardFilters = {
 
 export function isDefaultFilters(f: DashboardFilters): boolean {
   return (
-    f.timePreset === 'all' &&
+    f.timePreset === DEFAULT_FILTERS.timePreset &&
     f.deviceFamily === null &&
     f.weightMinN === null &&
     f.weightMaxN === null &&
@@ -58,21 +58,18 @@ export function isDefaultFilters(f: DashboardFilters): boolean {
  * Resolve the active time window to concrete ISO timestamps.
  * Returns `{from: null, to: null}` when no time constraint applies.
  */
+const DAY_MS = 24 * 3600 * 1000
+
 export function effectiveTimeRange(f: DashboardFilters): { fromIso: string | null; toIso: string | null } {
   const now = new Date()
+  const ago = (days: number) => new Date(now.getTime() - days * DAY_MS).toISOString()
   switch (f.timePreset) {
-    case 'all':
-      return { fromIso: null, toIso: null }
-    case '7d':
-      return { fromIso: new Date(now.getTime() - 7 * 24 * 3600 * 1000).toISOString(), toIso: null }
-    case '30d':
-      return { fromIso: new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString(), toIso: null }
-    case '90d':
-      return { fromIso: new Date(now.getTime() - 90 * 24 * 3600 * 1000).toISOString(), toIso: null }
-    case 'ytd': {
-      const y = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0)
-      return { fromIso: y.toISOString(), toIso: null }
-    }
+    case 'all':    return { fromIso: null, toIso: null }
+    case '7d':     return { fromIso: ago(7),  toIso: null }
+    case '14d':    return { fromIso: ago(14), toIso: null }
+    case '3w':     return { fromIso: ago(21), toIso: null }
+    case '1mo':    return { fromIso: ago(30), toIso: null }
+    case '3mo':    return { fromIso: ago(90), toIso: null }
     case 'custom':
       return {
         fromIso: f.timeFrom ? new Date(f.timeFrom + 'T00:00:00').toISOString() : null,
@@ -107,9 +104,10 @@ export function pickGranularity(f: DashboardFilters): 'day' | 'week' | 'month' {
 export function priorWindowLabel(f: DashboardFilters): string {
   switch (f.timePreset) {
     case '7d':    return 'vs prior 7d'
-    case '30d':   return 'vs prior 30d'
-    case '90d':   return 'vs prior 90d'
-    case 'ytd':   return 'vs prior YTD'
+    case '14d':   return 'vs prior 14d'
+    case '3w':    return 'vs prior 3w'
+    case '1mo':   return 'vs prior month'
+    case '3mo':   return 'vs prior 3mo'
     case 'custom': return 'vs prior period'
     default:      return 'vs prior'
   }

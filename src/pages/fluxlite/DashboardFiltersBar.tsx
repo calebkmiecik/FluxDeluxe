@@ -6,11 +6,11 @@ import type { FilterSuggestions } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
 
 const TIME_PRESETS: { value: TimePreset; label: string }[] = [
-  { value: 'all',   label: 'All time' },
-  { value: '7d',    label: '7 days' },
-  { value: '30d',   label: '30 days' },
-  { value: '90d',   label: '90 days' },
-  { value: 'ytd',   label: 'YTD' },
+  { value: '7d',     label: '7 days' },
+  { value: '14d',    label: '14 days' },
+  { value: '3w',     label: '3 weeks' },
+  { value: '1mo',    label: 'Month' },
+  { value: '3mo',    label: '3 months' },
   { value: 'custom', label: 'Custom' },
 ]
 

@@ -11,12 +11,21 @@ import { DEFAULT_FILTERS, type DashboardFilters } from '../../lib/dashboardFilte
 const DUMMY_KEY = 'fluxdeluxe.dashboardDummy'
 const FILTERS_KEY = 'fluxdeluxe.dashboardFilters'
 
+const VALID_TIME_PRESETS = new Set(['all', '7d', '14d', '3w', '1mo', '3mo', 'custom'])
+
 function loadFilters(): DashboardFilters {
   try {
     const raw = localStorage.getItem(FILTERS_KEY)
     if (!raw) return DEFAULT_FILTERS
     const parsed = JSON.parse(raw)
-    return { ...DEFAULT_FILTERS, ...parsed }
+    const merged = { ...DEFAULT_FILTERS, ...parsed }
+    // Migrate old/unknown presets (e.g. '30d', '90d', 'ytd') to the default
+    if (!VALID_TIME_PRESETS.has(merged.timePreset)) {
+      merged.timePreset = DEFAULT_FILTERS.timePreset
+      merged.timeFrom = null
+      merged.timeTo = null
+    }
+    return merged
   } catch {
     return DEFAULT_FILTERS
   }
