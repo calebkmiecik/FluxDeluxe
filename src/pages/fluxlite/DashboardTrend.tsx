@@ -19,7 +19,7 @@ const METRIC_OPTIONS: { value: Metric; label: string; format: (n: number | null)
 
 const CHART_KEY = 'fluxdeluxe.dashboardTrendMetric'
 
-const BAR_FILL = '#0051BA'
+const BAR_FILL = '#3B8EFF'
 const AXIS_TEXT   = 'rgba(206, 206, 206, 0.8)'
 const AXIS_STROKE = 'rgba(206, 206, 206, 0.25)'
 const GRID_STROKE = 'rgba(206, 206, 206, 0.08)'
@@ -84,7 +84,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
         {empty && !loading && <p className="text-muted-foreground text-sm">No data in the selected range.</p>}
         {!empty && !loading && (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} barCategoryGap="6%">
+            <BarChart data={chartData} margin={{ top: 12, right: 16, left: 0, bottom: 0 }} barCategoryGap="30%">
               <CartesianGrid stroke={GRID_STROKE} strokeDasharray="0" vertical={false} />
               <XAxis
                 dataKey="ts"
@@ -107,12 +107,12 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                 width={50}
               />
               <Tooltip
-                contentStyle={{ background: '#141414', border: '1px solid #333', borderRadius: 4, fontSize: 12 }}
+                contentStyle={{ background: '#141414', border: '1px solid #333', borderRadius: 0, fontSize: 12, fontFamily: "'Geist Mono Variable', monospace" }}
                 labelStyle={{ color: '#CECECE' }}
                 itemStyle={{ color: '#CECECE' }}
                 labelFormatter={(v: number) => new Date(v).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                 formatter={(v: number) => [option.format(v), option.label]}
-                cursor={{ fill: 'rgba(206, 206, 206, 0.05)' }}
+                cursor={{ stroke: 'rgba(123, 184, 255, 0.35)', strokeWidth: 1, strokeDasharray: '2 3', fill: 'transparent' }}
               />
               {baselineValue !== null && (
                 <ReferenceLine
@@ -127,7 +127,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   }}
                 />
               )}
-              <Bar dataKey="value" fill={BAR_FILL} radius={[3, 3, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="value" fill={BAR_FILL} radius={0} maxBarSize={5} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         )}
