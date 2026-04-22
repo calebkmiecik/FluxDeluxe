@@ -52,6 +52,11 @@ export function ModelsPage() {
   // active row can smoothly shrink before the previous-models list reflows.
   const [collapsingDevices, setCollapsingDevices] = useState<Set<string>>(new Set())
 
+  // Track pending activations so the clicked row can stay in-place with an
+  // "Activating…" button label until the backend confirms.
+  const [activatingKeys, setActivatingKeys] = useState<Set<string>>(new Set())
+  const activatingKey = (deviceId: string, modelId: string) => `${deviceId}|${modelId}`
+
   // Tick to re-evaluate the streaming filter at a reasonable cadence
   const [, setTick] = useState(0)
   useEffect(() => {
@@ -82,6 +87,14 @@ export function ModelsPage() {
   })
 
   const handleActivate = (deviceId: string, modelId: string) => {
+    // Mark this row as activating so its button shows "Activating…" and
+    // stays in-place until the backend confirms the state change.
+    setActivatingKeys((prev) => new Set(prev).add(activatingKey(deviceId, modelId)))
+    // Force the previous-models section expanded for this device so it
+    // doesn't collapse under a toggle on success — we want the just-promoted
+    // row to stay visible in its current context rather than vanish.
+    setExpandedDevices((prev) => new Set(prev).add(deviceId))
+
     const socket = getSocket()
     socket.emit('activateModel', { deviceId, modelId })
     setTimeout(() => {
@@ -119,6 +132,25 @@ export function ModelsPage() {
         const stillActive = models?.some((m) => m.modelActive)
         if (!stillActive) {
           next.delete(deviceId)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+    // Clear activation markers once the specific model has actually become
+    // active in the store.
+    setActivatingKeys((prev) => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const next = new Set(prev)
+      for (const key of prev) {
+        const [deviceId, modelId] = key.split('|')
+        const models = modelsByDevice[deviceId]
+        const isActiveNow = models?.some(
+          (m) => m.modelId === modelId && m.modelActive,
+        )
+        if (isActiveNow) {
+          next.delete(key)
           changed = true
         }
       }
@@ -278,13 +310,19 @@ export function ModelsPage() {
                             · {formatRelativeDate(m.packageDate)}
                           </span>
                         </div>
-                        <button
-                          onClick={() => handleActivate(d.axfId, m.modelId)}
-                          className="flex-shrink-0 px-2.5 py-1 text-xs border rounded bg-transparent transition-colors"
-                          style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
-                        >
-                          Activate
-                        </button>
+                        {(() => {
+                          const isActivating = activatingKeys.has(activatingKey(d.axfId, m.modelId))
+                          return (
+                            <button
+                              onClick={() => handleActivate(d.axfId, m.modelId)}
+                              disabled={isActivating}
+                              className="flex-shrink-0 px-2.5 py-1 text-xs border rounded bg-transparent transition-colors disabled:opacity-60"
+                              style={{ borderColor: plate3d.edgeCyan, color: plate3d.edgeCyan }}
+                            >
+                              {isActivating ? 'Activating…' : 'Activate'}
+                            </button>
+                          )
+                        })()}
                       </div>
                       ))}
                     </div>
