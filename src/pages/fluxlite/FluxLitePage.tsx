@@ -224,7 +224,7 @@ export function FluxLitePage() {
             </div>
 
             {/* Right: Control Panel */}
-            <div className="flex-[1] border-l border-border bg-card min-w-0">
+            <div className="flex-[1] border-l border-border bg-surface-dark min-w-0">
               <ControlPanel />
             </div>
           </div>

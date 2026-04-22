@@ -501,7 +501,7 @@ function MetaDataBody({
   onBwNChange: (v: string) => void; onBwPctChange: (v: string) => void
   onOpenModels: () => void
 }) {
-  const inputClass = "w-full bg-background border border-border rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none transition-colors"
+  const inputClass = "w-full bg-white/[0.04] border border-border/60 rounded-md px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-[#7AB8FF] focus:outline-none transition-colors"
   const numFilter = (v: string) => v.replace(/[^0-9.]/g, '')
 
   // Read-only view once a session has started
@@ -617,7 +617,7 @@ function WarmupBody({
         </span>
         {!done && <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>}
       </div>
-      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-200 ${done ? 'bg-success' : 'bg-warning'}`} style={{ width: `${displayProgress * 100}%` }} />
       </div>
       {phase === 'WARMUP' && (
@@ -679,7 +679,7 @@ function TareBody({
         </span>
         {!done && <span className="font-mono text-foreground">{remainingSec.toFixed(0)}s</span>}
       </div>
-      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
+      <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-200 ${done ? 'bg-success' : 'bg-warning'}`} style={{ width: `${displayProgress * 100}%` }} />
       </div>
       {phase === 'TARE' && (
