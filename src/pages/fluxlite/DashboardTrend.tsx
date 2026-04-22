@@ -84,7 +84,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
         {empty && !loading && <p className="text-muted-foreground text-sm">No data in the selected range.</p>}
         {!empty && !loading && (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} barCategoryGap="20%">
+            <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} barCategoryGap="6%">
               <CartesianGrid stroke={GRID_STROKE} strokeDasharray="0" vertical={false} />
               <XAxis
                 dataKey="ts"
@@ -127,7 +127,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   }}
                 />
               )}
-              <Bar dataKey="value" fill={BAR_FILL} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="value" fill={BAR_FILL} radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         )}
