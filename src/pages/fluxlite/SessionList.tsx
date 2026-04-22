@@ -179,8 +179,8 @@ function SortHeader({
     >
       <span className="inline-flex items-center gap-1">
         {label}
-        <span className={`text-[9px] leading-none ${isActive ? 'text-foreground' : 'text-muted-foreground/40 group-hover:text-muted-foreground'}`}>
-          {isActive ? (dir === 'asc' ? '▲' : '▼') : '↕'}
+        <span className={`text-xs leading-none ${isActive ? 'text-foreground' : 'text-muted-foreground/60 group-hover:text-foreground'}`}>
+          {isActive ? (dir === 'asc' ? '▲' : '▼') : '⇅'}
         </span>
       </span>
     </th>
