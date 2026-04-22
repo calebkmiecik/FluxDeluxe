@@ -205,7 +205,7 @@ function SessionDetailBody({ data, onClose }: { data: SessionDetail; onClose: ()
                     <div className="telemetry-label">{stage.label}</div>
                     <div className="telemetry-label">@ {loc}</div>
                   </div>
-                  <div className="max-w-[160px] mx-auto">
+                  <div className="max-w-[220px] mx-auto">
                     <CellGrid rows={s.grid_rows} cols={s.grid_cols} cells={cells} />
                   </div>
                 </div>
