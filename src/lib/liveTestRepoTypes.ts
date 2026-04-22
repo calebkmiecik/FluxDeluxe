@@ -13,6 +13,13 @@ export interface TimeSeriesPoint {
 
 export type TimeSeriesGranularity = 'day' | 'week' | 'month'
 
+/** Distinct values in the sessions table for populating search autocomplete. */
+export interface FilterSuggestions {
+  devices: Array<{ device_id: string; nickname: string | null; device_type: string }>
+  testers: string[]
+  models: string[]
+}
+
 export interface SessionListRow {
   id: string
   started_at: string

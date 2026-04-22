@@ -12,6 +12,7 @@ import type {
   OverviewResult,
   TimeSeriesPoint,
   TimeSeriesGranularity,
+  FilterSuggestions,
 } from './liveTestRepoTypes'
 import { setDummyImpl } from './liveTestClient'
 import type { DashboardFilters } from './dashboardFilters'
@@ -437,6 +438,25 @@ function buildTimeSeries(filter: DashboardFilters, granularity: TimeSeriesGranul
   })
 }
 
+function buildFilterSuggestions(): FilterSuggestions {
+  const deviceMap = new Map<string, { device_id: string; nickname: string | null; device_type: string }>()
+  const testers = new Set<string>()
+  const models = new Set<string>()
+  for (const b of BUILT) {
+    const id = b.listRow.device_id
+    if (!deviceMap.has(id)) {
+      deviceMap.set(id, { device_id: id, nickname: b.listRow.device_nickname, device_type: b.listRow.device_type })
+    }
+    if (b.listRow.tester_name) testers.add(b.listRow.tester_name)
+    if (b.listRow.model_id) models.add(b.listRow.model_id)
+  }
+  return {
+    devices: Array.from(deviceMap.values()).sort((a, b) => a.device_id.localeCompare(b.device_id)),
+    testers: Array.from(testers).sort(),
+    models: Array.from(models).sort(),
+  }
+}
+
 // ── Enable / disable ──────────────────────────────────────────
 
 export function enableDummy(): void {
@@ -447,6 +467,7 @@ export function enableDummy(): void {
     getSession: async (id: string) => DETAIL_BY_ID.get(id) ?? null,
     getTimeSeries: async ({ filter, granularity }: { filter: DashboardFilters; granularity: TimeSeriesGranularity }) =>
       buildTimeSeries(filter, granularity),
+    getFilterSuggestions: async () => buildFilterSuggestions(),
     queueStatus: async () => ({ queued: 0, poison: 0 }),
     retryQueued: async () => ({ uploaded: 0, stillQueued: 0, errors: [] }),
   })

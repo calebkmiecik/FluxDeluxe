@@ -1,10 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { SaveSessionPayload } from '../src/lib/liveTestPayload'
-import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity } from '../src/lib/liveTestRepoTypes'
+import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity, FilterSuggestions } from '../src/lib/liveTestRepoTypes'
 import type { DashboardFilters } from '../src/lib/dashboardFilters'
 import { effectiveTimeRange, effectiveDeviceTypes } from '../src/lib/dashboardFilters'
 
-export type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity }  // re-export for main-process callers
+export type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity, FilterSuggestions }  // re-export for main-process callers
 
 export class LiveTestRepo {
   constructor(private readonly client: SupabaseClient) {}
@@ -230,6 +230,40 @@ export class LiveTestRepo {
         signed_error_pct: null,
       }
     })
+  }
+
+  async getFilterSuggestions(): Promise<FilterSuggestions> {
+    // Distinct device_id + device_type from sessions, join devices for nickname.
+    const devRes = await this.client
+      .from('sessions')
+      .select('device_id, device_type, devices(nickname)')
+    if (devRes.error) throw new Error(`getFilterSuggestions devices failed: ${devRes.error.message}`)
+    const deviceMap = new Map<string, { device_id: string; nickname: string | null; device_type: string }>()
+    for (const r of (devRes.data ?? []) as any[]) {
+      if (!deviceMap.has(r.device_id)) {
+        deviceMap.set(r.device_id, {
+          device_id: r.device_id,
+          nickname: r.devices?.nickname ?? null,
+          device_type: r.device_type,
+        })
+      }
+    }
+
+    const testerRes = await this.client.from('sessions').select('tester_name')
+    if (testerRes.error) throw new Error(`getFilterSuggestions testers failed: ${testerRes.error.message}`)
+    const testers = new Set<string>()
+    for (const r of (testerRes.data ?? []) as any[]) if (r.tester_name) testers.add(r.tester_name)
+
+    const modelRes = await this.client.from('sessions').select('model_id')
+    if (modelRes.error) throw new Error(`getFilterSuggestions models failed: ${modelRes.error.message}`)
+    const models = new Set<string>()
+    for (const r of (modelRes.data ?? []) as any[]) if (r.model_id) models.add(r.model_id)
+
+    return {
+      devices: Array.from(deviceMap.values()).sort((a, b) => a.device_id.localeCompare(b.device_id)),
+      testers: Array.from(testers).sort(),
+      models: Array.from(models).sort(),
+    }
   }
 
   /** Delete all rows with `app_version LIKE 'test-%'`. Used by integration test cleanup. */

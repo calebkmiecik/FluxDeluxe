@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSession: (id: string) => ipcRenderer.invoke('liveTest:getSession', id),
     getOverview: (opts: unknown) => ipcRenderer.invoke('liveTest:getOverview', opts),
     getTimeSeries: (opts: unknown) => ipcRenderer.invoke('liveTest:getTimeSeries', opts),
+    getFilterSuggestions: () => ipcRenderer.invoke('liveTest:getFilterSuggestions'),
     retryQueued: () => ipcRenderer.invoke('liveTest:retryQueued'),
     queueStatus: () => ipcRenderer.invoke('liveTest:queueStatus'),
   },
