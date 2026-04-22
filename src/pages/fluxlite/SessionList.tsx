@@ -170,15 +170,19 @@ function SortHeader({
   onSort: (k: SortKey) => void
 }) {
   const isActive = active === sortKey
-  const arrow = !isActive ? '' : dir === 'asc' ? ' ▲' : ' ▼'
   return (
     <th
       onClick={() => onSort(sortKey)}
-      className={`pb-2 pr-4 telemetry-label uppercase select-none cursor-pointer transition-colors ${
+      className={`pb-2 pr-4 telemetry-label uppercase select-none cursor-pointer transition-colors group ${
         isActive ? 'text-foreground' : 'hover:text-foreground'
       }`}
     >
-      {label}<span className="text-[9px] ml-0.5">{arrow}</span>
+      <span className="inline-flex items-center gap-1">
+        {label}
+        <span className={`text-[9px] leading-none ${isActive ? 'text-foreground' : 'text-muted-foreground/40 group-hover:text-muted-foreground'}`}>
+          {isActive ? (dir === 'asc' ? '▲' : '▼') : '↕'}
+        </span>
+      </span>
     </th>
   )
 }
