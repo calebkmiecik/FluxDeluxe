@@ -333,6 +333,8 @@ export function ControlPanel() {
             bwNInput={bwNInput} bwPctInput={bwPctInput}
             onBwNChange={handleBwNChange} onBwPctChange={handleBwPctChange}
             onOpenModels={() => setActiveLitePage('models')}
+            onStart={handleStart}
+            canStart={metadataValid && connectionState === 'READY'}
           />
         </StepperRow>
 
@@ -395,18 +397,18 @@ export function ControlPanel() {
         </StepperRow>
       </div>
 
-      {/* Persistent action bar */}
-      <div className="border-t border-border px-4 py-3">
-        <button
-          onClick={handleActionBar}
-          disabled={phase === 'IDLE' && (!metadataValid || connectionState !== 'READY')}
-          className="w-full py-2.5 px-4 text-sm text-foreground bg-white/[0.04] border border-border rounded-md hover:bg-white/[0.08] hover:border-foreground/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white/[0.04] disabled:hover:border-border"
-        >
-          {phase === 'IDLE' && 'Start Session'}
-          {phase === 'SUMMARY' && 'New Session'}
-          {phase !== 'IDLE' && phase !== 'SUMMARY' && 'End Session'}
-        </button>
-      </div>
+      {/* Persistent action bar — hidden during IDLE because Start Session
+          lives inside the Meta Data body. */}
+      {phase !== 'IDLE' && (
+        <div className="border-t border-border px-4 py-3">
+          <button
+            onClick={handleActionBar}
+            className="w-full py-2.5 px-4 text-sm text-foreground bg-white/[0.04] border border-border rounded-md hover:bg-white/[0.08] hover:border-foreground/40 transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white/[0.04] disabled:hover:border-border"
+          >
+            {phase === 'SUMMARY' ? 'New Session' : 'End Session'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -486,6 +488,8 @@ function MetaDataBody({
   dbNInput, dbPctInput, onDbNChange, onDbPctChange,
   bwNInput, bwPctInput, onBwNChange, onBwPctChange,
   onOpenModels,
+  onStart,
+  canStart,
 }: {
   phase: string
   selectedDevice: { axfId: string; name: string; deviceTypeId: string } | undefined
@@ -500,6 +504,8 @@ function MetaDataBody({
   bwNInput: string; bwPctInput: string
   onBwNChange: (v: string) => void; onBwPctChange: (v: string) => void
   onOpenModels: () => void
+  onStart: () => void
+  canStart: boolean
 }) {
   const inputClass = "w-full bg-transparent border-b border-border/60 rounded-none px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-[#7AB8FF] focus:outline-none transition-colors"
   const numFilter = (v: string) => v.replace(/[^0-9.]/g, '')
@@ -533,6 +539,7 @@ function MetaDataBody({
   }
 
   return (
+    <div className="flex flex-col gap-4">
     <div className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 items-center">
       <span className="telemetry-label">Plate</span>
       <span className="text-sm text-foreground truncate px-2 py-1">
@@ -569,6 +576,23 @@ function MetaDataBody({
         <input type="text" inputMode="decimal" value={bwPctInput} onChange={(e) => onBwPctChange(numFilter(e.target.value))} placeholder="%" className={inputClass + ' flex-1'} />
         <span className="text-[10px] text-muted-foreground shrink-0">%</span>
       </div>
+    </div>
+
+    {/* Start Session — lives inside the Meta Data body so it follows the form */}
+    <button
+      onClick={onStart}
+      disabled={!canStart}
+      className="self-stretch mt-2 px-4 py-2 text-sm border rounded bg-transparent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      style={{ borderColor: '#7AB8FF', color: '#7AB8FF' }}
+      onMouseEnter={(e) => {
+        if (canStart) (e.currentTarget as HTMLButtonElement).style.background = '#7AB8FF14'
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+      }}
+    >
+      Start Session
+    </button>
     </div>
   )
 }
