@@ -11,6 +11,7 @@ const TIME_PRESETS: { value: TimePreset; label: string }[] = [
   { value: '3w',     label: '3 weeks' },
   { value: '1mo',    label: 'Month' },
   { value: '3mo',    label: '3 months' },
+  { value: 'all',    label: 'All time' },
   { value: 'custom', label: 'Custom' },
 ]
 
