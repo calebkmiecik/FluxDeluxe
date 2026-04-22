@@ -229,7 +229,7 @@ export function DashboardFiltersBar({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={filters.searchTags.length === 0 ? 'Search device, tester, model, type — Tab to complete' : ''}
+            placeholder={filters.searchTags.length === 0 ? 'Search device, tester, model, type' : ''}
             className="relative w-full bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground/40 py-0"
           />
           {/* Ghost-text overlay showing the inline completion. The invisible copy of
