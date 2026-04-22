@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid, Cell,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import type { TimeSeriesPoint } from '../../lib/liveTestRepoTypes'
 import { liveTestClient } from '../../lib/liveTestClient'
@@ -19,8 +19,7 @@ const METRIC_OPTIONS: { value: Metric; label: string; format: (n: number | null)
 
 const CHART_KEY = 'fluxdeluxe.dashboardTrendMetric'
 
-const BAR_FILL  = '#0051BA'
-const BAR_FILL_TOP = '#3B8EFF'
+const BAR_FILL = '#0051BA'
 const AXIS_TEXT   = 'rgba(206, 206, 206, 0.8)'
 const AXIS_STROKE = 'rgba(206, 206, 206, 0.25)'
 const GRID_STROKE = 'rgba(206, 206, 206, 0.08)'
@@ -86,18 +85,6 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
         {!empty && !loading && (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} barCategoryGap="20%">
-              <defs>
-                {/* Vertical bar gradient — brighter top, fading into the dark panel */}
-                <linearGradient id="barFillUp" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"  stopColor={BAR_FILL_TOP} stopOpacity={0.9} />
-                  <stop offset="100%" stopColor={BAR_FILL}     stopOpacity={0.5} />
-                </linearGradient>
-                {/* Downward bar gradient (for negative signed error) — mirror of the upward */}
-                <linearGradient id="barFillDown" x1="0" y1="1" x2="0" y2="0">
-                  <stop offset="0%"  stopColor={BAR_FILL_TOP} stopOpacity={0.9} />
-                  <stop offset="100%" stopColor={BAR_FILL}     stopOpacity={0.5} />
-                </linearGradient>
-              </defs>
               <CartesianGrid stroke={GRID_STROKE} strokeDasharray="0" vertical={false} />
               <XAxis
                 dataKey="ts"
@@ -140,11 +127,7 @@ export function DashboardTrend({ filter }: { filter: DashboardFilters }) {
                   }}
                 />
               )}
-              <Bar dataKey="value" radius={[2, 2, 0, 0]} isAnimationActive={false}>
-                {chartData.map((d, i) => (
-                  <Cell key={i} fill={d.value >= 0 ? 'url(#barFillUp)' : 'url(#barFillDown)'} />
-                ))}
-              </Bar>
+              <Bar dataKey="value" fill={BAR_FILL} radius={[2, 2, 0, 0]} isAnimationActive={false} />
             </BarChart>
           </ResponsiveContainer>
         )}
