@@ -200,12 +200,14 @@ function SessionDetailBody({ data, onClose }: { data: SessionDetail; onClose: ()
                 : (loc === 'A' ? 2 : 5)
               const cells = cellsByStage.get(stageIndex) ?? []
               return (
-                <div key={`${stage.type}-${loc}`} className="panel-inset p-3">
-                  <div className="flex items-baseline justify-between mb-2">
+                <div key={`${stage.type}-${loc}`} className="panel-inset p-2.5">
+                  <div className="flex items-baseline justify-between mb-1.5">
                     <div className="telemetry-label">{stage.label}</div>
                     <div className="telemetry-label">@ {loc}</div>
                   </div>
-                  <CellGrid rows={s.grid_rows} cols={s.grid_cols} cells={cells} />
+                  <div className="max-w-[160px] mx-auto">
+                    <CellGrid rows={s.grid_rows} cols={s.grid_cols} cells={cells} />
+                  </div>
                 </div>
               )
             })
@@ -330,17 +332,25 @@ function CellGrid({ rows, cols, cells }: { rows: number; cols: number; cells: an
         const cell = byRC.get(`${r},${c}`)
         const color = cell ? colorFromBin(cell.color_bin) : '#1f1f1f'
         const labelPct = cell ? fmtCellPct(cell.error_n, cell.target_n) : ''
+        // Repeat count — only shown when > 1. Reads cell.repeat_count if the
+        // backend ever sets it; harmless null otherwise.
+        const repeat = asNum(cell?.repeat_count)
         const title = cell
-          ? `${fmtCellPct(cell.error_n, cell.target_n)} error (${fmtCellSignedPct(cell.signed_error_n, cell.target_n)}) · ${cell.pass ? 'PASS' : 'FAIL'}`
+          ? `${fmtCellPct(cell.error_n, cell.target_n)} error (${fmtCellSignedPct(cell.signed_error_n, cell.target_n)}) · ${cell.pass ? 'PASS' : 'FAIL'}${repeat && repeat > 1 ? ` · ${repeat} attempts` : ''}`
           : 'Not captured'
         return (
           <div
             key={i}
             title={title}
-            className="aspect-square flex items-center justify-center font-mono text-[10px] text-white/90 leading-none tabular-nums"
+            className="relative aspect-square flex items-center justify-center font-mono text-xs text-white/95 leading-none tabular-nums"
             style={{ background: color }}
           >
             {labelPct}
+            {repeat !== null && repeat > 1 && (
+              <span className="absolute top-0.5 right-0.5 text-[8px] leading-none font-medium text-white/70 tabular-nums">
+                ×{repeat}
+              </span>
+            )}
           </div>
         )
       })}
