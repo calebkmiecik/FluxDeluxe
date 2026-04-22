@@ -59,8 +59,8 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
                 onClick={() => onOpen(r.id)}
                 className="border-b border-border/50 hover:bg-white/5 transition-colors cursor-pointer"
               >
-                <td className="py-2 pr-4 text-muted-foreground font-mono">{new Date(r.started_at).toLocaleString()}</td>
-                <td className="py-2 pr-4 text-foreground font-mono">{r.device_nickname ?? r.device_id}</td>
+                <td className="py-2 pr-4 text-muted-foreground">{new Date(r.started_at).toLocaleString()}</td>
+                <td className="py-2 pr-4 text-foreground">{r.device_nickname ?? r.device_id}</td>
                 <td className="py-2 pr-4 text-muted-foreground">{family ? familyLabel(family) : r.device_type}</td>
                 <td className="py-2 pr-4 text-muted-foreground">{r.tester_name || '—'}</td>
                 <td className="py-2 pr-4 text-muted-foreground">
@@ -83,7 +83,7 @@ export function SessionList({ filter, onOpen }: { filter: DashboardFilters; onOp
                     </span>
                   )}
                 </td>
-                <td className="py-2 text-muted-foreground font-mono">{r.n_cells_captured}/{r.n_cells_expected}</td>
+                <td className="py-2 text-muted-foreground">{r.n_cells_captured}/{r.n_cells_expected}</td>
               </tr>
             )
           })}
