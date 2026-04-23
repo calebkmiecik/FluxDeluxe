@@ -217,7 +217,7 @@ export function FluxLitePage() {
                   </div>
                 </div>
                 {/* Gauges */}
-                <div className="w-40 flex-shrink-0">
+                <div className="w-52 flex-shrink-0">
                   <ForceGauges mode={dataMode} enabledAxes={enabledAxes} onToggleAxis={toggleAxis} />
                 </div>
               </div>
