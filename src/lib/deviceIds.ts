@@ -20,9 +20,9 @@ const DEVICE_AXIS_TRANSFORMS: Record<string, AxisTransform> = {
   // Lite
   '06': { turns: 0, mirror: false },
   '10': { turns: 0, mirror: false },
-  // Launchpad
-  '07': { turns: 1, mirror: true },
-  '11': { turns: 1, mirror: true },
+  // Launchpad — 90° CW (= 3 CCW quarter turns), no mirror
+  '07': { turns: 3, mirror: false },
+  '11': { turns: 3, mirror: false },
   // Launchpad XL
   '08': { turns: 1, mirror: true },
   '12': { turns: 1, mirror: true },
