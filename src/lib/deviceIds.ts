@@ -9,16 +9,35 @@ export function deviceTypeFromAxfId(axfId: string): string {
 }
 
 /**
- * Some device types have their sensor axes physically rotated relative to
- * our canonical world frame. XL plates (08, 12) are mounted 90° CCW. Other
- * types need no correction.
+ * Per-device axis correction. Each entry describes how many CCW 90°
+ * quarter-turns to apply to a sensor-frame (x, y) pair, followed by an
+ * optional horizontal mirror (negate X).
  *
- * Returns how many CCW 90° quarter-turns to apply to an (x, y) vector
- * coming from that device's sensor frame before placing it in world XZ.
+ * Add or edit entries as new device types are empirically dialed in.
  */
+interface AxisTransform { turns: number; mirror: boolean }
+const DEVICE_AXIS_TRANSFORMS: Record<string, AxisTransform> = {
+  // Lite
+  '06': { turns: 0, mirror: false },
+  '10': { turns: 0, mirror: false },
+  // Launchpad
+  '07': { turns: 1, mirror: true },
+  '11': { turns: 1, mirror: true },
+  // Launchpad XL
+  '08': { turns: 1, mirror: true },
+  '12': { turns: 1, mirror: true },
+}
+
+function deviceAxisTransform(deviceType: string): AxisTransform {
+  return DEVICE_AXIS_TRANSFORMS[deviceType] ?? { turns: 0, mirror: false }
+}
+
 export function deviceAxisQuarterTurns(deviceType: string): number {
-  if (deviceType === '08' || deviceType === '12') return 1
-  return 0
+  return deviceAxisTransform(deviceType).turns
+}
+
+export function deviceAxisMirror(deviceType: string): boolean {
+  return deviceAxisTransform(deviceType).mirror
 }
 
 /**
@@ -34,21 +53,13 @@ export function rotateQuarter(x: number, y: number, turns: number): [number, num
 }
 
 /**
- * Some device types also need a horizontal mirror (reflection across the
- * Y axis — X coordinate negates) applied AFTER the quarter-turn rotation.
- * Currently only the XL plates (08, 12).
- */
-export function deviceAxisMirror(deviceType: string): boolean {
-  return deviceType === '08' || deviceType === '12'
-}
-
-/**
- * Convenience: apply the device-specific axis rotation (and mirror, if any)
- * to an (x, y) pair coming from the sensor frame. Use for cop.x/cop.y,
+ * Apply the device-specific axis rotation (and mirror, if any) to an
+ * (x, y) pair coming from the sensor frame. Use for cop.x/cop.y,
  * fx/fy, mx/my.
  */
 export function rotateForDevice(x: number, y: number, deviceType: string): [number, number] {
-  let [rx, ry] = rotateQuarter(x, y, deviceAxisQuarterTurns(deviceType))
-  if (deviceAxisMirror(deviceType)) rx = -rx
+  const t = deviceAxisTransform(deviceType)
+  let [rx, ry] = rotateQuarter(x, y, t.turns)
+  if (t.mirror) rx = -rx
   return [rx, ry]
 }
