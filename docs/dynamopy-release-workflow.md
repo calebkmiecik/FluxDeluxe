@@ -28,7 +28,12 @@ FluxDeluxe will filter releases by tag prefix:
 
 "Latest" in a channel = the release with the alphabetically-greatest tag.
 
-## Workflow file
+## Safe starting config — main + staging/merge only
+
+This conservative version only publishes releases from `main` (stable) and
+`staging/merge` (beta). Feature branches do nothing automatically. If you later
+want a feature branch to publish to the edge channel, add it to the `branches`
+list or trigger via the manual `workflow_dispatch` entry.
 
 Save this as `.github/workflows/release.yml` in the DynamoPy repo:
 
@@ -37,7 +42,18 @@ name: Release
 
 on:
   push:
-    branches: ['**']
+    branches:
+      - main
+      - staging/merge
+  # Manual trigger for edge releases from any branch
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel (stable / beta / edge)'
+        required: true
+        default: 'edge'
+        type: choice
+        options: [stable, beta, edge]
 
 permissions:
   contents: write
@@ -53,17 +69,23 @@ jobs:
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
           # Channel mapping
-          if [[ "$BRANCH" == "main" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CHANNEL="${{ inputs.channel }}"
+            if [[ "$CHANNEL" == "edge" ]]; then
+              SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//; s/-$//')
+              PREFIX="edge-$SLUG"
+            else
+              PREFIX="$CHANNEL"
+            fi
+          elif [[ "$BRANCH" == "main" ]]; then
             CHANNEL="stable"
             PREFIX="stable"
           elif [[ "$BRANCH" == "staging/merge" ]]; then
             CHANNEL="beta"
             PREFIX="beta"
           else
-            CHANNEL="edge"
-            # Slugify: replace everything not [a-z0-9] with '-', lowercase
-            SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//; s/-$//')
-            PREFIX="edge-$SLUG"
+            echo "Branch $BRANCH not mapped to a channel; skipping."
+            exit 0
           fi
           TS=$(date -u +%Y%m%dT%H%M%SZ)
           TAG="${PREFIX}-v${TS}"
@@ -122,13 +144,45 @@ jobs:
 - `prerelease: true` for beta/edge keeps them from surfacing as "latest" in the
   GitHub UI (the client doesn't care; it filters by prefix explicitly).
 
-## Opt-out per branch (future refinement)
+## Rollout strategy (recommended)
 
-If edge releases become too noisy, gate the job on a file marker:
+1. **Install on `main` first.** Push just the workflow file. The first push
+   itself triggers one `stable-v…` release — verify it succeeds.
+2. **Merge `main` into `staging/merge`.** This brings the workflow onto the
+   beta branch. The merge push itself produces a `beta-v…` release.
+3. **Test the FluxDeluxe client:** open the Backend Updater modal, switch the
+   channel, click Update now.
+4. Once confident, leave as-is. Feature branches don't auto-publish — devs use
+   the Actions → Run workflow button to fire an edge release from any branch.
+
+## Things that will NOT change for other DynamoPy users
+
+- The Python source is untouched
+- No existing tags or releases are modified
+- Stable releases (from `main`) show as "Latest release" on the repo — same as
+  a hand-cut release would
+- Beta/edge releases carry `prerelease: true` so they never outrank stable in
+  the repo UI
+- No commits get pushed by the workflow; it only creates tags + release assets
+
+## Things that WILL change
+
+- A new entry appears in the repo's Releases page per push to main or
+  staging/merge (a few per week, typically)
+- A few seconds of GitHub Actions minutes per push (well within free tier for
+  public repos)
+
+## Uninstalling
+
+Delete `.github/workflows/release.yml`. No cleanup of past releases required
+unless you want to tidy — they're just zip files attached to tags.
+
+## Widening to all feature branches (later, if desired)
+
+If you decide you want every push on every branch to publish an edge release,
+change the `on.push.branches` list to `['**']`. You can also add a marker-file
+gate so only branches that commit a `.dynamorelease` file publish:
 
 ```yaml
     if: hashFiles('.dynamorelease') != '' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging/merge'
 ```
-
-Branches that want to publish add a `.dynamorelease` file to opt in. Not needed
-for initial rollout.
