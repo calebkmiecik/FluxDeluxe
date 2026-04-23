@@ -1,39 +1,41 @@
 # DynamoPy release workflow
 
-This file documents the CI setup required in the **AxioforceDynamoPy** repo to
-power the FluxDeluxe hot-update system. Copy `release.yml` below into
-`.github/workflows/release.yml` in the DynamoPy repo.
+CI setup for the **AxioforceDynamoPy** repo that powers FluxDeluxe's hot-update
+system. Copy `release.yml` below into `.github/workflows/release.yml` in the
+DynamoPy repo.
 
 ## What it does
 
-On every push to a branch, packages the Python backend into a zip and creates a
-GitHub Release tagged by **channel**:
+Every push to the configured **stable** or **beta** branch packages the Python
+backend into a zip and publishes it as a GitHub Release tagged by channel:
 
-| Source branch            | Channel | Tag format                                 |
-|--------------------------|---------|--------------------------------------------|
-| `main`                   | stable  | `stable-v<timestamp>`                      |
-| `staging/merge`          | beta    | `beta-v<timestamp>`                        |
-| anything else            | edge    | `edge-<branch-slug>-v<timestamp>`          |
+| Channel | Tag format              | Default branch    |
+|---------|-------------------------|-------------------|
+| stable  | `stable-v<timestamp>`   | `main`            |
+| beta    | `beta-v<timestamp>`     | `staging/merge`   |
 
-Timestamp is UTC and sorts lexicographically (e.g. `20260423T130000Z`) so
-"latest" is the alphabetically-largest tag in a channel.
+Any push to a branch that isn't mapped to a channel is ignored (no release).
 
-## Client-side filtering
+Timestamps are UTC and sort lexicographically (e.g. `20260423T140000Z`) so the
+newest release in a channel is always the alphabetically-greatest tag.
 
-FluxDeluxe will filter releases by tag prefix:
+## Branch-to-channel mapping is controlled by repo variables
 
-- Stable channel → tags starting with `stable-`
-- Beta channel → tags starting with `beta-`
-- Other channel with branch `<foo>` → tags starting with `edge-<foo-slug>-`
+The workflow reads two **GitHub Actions repository variables** to decide which
+branch maps to which channel:
 
-"Latest" in a channel = the release with the alphabetically-greatest tag.
+| Variable         | Purpose                                   | Default          |
+|------------------|-------------------------------------------|------------------|
+| `STABLE_BRANCH`  | Source branch for the stable channel      | `main`           |
+| `BETA_BRANCH`    | Source branch for the beta channel        | `staging/merge`  |
 
-## Safe starting config — main + staging/merge only
+**To set or change these:**
+GitHub → repo → Settings → Secrets and variables → Actions → **Variables** tab → **New repository variable**.
 
-This conservative version only publishes releases from `main` (stable) and
-`staging/merge` (beta). Feature branches do nothing automatically. If you later
-want a feature branch to publish to the edge channel, add it to the `branches`
-list or trigger via the manual `workflow_dispatch` entry.
+So when `staging/merge` becomes obsolete and you switch to a new dev branch,
+just change `BETA_BRANCH`'s value in repo settings. No workflow edit required.
+
+## Workflow file
 
 Save this as `.github/workflows/release.yml` in the DynamoPy repo:
 
@@ -42,18 +44,16 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
-      - staging/merge
-  # Manual trigger for edge releases from any branch
+    branches: ['**']
+  # Manual trigger to force a release from any branch (channel chosen by user)
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Channel (stable / beta / edge)'
+        description: 'Channel'
         required: true
-        default: 'edge'
+        default: 'beta'
         type: choice
-        options: [stable, beta, edge]
+        options: [stable, beta]
 
 permissions:
   contents: write
@@ -64,41 +64,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Determine channel + slug
+      - name: Determine channel
         id: ch
+        env:
+          STABLE_BRANCH: ${{ vars.STABLE_BRANCH || 'main' }}
+          BETA_BRANCH:   ${{ vars.BETA_BRANCH   || 'staging/merge' }}
         run: |
           BRANCH="${GITHUB_REF#refs/heads/}"
-          # Channel mapping
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             CHANNEL="${{ inputs.channel }}"
-            if [[ "$CHANNEL" == "edge" ]]; then
-              SLUG=$(echo "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//; s/-$//')
-              PREFIX="edge-$SLUG"
-            else
-              PREFIX="$CHANNEL"
-            fi
-          elif [[ "$BRANCH" == "main" ]]; then
+          elif [[ "$BRANCH" == "$STABLE_BRANCH" ]]; then
             CHANNEL="stable"
-            PREFIX="stable"
-          elif [[ "$BRANCH" == "staging/merge" ]]; then
+          elif [[ "$BRANCH" == "$BETA_BRANCH" ]]; then
             CHANNEL="beta"
-            PREFIX="beta"
           else
-            echo "Branch $BRANCH not mapped to a channel; skipping."
+            echo "Branch '$BRANCH' is not mapped to a channel; skipping."
+            echo "  STABLE_BRANCH = $STABLE_BRANCH"
+            echo "  BETA_BRANCH   = $BETA_BRANCH"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           TS=$(date -u +%Y%m%dT%H%M%SZ)
-          TAG="${PREFIX}-v${TS}"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "prefix=$PREFIX"  >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
-          echo "zip=${PREFIX}-v${TS}.zip" >> "$GITHUB_OUTPUT"
+          TAG="${CHANNEL}-v${TS}"
+          echo "branch=$BRANCH"    >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL"  >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"          >> "$GITHUB_OUTPUT"
+          echo "zip=${TAG}.zip"    >> "$GITHUB_OUTPUT"
 
       - name: Package DynamoPy
+        if: steps.ch.outputs.skip != 'true'
         run: |
           mkdir -p /tmp/bundle
-          # Copy repo contents, excluding VCS + cache detritus
           rsync -a \
             --exclude='.git' \
             --exclude='.github' \
@@ -111,11 +107,13 @@ jobs:
           cd /tmp && zip -r "${{ steps.ch.outputs.zip }}" bundle
 
       - name: Generate checksum
+        if: steps.ch.outputs.skip != 'true'
         run: |
           cd /tmp
           sha256sum "${{ steps.ch.outputs.zip }}" > "${{ steps.ch.outputs.zip }}.sha256"
 
       - name: Create GitHub Release
+        if: steps.ch.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ch.outputs.tag }}
@@ -131,58 +129,38 @@ jobs:
           prerelease: ${{ steps.ch.outputs.channel != 'stable' }}
 ```
 
-## Notes
+## Rollout
 
-- `permissions: contents: write` is required so the workflow can create releases.
-  If the DynamoPy repo uses a GitHub App / fine-grained PAT for CI, grant
-  Contents: read/write.
-- `softprops/action-gh-release@v2` is a well-maintained third-party action for
-  uploading release assets. Official `actions/create-release` is deprecated.
-- Timestamp tags avoid the need for a shared version counter. If the team prefers
-  semver, replace the tag generator with logic that reads the latest existing
-  tag in the channel and bumps it.
-- `prerelease: true` for beta/edge keeps them from surfacing as "latest" in the
-  GitHub UI (the client doesn't care; it filters by prefix explicitly).
+1. Add the variables in repo Settings → Variables (if you don't, defaults kick in: `main` and `staging/merge`).
+2. Commit this workflow file to the branch(es) you want to publish from. **It must exist on the branch being pushed**, otherwise GitHub won't run it.
+3. Push. You should see a run in the Actions tab and a new release under Releases.
 
-## Rollout strategy (recommended)
+### To start with just `staging/merge` (beta):
 
-1. **Install on `main` first.** Push just the workflow file. The first push
-   itself triggers one `stable-v…` release — verify it succeeds.
-2. **Merge `main` into `staging/merge`.** This brings the workflow onto the
-   beta branch. The merge push itself produces a `beta-v…` release.
-3. **Test the FluxDeluxe client:** open the Backend Updater modal, switch the
-   channel, click Update now.
-4. Once confident, leave as-is. Feature branches don't auto-publish — devs use
-   the Actions → Run workflow button to fire an edge release from any branch.
+1. Switch the repo's default branch view to `staging/merge`
+2. Create `.github/workflows/release.yml` on `staging/merge`
+3. Commit. The commit itself triggers a run and produces the first `beta-v<ts>` release
+4. Later, when you want stable too, cherry-pick or merge the workflow file onto `main`
 
-## Things that will NOT change for other DynamoPy users
+## Changing which branch is beta
 
-- The Python source is untouched
-- No existing tags or releases are modified
-- Stable releases (from `main`) show as "Latest release" on the repo — same as
-  a hand-cut release would
-- Beta/edge releases carry `prerelease: true` so they never outrank stable in
-  the repo UI
-- No commits get pushed by the workflow; it only creates tags + release assets
+Say you retire `staging/merge` and move to a new dev branch like `develop`:
 
-## Things that WILL change
+1. Repo → Settings → Secrets and variables → Actions → Variables → edit `BETA_BRANCH` → set to `develop`
+2. Make sure `develop` has the workflow file (merge it in from the previous beta branch)
+3. Next push to `develop` produces a new `beta-v<ts>` release
+4. The old beta branch (`staging/merge`) still has the workflow file but pushes to it will now log "Branch not mapped, skipping" and do nothing
 
-- A new entry appears in the repo's Releases page per push to main or
-  staging/merge (a few per week, typically)
-- A few seconds of GitHub Actions minutes per push (well within free tier for
-  public repos)
+No release cleanup required — past `beta-v<ts>` releases stay in the Releases page as history.
+
+## What other DynamoPy users see
+
+- New entries in the Releases tab a few times per week
+- Stable releases show as "Latest release" (same as a manual release)
+- Beta releases carry the `Pre-release` label so they don't outrank stable in the UI
+- No existing code, tags, or branches are modified
 
 ## Uninstalling
 
-Delete `.github/workflows/release.yml`. No cleanup of past releases required
-unless you want to tidy — they're just zip files attached to tags.
-
-## Widening to all feature branches (later, if desired)
-
-If you decide you want every push on every branch to publish an edge release,
-change the `on.push.branches` list to `['**']`. You can also add a marker-file
-gate so only branches that commit a `.dynamorelease` file publish:
-
-```yaml
-    if: hashFiles('.dynamorelease') != '' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging/merge'
-```
+Delete `.github/workflows/release.yml`. Past releases stay in place (tag
+deletion is manual if you want to tidy).

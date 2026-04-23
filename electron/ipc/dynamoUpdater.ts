@@ -30,18 +30,18 @@ export function registerDynamoUpdaterIpc(dynamo: DynamoManager): void {
   ipcMain.handle('dynamoUpdater:listInstalled', () => listInstalled())
   ipcMain.handle('dynamoUpdater:removeInstalled', (_e, tag: string) => removeInstalled(tag))
 
-  ipcMain.handle('dynamoUpdater:checkForUpdate', async (_e, opts: { channel: DynamoChannel; branch: string | null }) => {
+  ipcMain.handle('dynamoUpdater:checkForUpdate', async (_e, opts: { channel: DynamoChannel }) => {
     try {
-      const release = await latestRelease(opts.channel, opts.branch)
+      const release = await latestRelease(opts.channel)
       return { ok: true as const, release }
     } catch (err) {
       return { ok: false as const, error: (err as Error).message }
     }
   })
 
-  ipcMain.handle('dynamoUpdater:listReleases', async (_e, opts: { channel: DynamoChannel; branch: string | null }) => {
+  ipcMain.handle('dynamoUpdater:listReleases', async (_e, opts: { channel: DynamoChannel }) => {
     try {
-      const releases = await listChannelReleases(opts.channel, opts.branch)
+      const releases = await listChannelReleases(opts.channel)
       return { ok: true as const, releases }
     } catch (err) {
       return { ok: false as const, error: (err as Error).message }
@@ -54,21 +54,26 @@ export function registerDynamoUpdaterIpc(dynamo: DynamoManager): void {
    */
   ipcMain.handle('dynamoUpdater:installAndActivate', async (_e, opts: {
     channel: DynamoChannel
-    branch: string | null
     tag: string
   }) => {
     try {
-      // Re-fetch the release to get its download URL (client passes only the tag).
-      const releases = await listChannelReleases(opts.channel, opts.branch)
+      console.log('[installAndActivate] start', opts)
+      const releases = await listChannelReleases(opts.channel)
+      console.log('[installAndActivate] found releases:', releases.map(r => r.tag))
       const release = releases.find((r) => r.tag === opts.tag)
       if (!release) return { ok: false as const, error: `Release ${opts.tag} not found in channel` }
-      await downloadAndInstall(release, opts.channel, opts.branch)
-      await activate(release.tag, opts.channel, opts.branch)
-      await setConfig({ channel: opts.channel, branch: opts.branch })
-      // Restart DynamoPy so the new version takes effect.
+      console.log('[installAndActivate] downloading', release.zipUrl, 'size', release.zipSize)
+      await downloadAndInstall(release, opts.channel)
+      console.log('[installAndActivate] download + extract complete')
+      await activate(release.tag, opts.channel)
+      console.log('[installAndActivate] activated')
+      await setConfig({ channel: opts.channel })
+      console.log('[installAndActivate] config saved, restarting dynamo')
       await dynamo.restart()
+      console.log('[installAndActivate] dynamo restarted — done')
       return { ok: true as const, tag: release.tag }
     } catch (err) {
+      console.error('[installAndActivate] FAILED:', err)
       return { ok: false as const, error: (err as Error).message }
     }
   })
@@ -79,12 +84,11 @@ export function registerDynamoUpdaterIpc(dynamo: DynamoManager): void {
    */
   ipcMain.handle('dynamoUpdater:activate', async (_e, opts: {
     channel: DynamoChannel
-    branch: string | null
     tag: string
   }) => {
     try {
-      await activate(opts.tag, opts.channel, opts.branch)
-      await setConfig({ channel: opts.channel, branch: opts.branch })
+      await activate(opts.tag, opts.channel)
+      await setConfig({ channel: opts.channel })
       await dynamo.restart()
       return { ok: true as const, tag: opts.tag }
     } catch (err) {

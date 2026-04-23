@@ -4,19 +4,17 @@
  * Responsibilities:
  *  - Track which version of DynamoPy the app should run (active.json)
  *  - Check GitHub Releases on Axioforce/AxioforceDynamoPy for newer versions
- *    in a configurable channel (stable / beta / other)
+ *    in a configurable channel (stable / beta)
  *  - Download + extract release zips into userData/dynamopy/<tag>/
  *  - Expose a minimal API consumed by IPC handlers
  *
  * Version tag format (produced by the DynamoPy release workflow):
  *   stable-v<timestamp>
  *   beta-v<timestamp>
- *   edge-<branch-slug>-v<timestamp>
  *
- * Client filtering by channel:
- *   stable channel → tags starting with 'stable-v'
- *   beta   channel → tags starting with 'beta-v'
- *   other  channel + branch 'foo' → tags starting with 'edge-<slug(foo)>-v'
+ * The DynamoPy-side release workflow decides which branch maps to which
+ * channel (via GitHub repo variables STABLE_BRANCH / BETA_BRANCH). From the
+ * client's perspective we just pick a channel and consume its tagged releases.
  *
  * "Latest" = release with alphabetically-greatest tag within the channel prefix.
  * (Timestamps are ISO-style UTC so they sort lexicographically.)
@@ -29,17 +27,33 @@ import AdmZip from 'adm-zip'
 
 const DYNAMO_REPO = 'Axioforce/AxioforceDynamoPy'
 
-export type DynamoChannel = 'stable' | 'beta' | 'other'
+// Baked in at build time via .env. Required because the DynamoPy repo is private.
+// Must use the MAIN_VITE_ prefix so electron-vite exposes it to the main process.
+const GITHUB_TOKEN =
+  (import.meta as unknown as { env?: Record<string, string> }).env?.MAIN_VITE_GITHUB_TOKEN ??
+  process.env.MAIN_VITE_GITHUB_TOKEN ??
+  ''
+
+function ghApiHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Accept': 'application/vnd.github+json' }
+  if (GITHUB_TOKEN) h['Authorization'] = `Bearer ${GITHUB_TOKEN}`
+  return h
+}
+
+function ghDownloadHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Accept': 'application/octet-stream' }
+  if (GITHUB_TOKEN) h['Authorization'] = `Bearer ${GITHUB_TOKEN}`
+  return h
+}
+
+export type DynamoChannel = 'stable' | 'beta'
 
 export interface UpdaterConfig {
   channel: DynamoChannel
-  /** Only used when channel === 'other'. Free-form branch name typed by operator. */
-  branch: string | null
 }
 
 export interface ActiveDynamo {
   channel: DynamoChannel
-  branch: string | null
   tag: string
   installedAt: string
 }
@@ -78,8 +92,8 @@ function ensureRoot(): void {
   if (!existsSync(root)) mkdirSync(root, { recursive: true })
 }
 
-// ── Config (persistent channel + branch selection) ────────────────
-const DEFAULT_CONFIG: UpdaterConfig = { channel: 'stable', branch: null }
+// ── Config (persistent channel selection) ─────────────────────────
+const DEFAULT_CONFIG: UpdaterConfig = { channel: 'stable' }
 
 export async function getConfig(): Promise<UpdaterConfig> {
   ensureRoot()
@@ -170,13 +184,9 @@ export async function removeInstalled(tag: string): Promise<void> {
 }
 
 // ── GitHub release discovery ─────────────────────────────────────
-/** Produces the tag prefix used to filter releases for a channel+branch. */
-export function tagPrefix(channel: DynamoChannel, branch: string | null): string {
-  if (channel === 'stable') return 'stable-v'
-  if (channel === 'beta')   return 'beta-v'
-  // 'other': match workflow's slug rules (lowercase, non-alnum → '-')
-  const slug = (branch ?? '').toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
-  return slug ? `edge-${slug}-v` : 'edge-'
+/** Produces the tag prefix used to filter releases for a channel. */
+export function tagPrefix(channel: DynamoChannel): string {
+  return channel === 'stable' ? 'stable-v' : 'beta-v'
 }
 
 interface GhRelease {
@@ -184,7 +194,7 @@ interface GhRelease {
   name: string
   published_at: string
   prerelease: boolean
-  assets: Array<{ name: string; browser_download_url: string; size: number }>
+  assets: Array<{ id: number; name: string; browser_download_url: string; url: string; size: number }>
   zipball_url: string
 }
 
@@ -196,7 +206,7 @@ async function fetchReleases(): Promise<GhRelease[]> {
     const res = await fetch(
       `https://api.github.com/repos/${DYNAMO_REPO}/releases?per_page=100&page=${page}`,
       {
-        headers: { 'Accept': 'application/vnd.github+json' },
+        headers: ghApiHeaders(),
         signal: AbortSignal.timeout(8000),
       },
     )
@@ -210,12 +220,14 @@ async function fetchReleases(): Promise<GhRelease[]> {
 
 function pickZipAsset(r: GhRelease): { url: string; name: string; size: number | null } {
   const asset = r.assets?.find((a) => a.name.toLowerCase().endsWith('.zip'))
-  if (asset) return { url: asset.browser_download_url, name: asset.name, size: asset.size }
+  // For private repos we must use the API asset URL with Accept: application/octet-stream,
+  // not browser_download_url (which redirects to S3 and drops the Authorization header).
+  if (asset) return { url: asset.url, name: asset.name, size: asset.size }
   // Fallback: GitHub's autogenerated zipball
   return { url: r.zipball_url, name: `${r.tag_name}.zip`, size: null }
 }
 
-function toDynamoRelease(r: GhRelease, channel: DynamoChannel, branch: string | null): DynamoRelease {
+function toDynamoRelease(r: GhRelease): DynamoRelease {
   const { url, name, size } = pickZipAsset(r)
   return {
     tag: r.tag_name,
@@ -228,18 +240,18 @@ function toDynamoRelease(r: GhRelease, channel: DynamoChannel, branch: string | 
   }
 }
 
-/** Lists releases matching the channel (+ branch for 'other'), newest first. */
-export async function listChannelReleases(channel: DynamoChannel, branch: string | null): Promise<DynamoRelease[]> {
-  const prefix = tagPrefix(channel, branch)
+/** Lists releases matching the channel, newest first. */
+export async function listChannelReleases(channel: DynamoChannel): Promise<DynamoRelease[]> {
+  const prefix = tagPrefix(channel)
   const all = await fetchReleases()
   const matches = all.filter((r) => r.tag_name.startsWith(prefix))
   matches.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
-  return matches.map((r) => toDynamoRelease(r, channel, branch))
+  return matches.map(toDynamoRelease)
 }
 
 /** Returns the latest release in the channel, or null if none match. */
-export async function latestRelease(channel: DynamoChannel, branch: string | null): Promise<DynamoRelease | null> {
-  const list = await listChannelReleases(channel, branch)
+export async function latestRelease(channel: DynamoChannel): Promise<DynamoRelease | null> {
+  const list = await listChannelReleases(channel)
   return list[0] ?? null
 }
 
@@ -247,7 +259,6 @@ export async function latestRelease(channel: DynamoChannel, branch: string | nul
 export async function downloadAndInstall(
   release: DynamoRelease,
   channel: DynamoChannel,
-  branch: string | null,
 ): Promise<InstalledVersion> {
   ensureRoot()
   const destDir = INSTALL_DIR(release.tag)
@@ -261,7 +272,7 @@ export async function downloadAndInstall(
   // Download to a temp file
   const tmp = path.join(USER_DYNAMO_ROOT(), `.download-${release.tag.replace(/[^a-zA-Z0-9]/g, '_')}.zip`)
   const res = await fetch(release.zipUrl, {
-    headers: { 'Accept': 'application/octet-stream' },
+    headers: ghDownloadHeaders(),
     // no timeout — downloads can be large
   })
   if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
@@ -281,10 +292,10 @@ export async function downloadAndInstall(
     await fsp.unlink(tmp).catch(() => {})
   }
 
-  // Persist channel+branch on the install for reference (so rollback knows where it came from)
+  // Persist channel on the install for reference (so rollback knows where it came from)
   await fsp.writeFile(
     path.join(destDir, '.source.json'),
-    JSON.stringify({ channel, branch, tag: release.tag, installedAt: new Date().toISOString() }, null, 2),
+    JSON.stringify({ channel, tag: release.tag, installedAt: new Date().toISOString() }, null, 2),
     'utf8',
   )
 
@@ -292,12 +303,11 @@ export async function downloadAndInstall(
   return { tag: release.tag, path: destDir, installedAt: stat.mtime.toISOString(), isActive: false }
 }
 
-export async function activate(tag: string, channel: DynamoChannel, branch: string | null): Promise<void> {
+export async function activate(tag: string, channel: DynamoChannel): Promise<void> {
   const dir = INSTALL_DIR(tag)
   if (!existsSync(dir)) throw new Error(`Version ${tag} is not installed`)
   await setActive({
     channel,
-    branch,
     tag,
     installedAt: new Date().toISOString(),
   })

@@ -8,7 +8,7 @@ import type {
   DynamoInstalled,
 } from '../../global'
 
-type TabKind = 'update' | 'branches' | 'installed'
+type TabKind = 'update' | 'installed'
 
 function fmtTime(iso: string | undefined | null): string {
   if (!iso) return '—'
@@ -27,8 +27,6 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
   const [active, setActive] = useState<DynamoActive | null>(null)
   const [installed, setInstalled] = useState<DynamoInstalled[]>([])
   const [latest, setLatest] = useState<DynamoRelease | null>(null)
-  const [branchDraft, setBranchDraft] = useState('')
-  const [branches, setBranches] = useState<DynamoRelease[]>([])
   const [tab, setTab] = useState<TabKind>('update')
   const [checking, setChecking] = useState(false)
   const [installing, setInstalling] = useState(false)
@@ -43,18 +41,16 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
       setConfig(c)
       setActive(a)
       setInstalled(i)
-      setBranchDraft(c.branch ?? '')
     })
     return () => { cancelled = true }
   }, [api])
 
-  // Kick off a check whenever the config or branch changes
+  // Kick off a check whenever the channel changes
   useEffect(() => {
     if (!api || !config) return
-    if (config.channel === 'other' && !config.branch) { setLatest(null); return }
     let cancelled = false
     setChecking(true)
-    api.checkForUpdate({ channel: config.channel, branch: config.branch }).then((res) => {
+    api.checkForUpdate({ channel: config.channel }).then((res) => {
       if (cancelled) return
       setChecking(false)
       if (res.ok) setLatest(res.release)
@@ -79,33 +75,15 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
   }
 
   const setChannel = async (channel: DynamoChannel) => {
-    const next: DynamoUpdaterConfig = { channel, branch: channel === 'other' ? (config?.branch ?? null) : null }
+    const next: DynamoUpdaterConfig = { channel }
     setConfig(next)
     await api.setConfig(next)
-  }
-
-  const applyBranchDraft = async () => {
-    if (!config || config.channel !== 'other') return
-    const b = branchDraft.trim()
-    const next: DynamoUpdaterConfig = { channel: 'other', branch: b || null }
-    setConfig(next)
-    await api.setConfig(next)
-  }
-
-  const searchBranchReleases = async () => {
-    if (!config || config.channel !== 'other' || !config.branch) return
-    setChecking(true)
-    const res = await api.listReleases({ channel: 'other', branch: config.branch })
-    setChecking(false)
-    if (!res.ok) { toast.error(res.error); return }
-    setBranches(res.releases)
-    if (res.releases.length === 0) toast.info('No releases found for that branch.')
   }
 
   const updateNow = async (tag: string) => {
     if (!config) return
     setInstalling(true)
-    const res = await api.installAndActivate({ channel: config.channel, branch: config.branch, tag })
+    const res = await api.installAndActivate({ channel: config.channel, tag })
     setInstalling(false)
     if (!res.ok) { toast.error(`Update failed: ${res.error}`); return }
     toast.success(`Running ${tag}`)
@@ -117,8 +95,7 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
   const switchToInstalled = async (v: DynamoInstalled) => {
     if (!config) return
     setInstalling(true)
-    // Switch purely locally, no download needed
-    const res = await api.activate({ channel: config.channel, branch: config.branch, tag: v.tag })
+    const res = await api.activate({ channel: config.channel, tag: v.tag })
     setInstalling(false)
     if (!res.ok) { toast.error(res.error); return }
     toast.success(`Activated ${shortTag(v.tag)}`)
@@ -175,14 +152,14 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
           </div>
           {active && (
             <div className="text-muted-foreground text-[11px] tracking-wider mt-0.5">
-              {active.channel}{active.branch ? ` · ${active.branch}` : ''} · installed {fmtTime(active.installedAt)}
+              {active.channel} · installed {fmtTime(active.installedAt)}
             </div>
           )}
         </div>
         <div className="col-span-2">
           <div className="telemetry-label mb-1.5">Update channel</div>
           <div className="flex items-center rounded-md border border-border overflow-hidden w-max">
-            {(['stable', 'beta', 'other'] as const).map((c) => {
+            {(['stable', 'beta'] as const).map((c) => {
               const isActive = config?.channel === c
               return (
                 <button
@@ -192,39 +169,17 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
                     isActive ? 'bg-white/[0.06] text-foreground' : 'text-muted-foreground hover:bg-white/[0.04]'
                   }`}
                 >
-                  {c === 'stable' ? 'Stable' : c === 'beta' ? 'Beta' : 'Other'}
+                  {c === 'stable' ? 'Stable' : 'Beta'}
                 </button>
               )
             })}
           </div>
-          {config?.channel === 'other' && (
-            <div className="mt-2 flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Branch name (e.g. feature/foo)"
-                value={branchDraft}
-                onChange={(e) => setBranchDraft(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') applyBranchDraft() }}
-                className="flex-1 bg-white/[0.04] border border-border rounded-md text-sm px-2 py-1 text-foreground focus:border-primary focus:outline-none"
-              />
-              <button
-                onClick={applyBranchDraft}
-                disabled={branchDraft.trim() === (config.branch ?? '')}
-                className="px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Use branch
-              </button>
-            </div>
-          )}
         </div>
       </div>
 
       {/* Tabs */}
       <div className="px-5 pt-3 border-b border-border flex gap-4">
         <TabButton active={tab === 'update'} onClick={() => setTab('update')}>Latest</TabButton>
-        {config?.channel === 'other' && (
-          <TabButton active={tab === 'branches'} onClick={() => setTab('branches')}>Pick version</TabButton>
-        )}
         <TabButton active={tab === 'installed'} onClick={() => setTab('installed')}>
           Installed ({installed.length})
         </TabButton>
@@ -238,19 +193,7 @@ export function BackendUpdaterModal({ onClose }: { onClose: () => void }) {
             installing={installing}
             latest={latest}
             active={active}
-            config={config}
             onUpdate={(tag) => updateNow(tag)}
-          />
-        )}
-        {tab === 'branches' && config?.channel === 'other' && (
-          <BranchesTab
-            branches={branches}
-            config={config}
-            checking={checking}
-            installing={installing}
-            activeTag={active?.tag ?? null}
-            onSearch={searchBranchReleases}
-            onInstall={(tag) => updateNow(tag)}
           />
         )}
         {tab === 'installed' && (
@@ -294,17 +237,13 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   )
 }
 
-function UpdateTab({ checking, installing, latest, active, config, onUpdate }: {
+function UpdateTab({ checking, installing, latest, active, onUpdate }: {
   checking: boolean
   installing: boolean
   latest: DynamoRelease | null
   active: DynamoActive | null
-  config: DynamoUpdaterConfig | null
   onUpdate: (tag: string) => void
 }) {
-  if (config?.channel === 'other' && !config.branch) {
-    return <p className="text-muted-foreground text-sm">Enter a branch name above to look for releases.</p>
-  }
   if (checking) return <p className="text-muted-foreground text-sm">Checking for updates…</p>
   if (!latest) return <p className="text-muted-foreground text-sm">No releases found in this channel.</p>
 
@@ -332,58 +271,6 @@ function UpdateTab({ checking, installing, latest, active, config, onUpdate }: {
           </button>
         )}
       </div>
-    </div>
-  )
-}
-
-function BranchesTab({ branches, config, checking, installing, activeTag, onSearch, onInstall }: {
-  branches: DynamoRelease[]
-  config: DynamoUpdaterConfig
-  checking: boolean
-  installing: boolean
-  activeTag: string | null
-  onSearch: () => void
-  onInstall: (tag: string) => void
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="text-muted-foreground text-sm">
-          {config.branch ? `Releases for branch "${config.branch}"` : 'No branch selected'}
-        </div>
-        <button
-          onClick={onSearch}
-          disabled={!config.branch || checking}
-          className="px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {checking ? 'Searching…' : 'Search'}
-        </button>
-      </div>
-      {branches.length === 0 && !checking && (
-        <p className="text-muted-foreground text-xs">Click Search to list edge releases for this branch.</p>
-      )}
-      {branches.map((r) => {
-        const isActive = activeTag === r.tag
-        return (
-          <div key={r.tag} className="flex items-center justify-between gap-2 py-1 border-b border-border/50">
-            <div className="min-w-0">
-              <div className="text-sm text-foreground truncate">{shortTag(r.tag)}</div>
-              <div className="text-muted-foreground text-[11px] tracking-wider">{fmtTime(r.publishedAt)}</div>
-            </div>
-            {isActive ? (
-              <span className="text-success text-xs uppercase tracking-wider font-medium">Running</span>
-            ) : (
-              <button
-                onClick={() => onInstall(r.tag)}
-                disabled={installing}
-                className="px-2.5 py-1 text-xs uppercase tracking-wider border border-border rounded-md text-muted-foreground hover:text-foreground hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {installing ? '…' : 'Install'}
-              </button>
-            )}
-          </div>
-        )
-      })}
     </div>
   )
 }

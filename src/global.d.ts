@@ -2,16 +2,14 @@ import type { SaveSessionPayload } from './lib/liveTestPayload'
 import type { SessionListRow, SessionDetail, OverviewResult, TimeSeriesPoint, TimeSeriesGranularity, FilterSuggestions } from './lib/liveTestRepoTypes'
 import type { DashboardFilters } from './lib/dashboardFilters'
 
-export type DynamoChannel = 'stable' | 'beta' | 'other'
+export type DynamoChannel = 'stable' | 'beta'
 
 export interface DynamoUpdaterConfig {
   channel: DynamoChannel
-  branch: string | null
 }
 
 export interface DynamoActive {
   channel: DynamoChannel
-  branch: string | null
   tag: string
   installedAt: string
 }
@@ -41,10 +39,10 @@ export interface ElectronDynamoUpdaterApi {
   getActive(): Promise<DynamoActive | null>
   listInstalled(): Promise<DynamoInstalled[]>
   removeInstalled(tag: string): Promise<void>
-  checkForUpdate(opts: { channel: DynamoChannel; branch: string | null }): Promise<Result<{ release: DynamoRelease | null }>>
-  listReleases(opts: { channel: DynamoChannel; branch: string | null }): Promise<Result<{ releases: DynamoRelease[] }>>
-  installAndActivate(opts: { channel: DynamoChannel; branch: string | null; tag: string }): Promise<Result<{ tag: string }>>
-  activate(opts: { channel: DynamoChannel; branch: string | null; tag: string }): Promise<Result<{ tag: string }>>
+  checkForUpdate(opts: { channel: DynamoChannel }): Promise<Result<{ release: DynamoRelease | null }>>
+  listReleases(opts: { channel: DynamoChannel }): Promise<Result<{ releases: DynamoRelease[] }>>
+  installAndActivate(opts: { channel: DynamoChannel; tag: string }): Promise<Result<{ tag: string }>>
+  activate(opts: { channel: DynamoChannel; tag: string }): Promise<Result<{ tag: string }>>
   resetToBundled(): Promise<Result<object>>
 }
 
