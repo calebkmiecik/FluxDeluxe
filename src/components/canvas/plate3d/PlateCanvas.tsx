@@ -600,9 +600,9 @@ export function PlateCanvas({
         drawHoverReticle(ctx, { x: h.x, y: h.y }, `R${h.row},C${h.col}`)
       }
 
-      // Axis gizmo (bottom-right) — rotates with the plate so you can
-      // visually verify which direction sensor +X / +Y point on screen.
-      drawAxisGizmo(ctx, W, H, cam.getMeshRotation())
+      // 3D axis gizmo (bottom-right) — projects world XYZ unit vectors
+      // through the current camera transform so it reflects the view.
+      drawAxisGizmo(ctx, camObj, W, H)
 
     }
     rafRef.current = requestAnimationFrame(draw)
@@ -701,78 +701,85 @@ const HudActionButton = forwardRef<
 // ── 2D helpers kept inline (share projection state with scene) ─────
 
 /**
- * Small axis gizmo anchored to the bottom-right of the viewport. The X/Y
- * arrows rotate with the plate's mesh rotation so you can verify what
- * direction the sensor's +X and +Y map to on screen.
+ * 3D axis gizmo anchored to the bottom-right corner. Projects the three
+ * world unit vectors (+X, +Y, +Z) through the current camera's view matrix
+ * so the gizmo tumbles as the camera orbits. Classic Blender-style widget
+ * for understanding the current 3D orientation at a glance.
  */
+const _axisTmp = new THREE.Vector3()
+const _axisRot = new THREE.Matrix4()
 function drawAxisGizmo(
   ctx: CanvasRenderingContext2D,
+  camera: THREE.Camera,
   W: number, H: number,
-  meshRotation: number,
 ) {
-  const cx = W - 48
-  const cy = H - 48
-  const len = 22
+  const cx = W - 54
+  const cy = H - 54
+  const len = 26
   const head = 5
+
+  // View-matrix rotation only (discard translation) — we just want to
+  // transform DIRECTIONS, not positions.
+  _axisRot.extractRotation(camera.matrixWorldInverse)
+
+  interface AxisInfo { dx: number; dy: number; depth: number; color: string; label: string }
+  const axes: AxisInfo[] = []
+  const push = (x: number, y: number, z: number, color: string, label: string) => {
+    _axisTmp.set(x, y, z).applyMatrix4(_axisRot)
+    axes.push({
+      dx: _axisTmp.x,
+      dy: -_axisTmp.y, // canvas Y is inverted
+      depth: _axisTmp.z,
+      color,
+      label,
+    })
+  }
+  push(1, 0, 0, '#FF5252', 'X') // red
+  push(0, 1, 0, '#00C853', 'Y') // green
+  push(0, 0, 1, '#7AB8FF', 'Z') // cyan
+
+  // Draw farthest (most-negative Z after view transform) first so nearer
+  // arrows overlap them.
+  axes.sort((a, b) => a.depth - b.depth)
 
   ctx.save()
   ctx.translate(cx, cy)
-
-  // X axis — cyan
-  ctx.save()
-  ctx.rotate(-meshRotation)  // negate to match mesh orientation in screen space
-  ctx.strokeStyle = plate3d.edgeCyan
-  ctx.fillStyle = plate3d.edgeCyan
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.moveTo(0, 0)
-  ctx.lineTo(len, 0)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(len, 0)
-  ctx.lineTo(len - head, -head / 2)
-  ctx.lineTo(len - head, head / 2)
-  ctx.closePath()
-  ctx.fill()
-  ctx.restore()
-
-  // Y axis — muted (vertical on screen when meshRotation=0)
-  ctx.save()
-  ctx.rotate(-meshRotation)
-  ctx.strokeStyle = plate3d.hudTextColor
-  ctx.fillStyle = plate3d.hudTextColor
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.moveTo(0, 0)
-  ctx.lineTo(0, -len)
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(0, -len)
-  ctx.lineTo(-head / 2, -len + head)
-  ctx.lineTo(head / 2, -len + head)
-  ctx.closePath()
-  ctx.fill()
-  ctx.restore()
-
-  // Labels — positioned at arrow tips, kept upright
   ctx.font = `10px ${plate3d.hudMonoFont}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
 
-  // X label
-  const xLabelAngle = -meshRotation
-  const xlx = Math.cos(xLabelAngle) * (len + 8)
-  const xly = Math.sin(xLabelAngle) * (len + 8)
-  ctx.fillStyle = plate3d.edgeCyan
-  ctx.fillText('X', xlx, xly)
+  for (const a of axes) {
+    const tx = a.dx * len
+    const ty = a.dy * len
+    // Axes pointing away from the camera get dimmed slightly
+    const alpha = a.depth > 0 ? 0.45 : 1
+    ctx.globalAlpha = alpha
 
-  // Y label (Y is +90° CCW from X)
-  const yLabelAngle = -meshRotation - Math.PI / 2
-  const ylx = Math.cos(yLabelAngle) * (len + 8)
-  const yly = Math.sin(yLabelAngle) * (len + 8)
-  ctx.fillStyle = plate3d.hudTextColor
-  ctx.fillText('Y', ylx, yly)
+    ctx.strokeStyle = a.color
+    ctx.fillStyle = a.color
+    ctx.lineWidth = 1.5
 
+    // Shaft
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.lineTo(tx, ty)
+    ctx.stroke()
+
+    // Arrowhead: small triangle at the tip, oriented along (dx, dy)
+    const ang = Math.atan2(ty, tx)
+    const cosA = Math.cos(ang), sinA = Math.sin(ang)
+    ctx.beginPath()
+    ctx.moveTo(tx, ty)
+    ctx.lineTo(tx - head * cosA + (head / 2) * sinA, ty - head * sinA - (head / 2) * cosA)
+    ctx.lineTo(tx - head * cosA - (head / 2) * sinA, ty - head * sinA + (head / 2) * cosA)
+    ctx.closePath()
+    ctx.fill()
+
+    // Label just past the tip
+    ctx.fillText(a.label, tx + cosA * 8, ty + sinA * 8)
+  }
+
+  ctx.globalAlpha = 1
   ctx.restore()
 }
 
