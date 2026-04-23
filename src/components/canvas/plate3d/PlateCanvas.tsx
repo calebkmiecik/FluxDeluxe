@@ -133,6 +133,7 @@ export function PlateCanvas({
 
   // Smoothed COP position (exponential lerp per frame)
   const smoothCopRef = useRef({ x: 0, z: 0 })
+  const smoothForceRef = useRef(0)
 
   // Camera state button — updated imperatively in RAF to avoid per-frame re-renders
   const cameraStateButtonRef = useRef<HTMLButtonElement>(null)
@@ -458,25 +459,34 @@ export function PlateCanvas({
       const selectedId = useDeviceStore.getState().selectedDeviceId
       const liveFrame = selectedId ? getLatestFrameForDevice(selectedId) : null
       if (liveFrame && Math.abs(liveFrame.fz) >= 5) {
-        const totalForce = Math.sqrt(
-          liveFrame.fx ** 2 + liveFrame.fy ** 2 + liveFrame.fz ** 2,
-        )
-        const baseRadius = 0.008
-        const radius = baseRadius + Math.sqrt(Math.max(0, totalForce)) * 0.001
         // Exponential smoothing — frame-rate independent
-        const targetX = -liveFrame.cop.y
-        const targetZ = liveFrame.cop.x
         const smoothSpeed = 12 // higher = more responsive, lower = smoother
         const alpha = 1 - Math.exp(-smoothSpeed * (delta / 1000))
+
+        // Smooth COP position (plate-local target)
+        const targetX = -liveFrame.cop.y
+        const targetZ = liveFrame.cop.x
         const sc = smoothCopRef.current
         sc.x += (targetX - sc.x) * alpha
         sc.z += (targetZ - sc.z) * alpha
+
+        // Smooth total-force magnitude so radius doesn't pulse with every raw spike
+        const rawForce = Math.sqrt(
+          liveFrame.fx ** 2 + liveFrame.fy ** 2 + liveFrame.fz ** 2,
+        )
+        smoothForceRef.current += (rawForce - smoothForceRef.current) * alpha
+        const baseRadius = 0.008
+        const radius = baseRadius + Math.sqrt(Math.max(0, smoothForceRef.current)) * 0.001
+
         // Clamp to plate bounds
         const b = geom.bounds
         const cx = Math.max(b.minX, Math.min(b.maxX, sc.x))
         const cz = Math.max(b.minZ, Math.min(b.maxZ, sc.z))
         scene.setCopSphere(cx, cz, geom.floorY + 0.05, radius)
       } else {
+        // Decay the smoothed force toward zero when below threshold so the
+        // dot doesn't snap big the instant force returns.
+        smoothForceRef.current *= 0.85
         scene.setCopSphere(null, null, 0, 0)
       }
 
