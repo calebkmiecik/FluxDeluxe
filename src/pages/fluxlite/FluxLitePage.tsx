@@ -14,6 +14,8 @@ import { plate3d } from '../../lib/theme'
 import { DashboardPage } from './DashboardPage'
 import { ModelsPage } from './ModelsPage'
 import { ModelPackager } from './ModelPackager'
+import { BackendUpdaterModal } from './BackendUpdaterModal'
+import { Settings } from 'lucide-react'
 import { getSocket } from '../../lib/socket'
 import { measurementEngine } from '../../lib/measurementEngine'
 import { WARMUP_TRIGGER_N, TARE_THRESHOLD_N } from '../../lib/liveTestTypes'
@@ -38,6 +40,7 @@ export function FluxLitePage() {
   const metadata = useLiveTestStore((s) => s.metadata)
 
   const [rotation, setRotation] = useState(0)
+  const [updaterOpen, setUpdaterOpen] = useState(false)
   const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null)
 
   const [dataMode, setDataMode] = useState<DataMode>('forces')
@@ -176,7 +179,18 @@ export function FluxLitePage() {
             )
           })}
         </div>
+
+        <button
+          onClick={() => setUpdaterOpen(true)}
+          className="ml-auto p-2 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="Backend updater"
+          title="Backend updater"
+        >
+          <Settings size={16} />
+        </button>
       </div>
+
+      {updaterOpen && <BackendUpdaterModal onClose={() => setUpdaterOpen(false)} />}
 
       {/* Page content */}
       <div className="flex-1 overflow-hidden">

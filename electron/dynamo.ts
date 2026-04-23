@@ -2,6 +2,7 @@ import { spawn, exec, ChildProcess } from 'child_process'
 import net from 'net'
 import path from 'path'
 import { app, ipcMain, BrowserWindow } from 'electron'
+import { getActiveInstallPath } from './dynamoUpdater'
 
 const MAX_LOG_LINES = 500
 const BACKEND_PORT = 3001
@@ -36,13 +37,21 @@ export class DynamoManager {
     }
   }
 
-  private getScriptPath(): string {
+  private async getDynamoRoot(): Promise<string> {
+    // If the updater has installed a hot-update version, prefer it.
+    const active = await getActiveInstallPath()
+    if (active) return active
+    // Otherwise fall back to the version bundled with the app (packaged) or
+    // the working submodule (dev).
     if (app.isPackaged) {
-      return path.join(process.resourcesPath, 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
+      return path.join(process.resourcesPath, 'fluxdeluxe', 'DynamoPy')
     }
-    // In dev mode, app.getAppPath() points to out/main, not the project root.
-    // Walk up from __dirname (out/main/) to reach the project root.
-    return path.join(__dirname, '..', '..', 'fluxdeluxe', 'DynamoPy', 'app', 'main.py')
+    return path.join(__dirname, '..', '..', 'fluxdeluxe', 'DynamoPy')
+  }
+
+  private async getScriptPath(): Promise<string> {
+    const root = await this.getDynamoRoot()
+    return path.join(root, 'app', 'main.py')
   }
 
   async start(): Promise<void> {
@@ -55,7 +64,7 @@ export class DynamoManager {
     await this.ensurePortFree(BACKEND_PORT)
 
     const pythonPath = this.getPythonPath()
-    const scriptPath = this.getScriptPath()
+    const scriptPath = await this.getScriptPath()
 
     // DynamoPy root (for PYTHONPATH so `from app.` imports work)
     const dynamoRoot = path.dirname(path.dirname(scriptPath)) // .../DynamoPy/

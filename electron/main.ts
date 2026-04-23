@@ -3,6 +3,7 @@ import path from 'path'
 import { DynamoManager } from './dynamo'
 import { initUpdater } from './updater'
 import { createLiveTestDeps, registerLiveTestIpc, runRetryOnStart } from './ipc/liveTest'
+import { registerDynamoUpdaterIpc } from './ipc/dynamoUpdater'
 
 let mainWindow: BrowserWindow | null = null
 let dynamo: DynamoManager | null = null
@@ -53,6 +54,9 @@ function createWindow(): void {
   registerLiveTestIpc(liveTestDeps)
   // Fire-and-forget retry on start
   runRetryOnStart(liveTestDeps).catch((err) => console.warn('[liveTest] retry failed:', err))
+
+  // DynamoPy hot-update
+  registerDynamoUpdaterIpc(dynamo)
 }
 
 app.whenReady().then(createWindow)
