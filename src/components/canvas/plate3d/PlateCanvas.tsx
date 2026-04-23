@@ -17,6 +17,7 @@ import { getLatestFrameForDevice } from '../../../stores/liveDataStore'
 import { useDeviceStore } from '../../../stores/deviceStore'
 import * as THREE from 'three'
 import { plate3d } from '../../../lib/theme'
+import { rotateForDevice } from '../../../lib/deviceIds'
 import {
   PLATE_DIMENSIONS,
   GRID_DIMS,
@@ -463,9 +464,12 @@ export function PlateCanvas({
         const smoothSpeed = 12 // higher = more responsive, lower = smoother
         const alpha = 1 - Math.exp(-smoothSpeed * (delta / 1000))
 
+        // Device-specific axis correction (XL plates are physically mounted
+        // 90° CCW, so rotate their sensor coords before the world mapping).
+        const [copX, copY] = rotateForDevice(liveFrame.cop.x, liveFrame.cop.y, deviceTypeNow)
         // Smooth COP position (plate-local target)
-        const targetX = -liveFrame.cop.y
-        const targetZ = liveFrame.cop.x
+        const targetX = -copY
+        const targetZ = copX
         const sc = smoothCopRef.current
         sc.x += (targetX - sc.x) * alpha
         sc.z += (targetZ - sc.z) * alpha

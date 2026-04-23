@@ -8,6 +8,7 @@ import {
   getModeConfig,
   extractAxisValue,
 } from '../../lib/dataMode'
+import { deviceTypeFromAxfId, rotateForDevice } from '../../lib/deviceIds'
 
 // Exponential lerp speed. Higher = more responsive, lower = smoother.
 // 18 → ~95% settle in ~165ms.  Tune here if it feels too snappy or too lagged.
@@ -64,9 +65,29 @@ export function ForceGauges({ mode, enabledAxes, onToggleAxis }: ForceGaugesProp
       lastFrameMsRef.current = nowMs
       const alpha = 1 - Math.exp(-SMOOTH_SPEED * (dtMs / 1000))
 
+      // Device-specific axis correction: XL plates are mounted 90° CCW, so
+      // rotate their planar (fx,fy) and (mx,my) pairs before display.
+      const deviceType = selectedId ? deviceTypeFromAxfId(selectedId) : ''
+      const [rFx, rFy] = rotateForDevice(
+        extractAxisValue(frame, 'fx'),
+        extractAxisValue(frame, 'fy'),
+        deviceType,
+      )
+      const [rMx, rMy] = rotateForDevice(
+        extractAxisValue(frame, 'mx'),
+        extractAxisValue(frame, 'my'),
+        deviceType,
+      )
+      const rotated: Record<Axis, number> = {
+        fx: rFx, fy: rFy,
+        fz: extractAxisValue(frame, 'fz'),
+        mx: rMx, my: rMy,
+        mz: extractAxisValue(frame, 'mz'),
+      }
+
       const smoothed = smoothedRef.current
       for (const axis of config.axes) {
-        const raw = extractAxisValue(frame, axis.key)
+        const raw = rotated[axis.key]
         smoothed[axis.key] += (raw - smoothed[axis.key]) * alpha
         const value = smoothed[axis.key]
         const el = container.querySelector(`[data-gauge="${axis.key}"]`)

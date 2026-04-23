@@ -4,6 +4,7 @@ import { useLiveDataStore } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import { canvas as C } from '../../lib/theme'
 import { type Axis, type DataMode, getModeConfig, extractAxisValue } from '../../lib/dataMode'
+import { deviceTypeFromAxfId, rotateForDevice } from '../../lib/deviceIds'
 
 const WINDOW_MS = 5000
 const MAX_SAMPLES = 3000
@@ -79,16 +80,20 @@ export function ForcePlot({ mode, enabledAxes }: ForcePlotProps) {
     const allFrames = store.frameBuffer.toArray()
     const lastTime = samples.length > 0 ? samples[samples.length - 1].time : 0
     let newSamples = 0
+    // Device-specific axis correction (XL plates mounted 90° CCW)
+    const deviceType = selectedId ? deviceTypeFromAxfId(selectedId) : ''
     for (const f of allFrames) {
       // Only show data for the currently selected device. No selection = no data.
       if (!selectedId || f.id !== selectedId) continue
       const t = f.time
       if (!t || t <= lastTime) continue
+      const [fx, fy] = rotateForDevice(f.fx, f.fy, deviceType)
+      const [mx, my] = rotateForDevice(f.moments.x, f.moments.y, deviceType)
       samples.push({
         time: t,
         values: {
-          fx: f.fx, fy: f.fy, fz: f.fz,
-          mx: f.moments.x, my: f.moments.y, mz: f.moments.z,
+          fx, fy, fz: f.fz,
+          mx, my, mz: f.moments.z,
         },
       })
       newSamples++
