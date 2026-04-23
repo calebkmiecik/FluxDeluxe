@@ -736,13 +736,12 @@ function drawAxisGizmo(
   const axes: AxisInfo[] = []
   const push = (wx: number, wy: number, wz: number, color: string, label: string) => {
     _axisTmp.set(wx, wy, wz).applyMatrix4(_axisRot)
-    axes.push({
-      dx: _axisTmp.x,
-      dy: -_axisTmp.y, // canvas Y is inverted
-      depth: _axisTmp.z,
-      color,
-      label,
-    })
+    const dx = _axisTmp.x
+    const dy = -_axisTmp.y // canvas Y is inverted
+    // Hide axes that project onto nearly zero screen length (pointing
+    // straight at/away from the viewer — they'd just look like a dot).
+    if (Math.hypot(dx, dy) < 0.15) return
+    axes.push({ dx, dy, depth: _axisTmp.z, color, label })
   }
   push( cosR, 0, -sinR, '#FF5252', 'X') // red — plate X in surface plane
   push( sinR, 0,  cosR, '#00C853', 'Y') // green — plate Y in surface plane
