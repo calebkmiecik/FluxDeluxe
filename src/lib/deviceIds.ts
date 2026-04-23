@@ -26,9 +26,9 @@ const DEVICE_AXIS_TRANSFORMS: Record<string, AxisTransform> = {
   // Launchpad — 90° CW + mirror across gizmo Y (negate Y output)
   '07': { turns: 3, mirrorY: true },
   '11': { turns: 3, mirrorY: true },
-  // Launchpad XL — 90° CW
-  '08': { turns: 3 },
-  '12': { turns: 3 },
+  // Launchpad XL — 90° CW + mirror across gizmo Y (negate Y output)
+  '08': { turns: 3, mirrorY: true },
+  '12': { turns: 3, mirrorY: true },
 }
 
 function deviceAxisTransform(deviceType: string): AxisTransform {
