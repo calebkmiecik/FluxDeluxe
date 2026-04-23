@@ -604,6 +604,11 @@ export function PlateCanvas({
       // rotated with the plate mesh and projected through the camera.
       drawAxisGizmo(ctx, camObj, W, H, cam.getMeshRotation())
 
+      // COP readout (top-left) — raw sensor values in mm for sanity checks.
+      if (liveFrame) {
+        drawCopReadout(ctx, liveFrame.cop.x, liveFrame.cop.y)
+      }
+
     }
     rafRef.current = requestAnimationFrame(draw)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
@@ -699,6 +704,46 @@ const HudActionButton = forwardRef<
 })
 
 // ── 2D helpers kept inline (share projection state with scene) ─────
+
+/**
+ * Compact COP readout anchored to the top-left. Shows the raw sensor
+ * values converted from meters → millimeters.
+ */
+function drawCopReadout(
+  ctx: CanvasRenderingContext2D,
+  copXMeters: number,
+  copYMeters: number,
+) {
+  const x = 16
+  const y = 16
+  const xMm = (copXMeters * 1000).toFixed(1)
+  const yMm = (copYMeters * 1000).toFixed(1)
+
+  ctx.save()
+  ctx.font = `11px ${plate3d.hudMonoFont}`
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+
+  // Label
+  ctx.fillStyle = plate3d.hudTextColor
+  ctx.fillText('COP', x, y)
+
+  // Values (below the label, right-aligned on a fixed column so signs line up)
+  ctx.font = `11px ${plate3d.hudMonoFont}`
+  ctx.fillStyle = plate3d.edgeCyan
+  ctx.fillText('X', x, y + 16)
+  ctx.fillText('Y', x, y + 30)
+
+  ctx.fillStyle = plate3d.hudTextColor
+  ctx.textAlign = 'right'
+  const col = x + 72
+  ctx.fillText(`${xMm} mm`, col, y + 16)
+  ctx.fillText(`${yMm} mm`, col, y + 30)
+
+  ctx.restore()
+}
+
+
 
 /**
  * 3D axis gizmo in the plate's own frame:
