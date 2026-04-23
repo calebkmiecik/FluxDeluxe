@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react'
 import { useAnimationFrame } from '../../hooks/useAnimationFrame'
-import { useLiveDataStore } from '../../stores/liveDataStore'
+import { getLatestFrameForDevice } from '../../stores/liveDataStore'
 import { useDeviceStore } from '../../stores/deviceStore'
 import {
   type Axis,
@@ -9,14 +9,9 @@ import {
   extractAxisValue,
 } from '../../lib/dataMode'
 
-const MEDIAN_WINDOW = 5
-
-function median(arr: number[]): number {
-  if (arr.length === 0) return 0
-  const sorted = arr.slice().sort((a, b) => a - b)
-  const mid = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
-}
+// Exponential lerp speed. Higher = more responsive, lower = smoother.
+// 18 → ~95% settle in ~165ms.  Tune here if it feels too snappy or too lagged.
+const SMOOTH_SPEED = 18
 
 interface ForceGaugesProps {
   mode: DataMode
@@ -26,22 +21,24 @@ interface ForceGaugesProps {
 
 export function ForceGauges({ mode, enabledAxes, onToggleAxis }: ForceGaugesProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  // Rolling medians keyed by axis (all 6 possible axes)
-  const historyRef = useRef<Record<Axis, number[]>>({
-    fx: [], fy: [], fz: [], mx: [], my: [], mz: [],
+  // Smoothed value per axis, continuously EMA'd each frame toward the latest
+  // raw reading. Keeps the gauge output fluid instead of stepping between
+  // discrete median samples.
+  const smoothedRef = useRef<Record<Axis, number>>({
+    fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 0,
   })
+  const lastFrameMsRef = useRef<number | null>(null)
   const enabledRef = useRef(enabledAxes)
   const modeRef = useRef<DataMode>(mode)
   useEffect(() => { enabledRef.current = enabledAxes }, [enabledAxes])
   useEffect(() => { modeRef.current = mode }, [mode])
 
-  // Reset smoothing windows on device change so readings don't carry from the
+  // Reset smoothing on device change so readings don't carry from the
   // previous device into the new one.
   const selectedDeviceId = useDeviceStore((s) => s.selectedDeviceId)
   useEffect(() => {
-    historyRef.current = { fx: [], fy: [], fz: [], mx: [], my: [], mz: [] }
-    // Clear displayed values back to the padded zero so the UI doesn't flash
-    // stale numbers during the next frame.
+    smoothedRef.current = { fx: 0, fy: 0, fz: 0, mx: 0, my: 0, mz: 0 }
+    lastFrameMsRef.current = null
     const container = containerRef.current
     if (container) {
       container.querySelectorAll('[data-gauge]').forEach((el) => {
@@ -51,29 +48,32 @@ export function ForceGauges({ mode, enabledAxes, onToggleAxis }: ForceGaugesProp
   }, [selectedDeviceId])
 
   useAnimationFrame(() => {
-    const frame = useLiveDataStore.getState().currentFrame
     const selectedId = useDeviceStore.getState().selectedDeviceId
     const container = containerRef.current
     if (!container) return
 
     const config = getModeConfig(modeRef.current)
 
-    // Update gauge values
-    // Only update when we have a selected device and a frame from it
-    if (frame && selectedId && frame.id === selectedId) {
-      const history = historyRef.current
+    // Use the per-device latest frame so multi-plate streaming doesn't
+    // starve this gauge (matches the COP dot pattern).
+    const frame = selectedId ? getLatestFrameForDevice(selectedId) : null
+
+    if (frame) {
+      const nowMs = performance.now()
+      const dtMs = lastFrameMsRef.current === null ? 16 : nowMs - lastFrameMsRef.current
+      lastFrameMsRef.current = nowMs
+      const alpha = 1 - Math.exp(-SMOOTH_SPEED * (dtMs / 1000))
+
+      const smoothed = smoothedRef.current
       for (const axis of config.axes) {
         const raw = extractAxisValue(frame, axis.key)
-        const buf = history[axis.key]
-        buf.push(raw)
-        if (buf.length > MEDIAN_WINDOW) buf.shift()
-
-        const smoothed = median(buf)
+        smoothed[axis.key] += (raw - smoothed[axis.key]) * alpha
+        const value = smoothed[axis.key]
         const el = container.querySelector(`[data-gauge="${axis.key}"]`)
         if (el) {
           // Pad positives with a space so the sign column is consistent and
           // decimals align across all rows (mono font = true tabular).
-          const formatted = smoothed < 0 ? smoothed.toFixed(1) : ` ${smoothed.toFixed(1)}`
+          const formatted = value < 0 ? value.toFixed(1) : ` ${value.toFixed(1)}`
           el.textContent = formatted
         }
       }
