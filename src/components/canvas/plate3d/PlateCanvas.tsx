@@ -600,9 +600,9 @@ export function PlateCanvas({
         drawHoverReticle(ctx, { x: h.x, y: h.y }, `R${h.row},C${h.col}`)
       }
 
-      // 3D axis gizmo (bottom-right) — projects world XYZ unit vectors
-      // through the current camera transform so it reflects the view.
-      drawAxisGizmo(ctx, camObj, W, H)
+      // 3D axis gizmo (bottom-right) — plate-local X/Y/Z (Z vertical),
+      // rotated with the plate mesh and projected through the camera.
+      drawAxisGizmo(ctx, camObj, W, H, cam.getMeshRotation())
 
     }
     rafRef.current = requestAnimationFrame(draw)
@@ -701,10 +701,13 @@ const HudActionButton = forwardRef<
 // ── 2D helpers kept inline (share projection state with scene) ─────
 
 /**
- * 3D axis gizmo anchored to the bottom-right corner. Projects the three
- * world unit vectors (+X, +Y, +Z) through the current camera's view matrix
- * so the gizmo tumbles as the camera orbits. Classic Blender-style widget
- * for understanding the current 3D orientation at a glance.
+ * 3D axis gizmo in the plate's own frame:
+ *   plate +X = world +X rotated by meshRotation around world Y
+ *   plate +Y = world +Z rotated by meshRotation around world Y
+ *   plate +Z = world +Y (vertical, unaffected by plate rotation)
+ *
+ * Each is then transformed by the camera's view rotation so the gizmo
+ * tumbles with the view AND rotates with the plate (rotate button).
  */
 const _axisTmp = new THREE.Vector3()
 const _axisRot = new THREE.Matrix4()
@@ -712,20 +715,27 @@ function drawAxisGizmo(
   ctx: CanvasRenderingContext2D,
   camera: THREE.Camera,
   W: number, H: number,
+  meshRotation: number,
 ) {
   const cx = W - 54
   const cy = H - 54
   const len = 26
   const head = 5
 
-  // View-matrix rotation only (discard translation) — we just want to
-  // transform DIRECTIONS, not positions.
+  // View rotation only (drop translation)
   _axisRot.extractRotation(camera.matrixWorldInverse)
+
+  // Plate-local axes in world space:
+  //   X: plate rotation applied to world +X  = ( cosθ, 0, -sinθ)
+  //   Y: plate rotation applied to world +Z  = ( sinθ, 0,  cosθ)
+  //   Z: world +Y (vertical, not affected by plate Y-axis rotation)
+  const cosR = Math.cos(meshRotation)
+  const sinR = Math.sin(meshRotation)
 
   interface AxisInfo { dx: number; dy: number; depth: number; color: string; label: string }
   const axes: AxisInfo[] = []
-  const push = (x: number, y: number, z: number, color: string, label: string) => {
-    _axisTmp.set(x, y, z).applyMatrix4(_axisRot)
+  const push = (wx: number, wy: number, wz: number, color: string, label: string) => {
+    _axisTmp.set(wx, wy, wz).applyMatrix4(_axisRot)
     axes.push({
       dx: _axisTmp.x,
       dy: -_axisTmp.y, // canvas Y is inverted
@@ -734,9 +744,9 @@ function drawAxisGizmo(
       label,
     })
   }
-  push(1, 0, 0, '#FF5252', 'X') // red
-  push(0, 1, 0, '#00C853', 'Y') // green
-  push(0, 0, 1, '#7AB8FF', 'Z') // cyan
+  push( cosR, 0, -sinR, '#FF5252', 'X') // red — plate X in surface plane
+  push( sinR, 0,  cosR, '#00C853', 'Y') // green — plate Y in surface plane
+  push(    0, 1,     0, '#7AB8FF', 'Z') // cyan — plate Z (vertical)
 
   // Draw farthest (most-negative Z after view transform) first so nearer
   // arrows overlap them.
