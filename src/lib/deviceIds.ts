@@ -20,9 +20,9 @@ export function deviceTypeFromAxfId(axfId: string): string {
  */
 interface AxisTransform { turns: number; mirrorX?: boolean; mirrorY?: boolean }
 const DEVICE_AXIS_TRANSFORMS: Record<string, AxisTransform> = {
-  // Lite
-  '06': { turns: 0 },
-  '10': { turns: 0 },
+  // Lite — swap X and Y (90° CW + mirror across gizmo Y)
+  '06': { turns: 3, mirrorY: true },
+  '10': { turns: 3, mirrorY: true },
   // Launchpad — 90° CW + mirror across gizmo Y (negate Y output)
   '07': { turns: 3, mirrorY: true },
   '11': { turns: 3, mirrorY: true },
