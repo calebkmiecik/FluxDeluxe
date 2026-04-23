@@ -743,11 +743,10 @@ function drawAxisGizmo(
     if (Math.hypot(dx, dy) < 0.15) return
     axes.push({ dx, dy, depth: _axisTmp.z, color, label })
   }
-  // All axes share the cyan/muted palette the rest of the plate HUD uses.
-  // Labels carry the identity — monochrome chrome, not RGB gizmo tool.
-  push( cosR, 0, -sinR, plate3d.edgeCyan,    'X')
-  push( sinR, 0,  cosR, plate3d.hudTextColor, 'Y')
-  push(    0, 1,     0, plate3d.hudTextColor, 'Z')
+  // All axes share the cyan HUD color. Labels distinguish them.
+  push( cosR, 0, -sinR, plate3d.edgeCyan, 'X')
+  push( sinR, 0,  cosR, plate3d.edgeCyan, 'Y')
+  push(    0, 1,     0, plate3d.edgeCyan, 'Z')
 
   // Draw farthest (most-negative Z after view transform) first so nearer
   // arrows overlap them.
