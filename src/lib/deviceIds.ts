@@ -20,15 +20,16 @@ export function deviceTypeFromAxfId(axfId: string): string {
  */
 interface AxisTransform { turns: number; mirrorX?: boolean; mirrorY?: boolean }
 const DEVICE_AXIS_TRANSFORMS: Record<string, AxisTransform> = {
-  // Lite — swap X and Y (90° CW + mirror across gizmo Y)
-  '06': { turns: 3, mirrorY: true },
-  '10': { turns: 3, mirrorY: true },
-  // Launchpad — 90° CW + mirror across gizmo Y (negate Y output)
-  '07': { turns: 3, mirrorY: true },
-  '11': { turns: 3, mirrorY: true },
-  // Launchpad XL — 90° CW + mirror across gizmo Y (negate Y output)
-  '08': { turns: 3, mirrorY: true },
-  '12': { turns: 3, mirrorY: true },
+  // All known plates are identity now — the plate model itself is rotated
+  // 90° CW at load time in parsePlateJSON, so sensor (cop.x, cop.y) maps
+  // directly to plate-local (x, y). Entries kept so a future plate type
+  // with a divergent sensor orientation can override per-device.
+  '06': { turns: 0 },
+  '10': { turns: 0 },
+  '07': { turns: 0 },
+  '11': { turns: 0 },
+  '08': { turns: 0 },
+  '12': { turns: 0 },
 }
 
 function deviceAxisTransform(deviceType: string): AxisTransform {

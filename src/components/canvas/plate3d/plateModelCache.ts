@@ -50,15 +50,38 @@ export function base64ToFloat32Array(b64: string): Float32Array {
   }
 }
 
+/**
+ * Rotate every vertex triple (x, y, z) in-place by 90° CW around the Y
+ * axis: (x, y, z) → (-z, y, x). Used so the plate model aligns with the
+ * sensor frame directly — downstream code can treat cop.x as the plate's
+ * +X direction without per-device axis gymnastics.
+ */
+function rotatePlateVerticesCW(arr: Float32Array): Float32Array {
+  const out = new Float32Array(arr.length)
+  for (let i = 0; i + 2 < arr.length; i += 3) {
+    out[i]     = -arr[i + 2] // new x = -old z
+    out[i + 1] = arr[i + 1]  // y unchanged (vertical)
+    out[i + 2] = arr[i]      // new z = old x
+  }
+  return out
+}
+
 export function parsePlateJSON(json: unknown): PlateGeometry {
   const d = (json ?? {}) as RawPlateJSON
+  const rawBounds = d.bounds ?? { minX: -0.3, maxX: 0.3, minZ: -0.3, maxZ: 0.3 }
   return {
-    bodyEdges: base64ToFloat32Array(d.edges ?? ''),
-    footEdges: base64ToFloat32Array(d.footEdges ?? ''),
-    topPlateEdges: base64ToFloat32Array(d.topPlateEdges ?? ''),
-    faces: base64ToFloat32Array(d.faces ?? ''),
+    bodyEdges: rotatePlateVerticesCW(base64ToFloat32Array(d.edges ?? '')),
+    footEdges: rotatePlateVerticesCW(base64ToFloat32Array(d.footEdges ?? '')),
+    topPlateEdges: rotatePlateVerticesCW(base64ToFloat32Array(d.topPlateEdges ?? '')),
+    faces: rotatePlateVerticesCW(base64ToFloat32Array(d.faces ?? '')),
     floorY: d.floorY ?? 0,
-    bounds: d.bounds ?? { minX: -0.3, maxX: 0.3, minZ: -0.3, maxZ: 0.3 },
+    // Rotate bounds to match: new_x = -old_z, new_z = old_x
+    bounds: {
+      minX: -rawBounds.maxZ,
+      maxX: -rawBounds.minZ,
+      minZ: rawBounds.minX,
+      maxZ: rawBounds.maxX,
+    },
   }
 }
 

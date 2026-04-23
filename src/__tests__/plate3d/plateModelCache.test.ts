@@ -44,7 +44,7 @@ describe('parsePlateJSON', () => {
     expect(geom.bounds).toEqual({ minX: -0.3, maxX: 0.3, minZ: -0.3, maxZ: 0.3 })
   })
 
-  it('decodes populated JSON', () => {
+  it('decodes populated JSON (geometry is rotated 90° CW at load)', () => {
     const json = {
       edges: encodeFloats([0, 0, 0, 1, 0, 0]),
       floorY: -0.05,
@@ -53,7 +53,18 @@ describe('parsePlateJSON', () => {
     const geom = parsePlateJSON(json)
     expect(geom.bodyEdges.length).toBe(6)
     expect(geom.floorY).toBe(-0.05)
-    expect(geom.bounds.maxX).toBe(0.2)
+    // Rotation (x,y,z) → (-z, y, x) → bounds:
+    //   new minX = -maxZ (-0.15), new maxX = -minZ (0.15)
+    //   new minZ =  minX (-0.2),  new maxZ =  maxX (0.2)
+    expect(geom.bounds.minX).toBeCloseTo(-0.15)
+    expect(geom.bounds.maxX).toBeCloseTo(0.15)
+    expect(geom.bounds.minZ).toBeCloseTo(-0.2)
+    expect(geom.bounds.maxZ).toBeCloseTo(0.2)
+    // Edge vertex rotation: (0,0,0)→(0,0,0), (1,0,0)→(0,0,1)
+    expect(geom.bodyEdges[0]).toBeCloseTo(0)   // x0
+    expect(geom.bodyEdges[2]).toBeCloseTo(0)   // z0
+    expect(geom.bodyEdges[3]).toBeCloseTo(0)   // x1 (was 1, now -0 = 0)
+    expect(geom.bodyEdges[5]).toBeCloseTo(1)   // z1 (was 0, now prev x = 1)
   })
 })
 
