@@ -600,6 +600,10 @@ export function PlateCanvas({
         drawHoverReticle(ctx, { x: h.x, y: h.y }, `R${h.row},C${h.col}`)
       }
 
+      // Axis gizmo (bottom-right) — rotates with the plate so you can
+      // visually verify which direction sensor +X / +Y point on screen.
+      drawAxisGizmo(ctx, W, H, cam.getMeshRotation())
+
     }
     rafRef.current = requestAnimationFrame(draw)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
@@ -695,6 +699,82 @@ const HudActionButton = forwardRef<
 })
 
 // ── 2D helpers kept inline (share projection state with scene) ─────
+
+/**
+ * Small axis gizmo anchored to the bottom-right of the viewport. The X/Y
+ * arrows rotate with the plate's mesh rotation so you can verify what
+ * direction the sensor's +X and +Y map to on screen.
+ */
+function drawAxisGizmo(
+  ctx: CanvasRenderingContext2D,
+  W: number, H: number,
+  meshRotation: number,
+) {
+  const cx = W - 48
+  const cy = H - 48
+  const len = 22
+  const head = 5
+
+  ctx.save()
+  ctx.translate(cx, cy)
+
+  // X axis — cyan
+  ctx.save()
+  ctx.rotate(-meshRotation)  // negate to match mesh orientation in screen space
+  ctx.strokeStyle = plate3d.edgeCyan
+  ctx.fillStyle = plate3d.edgeCyan
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(len, 0)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(len, 0)
+  ctx.lineTo(len - head, -head / 2)
+  ctx.lineTo(len - head, head / 2)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+
+  // Y axis — muted (vertical on screen when meshRotation=0)
+  ctx.save()
+  ctx.rotate(-meshRotation)
+  ctx.strokeStyle = plate3d.hudTextColor
+  ctx.fillStyle = plate3d.hudTextColor
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(0, 0)
+  ctx.lineTo(0, -len)
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(0, -len)
+  ctx.lineTo(-head / 2, -len + head)
+  ctx.lineTo(head / 2, -len + head)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+
+  // Labels — positioned at arrow tips, kept upright
+  ctx.font = `10px ${plate3d.hudMonoFont}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+
+  // X label
+  const xLabelAngle = -meshRotation
+  const xlx = Math.cos(xLabelAngle) * (len + 8)
+  const xly = Math.sin(xLabelAngle) * (len + 8)
+  ctx.fillStyle = plate3d.edgeCyan
+  ctx.fillText('X', xlx, xly)
+
+  // Y label (Y is +90° CCW from X)
+  const yLabelAngle = -meshRotation - Math.PI / 2
+  const ylx = Math.cos(yLabelAngle) * (len + 8)
+  const yly = Math.sin(yLabelAngle) * (len + 8)
+  ctx.fillStyle = plate3d.hudTextColor
+  ctx.fillText('Y', ylx, yly)
+
+  ctx.restore()
+}
 
 function drawFloorGrid(
   ctx: CanvasRenderingContext2D,
