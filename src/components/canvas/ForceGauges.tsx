@@ -113,11 +113,11 @@ export function ForceGauges({ mode, enabledAxes, onToggleAxis }: ForceGaugesProp
             />
             {/* Label */}
             <div className="telemetry-label mb-1">{axis.label}</div>
-            {/* Value */}
-            <div className="flex items-baseline gap-1.5">
+            {/* Value — right-aligned so decimals line up across rows */}
+            <div className="flex items-baseline justify-end gap-1.5">
               <span
                 data-gauge={axis.key}
-                className="font-mono text-4xl tracking-tight tabular-nums text-foreground whitespace-pre"
+                className="font-mono text-4xl tracking-tight tabular-nums text-foreground whitespace-pre text-right"
               >
                 {' 0.0'}
               </span>
