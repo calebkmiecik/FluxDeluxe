@@ -600,9 +600,10 @@ export function PlateCanvas({
         drawHoverReticle(ctx, { x: h.x, y: h.y }, `R${h.row},C${h.col}`)
       }
 
-      // 3D axis gizmo (bottom-right) — plate-local X/Y/Z (Z vertical),
-      // rotated with the plate mesh and projected through the camera.
-      drawAxisGizmo(ctx, camObj, W, H, cam.getMeshRotation())
+      // 3D axis gizmo (bottom-right) — shows the SENSOR's X/Y/Z axes
+      // on screen so pushing along sensor +X makes the dot travel along
+      // the X arrow. Z is always vertical.
+      drawAxisGizmo(ctx, camObj, W, H, cam.getMeshRotation(), deviceTypeNow)
 
       // COP readout (top-left) — raw sensor values in mm for sanity checks.
       if (liveFrame) {
@@ -746,13 +747,17 @@ function drawCopReadout(
 
 
 /**
- * 3D axis gizmo in the plate's own frame:
- *   plate +X = world +X rotated by meshRotation around world Y
- *   plate +Y = world +Z rotated by meshRotation around world Y
- *   plate +Z = world +Y (vertical, unaffected by plate rotation)
+ * 3D axis gizmo showing the SENSOR's physical X/Y/Z axes on screen.
  *
- * Each is then transformed by the camera's view rotation so the gizmo
- * tumbles with the view AND rotates with the plate (rotate button).
+ * The rotateForDevice transform maps sensor (x, y) → plate-local (x', y')
+ * before we place the COP in world space via:
+ *     world = (-y', 0, x')
+ * Inverse is the same map here — we take a sensor-unit vector, transform
+ * it to plate-local, then to world. Then apply meshRotation (plate spin)
+ * and finally the camera view. Net effect: gizmo arrows point the way
+ * sensor +X / +Y actually point in the physical plate.
+ *
+ * Z is always vertical (sensor and world share a vertical axis).
  */
 const _axisTmp = new THREE.Vector3()
 const _axisRot = new THREE.Matrix4()
@@ -761,6 +766,7 @@ function drawAxisGizmo(
   camera: THREE.Camera,
   W: number, H: number,
   meshRotation: number,
+  deviceType: string,
 ) {
   const cx = W - 54
   const cy = H - 54
@@ -770,12 +776,22 @@ function drawAxisGizmo(
   // View rotation only (drop translation)
   _axisRot.extractRotation(camera.matrixWorldInverse)
 
-  // Plate-local axes in world space:
-  //   X: plate rotation applied to world +X  = ( cosθ, 0, -sinθ)
-  //   Y: plate rotation applied to world +Z  = ( sinθ, 0,  cosθ)
-  //   Z: world +Y (vertical, not affected by plate Y-axis rotation)
+  // Build the world direction for a sensor-axis unit vector
+  // (sensor X or Y) by running it through the same pipeline the COP does.
   const cosR = Math.cos(meshRotation)
   const sinR = Math.sin(meshRotation)
+  const sensorAxisWorld = (sx: number, sy: number): [number, number, number] => {
+    const [px, py] = rotateForDevice(sx, sy, deviceType)
+    // Plate-local → world (before mesh rotation):  world = (-py, 0, px)
+    const baseX = -py
+    const baseZ = px
+    // Apply plate mesh rotation around world Y
+    return [
+      baseX * cosR + baseZ * sinR,
+      0,
+      -baseX * sinR + baseZ * cosR,
+    ]
+  }
 
   interface AxisInfo { dx: number; dy: number; depth: number; color: string; label: string }
   const axes: AxisInfo[] = []
@@ -788,10 +804,11 @@ function drawAxisGizmo(
     if (Math.hypot(dx, dy) < 0.15) return
     axes.push({ dx, dy, depth: _axisTmp.z, color, label })
   }
-  // All axes share the cyan HUD color. Labels distinguish them.
-  push( cosR, 0, -sinR, plate3d.edgeCyan, 'X')
-  push( sinR, 0,  cosR, plate3d.edgeCyan, 'Y')
-  push(    0, 1,     0, plate3d.edgeCyan, 'Z')
+  const [xWX, xWY, xWZ] = sensorAxisWorld(1, 0)
+  const [yWX, yWY, yWZ] = sensorAxisWorld(0, 1)
+  push(xWX, xWY, xWZ, plate3d.edgeCyan, 'X')
+  push(yWX, yWY, yWZ, plate3d.edgeCyan, 'Y')
+  push(   0,  1,    0, plate3d.edgeCyan, 'Z')
 
   // Draw farthest (most-negative Z after view transform) first so nearer
   // arrows overlap them.
