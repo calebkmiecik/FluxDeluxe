@@ -464,12 +464,13 @@ export function PlateCanvas({
         const smoothSpeed = 12 // higher = more responsive, lower = smoother
         const alpha = 1 - Math.exp(-smoothSpeed * (delta / 1000))
 
-        // Device-specific axis correction (XL plates are physically mounted
-        // 90° CCW, so rotate their sensor coords before the world mapping).
+        // Device-specific axis correction (currently identity for every
+        // device — the plate geometry itself is rotated 90° CW at load).
         const [copX, copY] = rotateForDevice(liveFrame.cop.x, liveFrame.cop.y, deviceTypeNow)
-        // Smooth COP position (plate-local target)
+        // Smooth COP position (plate-local target). World mapping accounts
+        // for the baked-in plate rotation: (cop.x, cop.y) → (-cop.y, 0, -cop.x)
         const targetX = -copY
-        const targetZ = copX
+        const targetZ = -copX
         const sc = smoothCopRef.current
         sc.x += (targetX - sc.x) * alpha
         sc.z += (targetZ - sc.z) * alpha
@@ -782,9 +783,10 @@ function drawAxisGizmo(
   const sinR = Math.sin(meshRotation)
   const sensorAxisWorld = (sx: number, sy: number): [number, number, number] => {
     const [px, py] = rotateForDevice(sx, sy, deviceType)
-    // Plate-local → world (before mesh rotation):  world = (-py, 0, px)
+    // Matches COP mapping above: sensor (x, y) → world (-y, 0, -x) with
+    // the 90°-CW plate geometry rotation baked in.
     const baseX = -py
-    const baseZ = px
+    const baseZ = -px
     // Apply plate mesh rotation around world Y
     return [
       baseX * cosR + baseZ * sinR,
