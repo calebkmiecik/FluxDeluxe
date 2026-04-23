@@ -34,9 +34,21 @@ export function rotateQuarter(x: number, y: number, turns: number): [number, num
 }
 
 /**
- * Convenience: apply the device-specific axis rotation to an (x, y) pair
- * (e.g. cop.x/cop.y or fx/fy).
+ * Some device types also need a horizontal mirror (reflection across the
+ * Y axis — X coordinate negates) applied AFTER the quarter-turn rotation.
+ * Currently only the XL plates (08, 12).
+ */
+export function deviceAxisMirror(deviceType: string): boolean {
+  return deviceType === '08' || deviceType === '12'
+}
+
+/**
+ * Convenience: apply the device-specific axis rotation (and mirror, if any)
+ * to an (x, y) pair coming from the sensor frame. Use for cop.x/cop.y,
+ * fx/fy, mx/my.
  */
 export function rotateForDevice(x: number, y: number, deviceType: string): [number, number] {
-  return rotateQuarter(x, y, deviceAxisQuarterTurns(deviceType))
+  let [rx, ry] = rotateQuarter(x, y, deviceAxisQuarterTurns(deviceType))
+  if (deviceAxisMirror(deviceType)) rx = -rx
+  return [rx, ry]
 }
