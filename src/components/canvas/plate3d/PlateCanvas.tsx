@@ -718,7 +718,7 @@ function drawAxisGizmo(
   meshRotation: number,
 ) {
   const cx = W - 54
-  const cy = H - 54
+  const cy = H - 40
   const len = 26
   const head = 5
 
@@ -743,9 +743,11 @@ function drawAxisGizmo(
     if (Math.hypot(dx, dy) < 0.15) return
     axes.push({ dx, dy, depth: _axisTmp.z, color, label })
   }
-  push( cosR, 0, -sinR, '#FF5252', 'X') // red — plate X in surface plane
-  push( sinR, 0,  cosR, '#00C853', 'Y') // green — plate Y in surface plane
-  push(    0, 1,     0, '#7AB8FF', 'Z') // cyan — plate Z (vertical)
+  // All axes share the cyan/muted palette the rest of the plate HUD uses.
+  // Labels carry the identity — monochrome chrome, not RGB gizmo tool.
+  push( cosR, 0, -sinR, plate3d.edgeCyan,    'X')
+  push( sinR, 0,  cosR, plate3d.hudTextColor, 'Y')
+  push(    0, 1,     0, plate3d.hudTextColor, 'Z')
 
   // Draw farthest (most-negative Z after view transform) first so nearer
   // arrows overlap them.
