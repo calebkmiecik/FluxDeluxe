@@ -718,7 +718,7 @@ function drawAxisGizmo(
   meshRotation: number,
 ) {
   const cx = W - 54
-  const cy = H - 40
+  const cy = H - 54
   const len = 26
   const head = 5
 
