@@ -762,8 +762,10 @@ function drawAxisGizmo(
   for (const a of axes) {
     const tx = a.dx * len
     const ty = a.dy * len
-    // Axes pointing away from the camera get dimmed slightly
-    const alpha = a.depth > 0 ? 0.45 : 1
+    // Continuous depth cue: axes pointing toward camera (depth -1) full
+    // brightness, pointing away (depth +1) dimmed. No step at depth=0,
+    // so near-horizontal views don't flicker from numerical jitter.
+    const alpha = 0.725 - 0.275 * Math.max(-1, Math.min(1, a.depth))
     ctx.globalAlpha = alpha
 
     ctx.strokeStyle = a.color
